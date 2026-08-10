@@ -196,6 +196,12 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
+> **Superseded by Task 4:** on this environment, `import spacy` itself fails
+> (an Application Control policy blocks a DLL inside numpy that spaCy's
+> parser pulls in at import time — not just the model download). Task 4
+> replaces spaCy with a regex heuristic and removes this dependency; if the
+> download above fails, proceed anyway and let Task 4's fix land.
+
 - [ ] **Step 8: Commit**
 
 ```bash
@@ -544,8 +550,21 @@ git commit -m "feat: add JSON-file-backed market provider"
 
 ### Task 4: Query Builder
 
+> **Note (added after Task 1):** the plan originally used spaCy for entity
+> extraction. This environment's Application Control policy blocks a DLL
+> deep inside numpy that spaCy's parser imports at load time (`spacy.load`
+> never even gets called — plain `import spacy` fails), so spaCy cannot run
+> here at all. This is unrelated to the numpy/torch stack `sentence-transformers`
+> uses in Task 8, which was verified working end-to-end. This task now uses a
+> small regex-based heuristic instead (captures runs of 2+ capitalized words,
+> allowing "of/the/for/and" as a joining word — e.g. matches "U.S. House of
+> Representatives" as one entity) and removes the now-unnecessary spaCy
+> dependency added in Task 1.
+
 **Files:**
 - Create: `resolution_finder/query_builder.py`
+- Modify: `requirements.txt` (remove the `spacy` line added in Task 1)
+- Modify: `resolution_finder/config.py` (remove the `SPACY_MODEL_NAME` constant added in Task 1 — nothing else uses it)
 - Test: `tests/test_query_builder.py`
 
 **Interfaces:**
@@ -603,25 +622,31 @@ def test_build_queries_includes_each_option():
 Run: `pytest tests/test_query_builder.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.query_builder'`
 
-- [ ] **Step 3: Implement the query builder**
+- [ ] **Step 3: Remove the now-unnecessary spaCy dependency from Task 1**
+
+Edit `requirements.txt` and delete the `spacy` line.
+
+Edit `resolution_finder/config.py` and delete the `SPACY_MODEL_NAME = "en_core_web_sm"` line — nothing else in the codebase references it.
+
+- [ ] **Step 4: Implement the query builder**
 
 ```python
 # resolution_finder/query_builder.py
 import re
-import spacy
 from resolution_finder.models import Market
-from resolution_finder.config import SPACY_MODEL_NAME
-
-_nlp = None
 
 URL_PATTERN = re.compile(r"https?://[^\s)]+")
 
-
-def _get_nlp():
-    global _nlp
-    if _nlp is None:
-        _nlp = spacy.load(SPACY_MODEL_NAME)
-    return _nlp
+# Heuristic proper-noun matcher: a capitalized word, followed by one or more
+# more capitalized words optionally joined by a short lowercase connector
+# ("of", "the", "for", "and") — e.g. matches "U.S. House of Representatives"
+# and "Digital Asset Market Clarity Act" as single entities. This replaces
+# spaCy (see note above this task) with a dependency-free approximation; it
+# is intentionally simple and only used to enrich search queries, not to
+# make resolution decisions.
+ENTITY_PATTERN = re.compile(
+    r"\b[A-Z][a-zA-Z0-9.]*(?:\s+(?:of|the|for|and)?\s*[A-Z][a-zA-Z0-9.]*)+\b"
+)
 
 
 def extract_urls(text: str) -> list[str]:
@@ -630,11 +655,11 @@ def extract_urls(text: str) -> list[str]:
 
 
 def extract_entities(text: str) -> list[str]:
-    doc = _get_nlp()(text)
     seen = []
-    for ent in doc.ents:
-        if ent.label_ in {"PERSON", "ORG", "GPE", "LAW", "EVENT"} and ent.text not in seen:
-            seen.append(ent.text)
+    for match in ENTITY_PATTERN.finditer(text):
+        candidate = match.group().strip()
+        if candidate not in seen:
+            seen.append(candidate)
     return seen
 
 
@@ -648,16 +673,16 @@ def build_queries(market: Market) -> list[str]:
     return queries
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 5: Run test to verify it passes**
 
 Run: `pytest tests/test_query_builder.py -v`
 Expected: PASS (3 passed)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add resolution_finder/query_builder.py tests/test_query_builder.py
-git commit -m "feat: add query builder for URL and entity extraction"
+git add requirements.txt resolution_finder/config.py resolution_finder/query_builder.py tests/test_query_builder.py
+git commit -m "feat: add query builder using regex entity extraction (spaCy unusable in this environment)"
 ```
 
 ---
