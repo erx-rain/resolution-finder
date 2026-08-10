@@ -1,0 +1,38 @@
+<!-- resolution_finder/templates/index.html -->
+<!doctype html>
+<html>
+<head><title>Resolution Finder — Review Queue</title></head>
+<body>
+  <h1>Review Queue</h1>
+  <table border="1">
+    <tr>
+      <th>Market</th><th>Outcome</th><th>Confidence</th><th>Evidence</th>
+      <th>Source</th><th>Status</th><th>Action</th>
+    </tr>
+    {% for f in findings %}
+    <tr>
+      <td>{{ f.market_id }}</td>
+      <td>{{ f.outcome }}</td>
+      <td>{{ "%.2f"|format(f.confidence) }}</td>
+      <td>{{ f.evidence_snippet or "-" }}</td>
+      <td>
+        {% if f.source_url %}
+          {% if f.source_type == "official_social" %}
+            <a href="{{ f.source_url }}">verify this is the real official account</a>
+          {% else %}
+            <a href="{{ f.source_url }}">{{ f.source_type }}</a>
+          {% endif %}
+        {% else %}-{% endif %}
+      </td>
+      <td>{{ f.review_status }}</td>
+      <td>
+        <form method="post" action="{{ url_for('review', finding_id=f.id) }}">
+          <button name="status" value="Confirmed">Confirm</button>
+          <button name="status" value="Rejected">Reject</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>
