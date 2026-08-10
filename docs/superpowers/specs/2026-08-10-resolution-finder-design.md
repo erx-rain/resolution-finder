@@ -168,3 +168,13 @@ set `review_status`. Read access to run history per market.
   `UNCLEAR`.
 - Per-source navigation plugins for official sources that require multi-step
   browsing rather than a single page fetch.
+- **Official X (Twitter) accounts as a Tier 1 source.** Posts from an
+  organization's official account (e.g. the Nobel Committee's or a
+  government body's verified account) are a legitimate, high-value
+  resolution signal. This is documented here as a known-valuable source
+  type, not built: X's API has no usable free tier (paid plans start
+  around $100/month), and scraping x.com directly is unreliable and
+  against its terms of service. Given the project's zero-cost constraint,
+  this is unlikely to ever be implemented unless that changes — treat it
+  as a placeholder for future manual reference during human review, not a
+  planned automation target.

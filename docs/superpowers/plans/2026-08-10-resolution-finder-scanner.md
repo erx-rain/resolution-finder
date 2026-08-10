@@ -1,0 +1,1647 @@
+# Resolution Finder Scanner Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build a scheduled scanner that checks RainTrade's unresolved markets against free news/official sources, produces a rule-based proposed verdict with evidence, and surfaces it in a local review dashboard.
+
+**Architecture:** A Python pipeline (Market Provider → Query Builder → tiered Evidence Retriever → Article Extractor → Relevance Ranker → rule-based Verdict Engine → SQLite Storage) run on a schedule, plus a small Flask dashboard for human review. Market Provider and Verdict Engine are built behind interfaces so a real RainTrade API and/or an AI-based verdict step can be swapped in later without touching the rest of the pipeline.
+
+**Tech Stack:** Python 3.11+, `requests`, `feedparser` (Google News RSS), `trafilatura` (article text extraction), `sentence-transformers` (local embedding similarity), `spacy` (`en_core_web_sm`, entity extraction), `flask` (dashboard), `sqlite3` (stdlib), `pytest`.
+
+## Global Constraints
+
+- Zero marginal cost: no paid APIs, no LLM calls anywhere in this plan (spec: "Run for $0 marginal cost — no paid APIs, no LLM required for v1").
+- Market Provider must be swappable for a real API with zero changes downstream (spec: "nothing downstream changes when that swap happens").
+- Verdict Engine must be swappable for an AI-based engine with zero changes upstream (spec: "no restructuring required").
+- No per-source navigation scrapers (multi-step browsing simulation) in this plan — a single page fetch + text extraction only (spec Non-goals).
+- This tool never auto-settles a market. It only ever writes proposed verdicts to a review queue.
+- Official X (Twitter) accounts are documented as a known-valuable Tier 1 source but are NOT fetched automatically in this plan — X's API has no free tier (spec Future Extensions). `TIER1_SOCIAL_ACCOUNTS` in Task 5 is reference data for manual review only.
+
+---
+
+## File Structure
+
+```
+Resolution Finder/
+  requirements.txt
+  run_scan.py
+  resolution_finder/
+    __init__.py
+    models.py             # Market, ArticleRef, RankedArticle, Verdict
+    config.py              # constants: paths, thresholds, source lists, delay
+    storage.py              # SQLite read/write for findings
+    market_provider.py      # MarketProvider interface + JsonFileMarketProvider
+    query_builder.py        # URL/entity extraction, query generation
+    source_config.py        # Tier 1 domain map, Tier 2 outlet whitelist, resolve_named_source
+    evidence_retriever.py   # Google News RSS search, Tier 1/Tier 2 retrieval
+    article_extractor.py    # fetch + clean-text extraction
+    relevance_ranker.py     # embedding similarity ranking
+    verdict_engine.py       # rule-based binary/multi-outcome decision logic
+    pipeline.py             # wires everything together, one run
+    dashboard.py            # Flask app
+    templates/
+      index.html
+  data/
+    markets.json            # manually maintained market list (stub Market Provider source)
+  tests/
+    test_models.py
+    test_storage.py
+    test_market_provider.py
+    test_query_builder.py
+    test_source_config.py
+    test_evidence_retriever.py
+    test_article_extractor.py
+    test_relevance_ranker.py
+    test_verdict_engine.py
+    test_pipeline.py
+    test_dashboard.py
+```
+
+Each module has one responsibility and depends only on modules earlier in the pipeline. `pipeline.py` is the only place that imports every stage.
+
+---
+
+### Task 1: Project scaffolding and data models
+
+**Files:**
+- Create: `requirements.txt`
+- Create: `resolution_finder/__init__.py`
+- Create: `resolution_finder/models.py`
+- Create: `resolution_finder/config.py`
+- Test: `tests/test_models.py`
+
+**Interfaces:**
+- Produces: `Market(id, title, description, options, close_date)`, `ArticleRef(url, title, source_type, published_date=None)`, `RankedArticle(article, text, similarity)`, `Verdict(outcome, confidence, evidence_snippet, source_url, source_type)` dataclasses. Config constants: `DB_PATH`, `MARKETS_JSON_PATH`, `SIMILARITY_THRESHOLD`, `EMBEDDING_MODEL_NAME`, `SPACY_MODEL_NAME`, `REQUEST_DELAY_SECONDS`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_models.py
+from datetime import date
+from resolution_finder.models import Market, ArticleRef, RankedArticle, Verdict
+
+
+def test_market_creation():
+    market = Market(
+        id="clarity-act-2026",
+        title="Will the CLARITY act be signed into law in 2026?",
+        description="This market resolves to \"Yes\" if...",
+        options=[],
+        close_date=date(2026, 12, 31),
+    )
+    assert market.id == "clarity-act-2026"
+    assert market.options == []
+
+
+def test_article_ref_defaults():
+    ref = ArticleRef(url="https://example.com/a", title="A", source_type="primary")
+    assert ref.published_date is None
+
+
+def test_verdict_creation():
+    v = Verdict(outcome="YES", confidence=0.9, evidence_snippet="signed into law",
+                source_url="https://congress.gov/x", source_type="primary")
+    assert v.outcome == "YES"
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_models.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder'`
+
+- [ ] **Step 3: Create the package and requirements file**
+
+```
+# requirements.txt
+requests
+feedparser
+trafilatura
+sentence-transformers
+spacy
+flask
+pytest
+```
+
+```python
+# resolution_finder/__init__.py
+```
+
+- [ ] **Step 4: Implement the data models**
+
+```python
+# resolution_finder/models.py
+from dataclasses import dataclass
+from datetime import date
+from typing import Optional
+
+
+@dataclass
+class Market:
+    id: str
+    title: str
+    description: str
+    options: list[str]
+    close_date: date
+
+
+@dataclass
+class ArticleRef:
+    url: str
+    title: str
+    source_type: str  # "primary", "credible_backup", or "general"
+    published_date: Optional[date] = None
+
+
+@dataclass
+class RankedArticle:
+    article: ArticleRef
+    text: str
+    similarity: float
+
+
+@dataclass
+class Verdict:
+    outcome: str  # "YES", "NO", an option name, "UNCLEAR", or "NO_EVIDENCE"
+    confidence: float
+    evidence_snippet: Optional[str]
+    source_url: Optional[str]
+    source_type: Optional[str]
+```
+
+- [ ] **Step 5: Implement config**
+
+```python
+# resolution_finder/config.py
+DB_PATH = "data/resolution_finder.db"
+MARKETS_JSON_PATH = "data/markets.json"
+SIMILARITY_THRESHOLD = 0.35
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+SPACY_MODEL_NAME = "en_core_web_sm"
+REQUEST_DELAY_SECONDS = 1
+```
+
+- [ ] **Step 6: Run test to verify it passes**
+
+Run: `pytest tests/test_models.py -v`
+Expected: PASS (3 passed)
+
+- [ ] **Step 7: Install dependencies and the spaCy model**
+
+```bash
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add requirements.txt resolution_finder/__init__.py resolution_finder/models.py resolution_finder/config.py tests/test_models.py
+git commit -m "feat: add core data models and config"
+```
+
+---
+
+### Task 2: Storage layer
+
+**Files:**
+- Create: `resolution_finder/storage.py`
+- Test: `tests/test_storage.py`
+
+**Interfaces:**
+- Consumes: `Verdict` (Task 1).
+- Produces: `init_db(db_path)`, `save_finding(db_path, market_id, run_timestamp, verdict) -> int`, `get_latest_findings(db_path) -> list[dict]`, `get_history(db_path, market_id) -> list[dict]`, `set_review_status(db_path, finding_id, status)`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_storage.py
+import os
+import tempfile
+from resolution_finder.models import Verdict
+from resolution_finder.storage import (
+    init_db, save_finding, get_latest_findings, get_history, set_review_status,
+)
+
+
+def make_temp_db():
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(path)
+    init_db(path)
+    return path
+
+
+def test_save_and_get_latest_finding():
+    db_path = make_temp_db()
+    verdict = Verdict(outcome="YES", confidence=0.8, evidence_snippet="signed into law",
+                       source_url="https://congress.gov/x", source_type="primary")
+    finding_id = save_finding(db_path, "clarity-act-2026", "2026-08-10T00:00:00", verdict)
+    assert isinstance(finding_id, int)
+
+    latest = get_latest_findings(db_path)
+    assert len(latest) == 1
+    assert latest[0]["market_id"] == "clarity-act-2026"
+    assert latest[0]["outcome"] == "YES"
+    assert latest[0]["review_status"] == "Pending"
+    os.remove(db_path)
+
+
+def test_latest_finding_is_most_recent_run():
+    db_path = make_temp_db()
+    v1 = Verdict(outcome="UNCLEAR", confidence=0.2, evidence_snippet=None,
+                 source_url=None, source_type=None)
+    v2 = Verdict(outcome="YES", confidence=0.9, evidence_snippet="signed",
+                 source_url="https://congress.gov/x", source_type="primary")
+    save_finding(db_path, "clarity-act-2026", "2026-08-10T00:00:00", v1)
+    save_finding(db_path, "clarity-act-2026", "2026-08-10T06:00:00", v2)
+
+    latest = get_latest_findings(db_path)
+    assert len(latest) == 1
+    assert latest[0]["outcome"] == "YES"
+
+    history = get_history(db_path, "clarity-act-2026")
+    assert len(history) == 2
+    os.remove(db_path)
+
+
+def test_set_review_status():
+    db_path = make_temp_db()
+    verdict = Verdict(outcome="NO", confidence=0.7, evidence_snippet="not signed",
+                       source_url="https://reuters.com/x", source_type="credible_backup")
+    finding_id = save_finding(db_path, "clarity-act-2026", "2026-08-10T00:00:00", verdict)
+    set_review_status(db_path, finding_id, "Confirmed")
+
+    latest = get_latest_findings(db_path)
+    assert latest[0]["review_status"] == "Confirmed"
+    os.remove(db_path)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_storage.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.storage'`
+
+- [ ] **Step 3: Implement storage**
+
+```python
+# resolution_finder/storage.py
+import sqlite3
+from resolution_finder.models import Verdict
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    market_id TEXT NOT NULL,
+    run_timestamp TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    evidence_snippet TEXT,
+    source_url TEXT,
+    source_type TEXT,
+    review_status TEXT NOT NULL DEFAULT 'Pending'
+);
+"""
+
+
+def init_db(db_path: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(SCHEMA)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_finding(db_path: str, market_id: str, run_timestamp: str, verdict: Verdict) -> int:
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO findings
+                (market_id, run_timestamp, outcome, confidence, evidence_snippet,
+                 source_url, source_type, review_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending')
+            """,
+            (market_id, run_timestamp, verdict.outcome, verdict.confidence,
+             verdict.evidence_snippet, verdict.source_url, verdict.source_type),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def _row_to_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "market_id": row["market_id"],
+        "run_timestamp": row["run_timestamp"],
+        "outcome": row["outcome"],
+        "confidence": row["confidence"],
+        "evidence_snippet": row["evidence_snippet"],
+        "source_url": row["source_url"],
+        "source_type": row["source_type"],
+        "review_status": row["review_status"],
+    }
+
+
+def get_latest_findings(db_path: str) -> list[dict]:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT f.* FROM findings f
+            INNER JOIN (
+                SELECT market_id, MAX(run_timestamp) AS max_ts
+                FROM findings GROUP BY market_id
+            ) latest
+            ON f.market_id = latest.market_id AND f.run_timestamp = latest.max_ts
+            ORDER BY f.confidence DESC
+            """
+        ).fetchall()
+        return [_row_to_dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_history(db_path: str, market_id: str) -> list[dict]:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT * FROM findings WHERE market_id = ? ORDER BY run_timestamp DESC",
+            (market_id,),
+        ).fetchall()
+        return [_row_to_dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def set_review_status(db_path: str, finding_id: int, status: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE findings SET review_status = ? WHERE id = ?", (status, finding_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_storage.py -v`
+Expected: PASS (3 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/storage.py tests/test_storage.py
+git commit -m "feat: add SQLite storage layer for findings"
+```
+
+---
+
+### Task 3: Market Provider
+
+**Files:**
+- Create: `resolution_finder/market_provider.py`
+- Create: `data/markets.json`
+- Test: `tests/test_market_provider.py`
+
+**Interfaces:**
+- Consumes: `Market` (Task 1).
+- Produces: `MarketProvider` (protocol), `JsonFileMarketProvider(json_path).get_unresolved_markets() -> list[Market]`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_market_provider.py
+import json
+import os
+import tempfile
+from resolution_finder.market_provider import JsonFileMarketProvider
+
+
+def make_temp_markets_file(markets):
+    fd, path = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w") as f:
+        json.dump(markets, f)
+    return path
+
+
+def test_loads_binary_market():
+    path = make_temp_markets_file([
+        {
+            "id": "m1",
+            "title": "Will X happen?",
+            "description": "Resolves Yes if X happens by 2026-12-31.",
+            "options": [],
+            "close_date": "2026-12-31",
+        }
+    ])
+    provider = JsonFileMarketProvider(path)
+    markets = provider.get_unresolved_markets()
+    assert len(markets) == 1
+    assert markets[0].id == "m1"
+    assert markets[0].options == []
+    os.remove(path)
+
+
+def test_loads_multi_outcome_market():
+    path = make_temp_markets_file([
+        {
+            "id": "m2",
+            "title": "Who will win?",
+            "description": "Resolves based on winner.",
+            "options": ["A", "B"],
+            "close_date": "2027-01-01",
+        }
+    ])
+    provider = JsonFileMarketProvider(path)
+    markets = provider.get_unresolved_markets()
+    assert markets[0].options == ["A", "B"]
+    os.remove(path)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_market_provider.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.market_provider'`
+
+- [ ] **Step 3: Implement the market provider**
+
+```python
+# resolution_finder/market_provider.py
+import json
+from datetime import date
+from typing import Protocol
+from resolution_finder.models import Market
+
+
+class MarketProvider(Protocol):
+    def get_unresolved_markets(self) -> list[Market]: ...
+
+
+class JsonFileMarketProvider:
+    def __init__(self, json_path: str):
+        self.json_path = json_path
+
+    def get_unresolved_markets(self) -> list[Market]:
+        with open(self.json_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        return [
+            Market(
+                id=item["id"],
+                title=item["title"],
+                description=item["description"],
+                options=item.get("options", []),
+                close_date=date.fromisoformat(item["close_date"]),
+            )
+            for item in raw
+        ]
+```
+
+- [ ] **Step 4: Create the real markets file with your two known examples**
+
+```json
+[
+  {
+    "id": "clarity-act-2026",
+    "title": "Will the CLARITY act be signed into law in 2026?",
+    "description": "This market resolves to \"Yes\" if the Digital Asset Market Clarity Act of 2025 (H.R. 3633) is approved by both the U.S. House of Representatives and the U.S. Senate, and is signed into law no later than December 31, 2026, at 11:59 PM ET. If these conditions are not met by the deadline, the market resolves to \"No\". The primary resolution source will be the legislation tracker on Congress.gov, along with other official information published by the United States government. If necessary, a consensus of credible reporting may also be used to determine the outcome.",
+    "options": [],
+    "close_date": "2026-12-31"
+  },
+  {
+    "id": "nobel-peace-2026",
+    "title": "Who will win the 2026 Nobel Peace Prize?",
+    "description": "This market will be settled based on the recipient of the 2026 Nobel Peace Prize officially announced by the Norwegian Nobel Committee. The listed person or entity that receives the 2026 Nobel Peace Prize will resolve to \"Yes\", and all other listed outcomes will resolve to \"No\". If multiple listed individuals or entities jointly receive the prize, the listed individual whose last name, or the entity whose name, comes first alphabetically will resolve to \"Yes\", and all other listed recipients will resolve to \"No\". If none of the listed individuals or entities receive the prize, all listed outcomes will resolve to \"No\". If the 2026 Nobel Peace Prize has not been officially announced by March 31, 2027, 11:59 PM ET, all listed outcomes will resolve to \"No\". The market will use the first official announcement issued by the Norwegian Nobel Committee as its resolution source.",
+    "options": ["Yulia Navalnaya", "Volodymyr Zelenskyy", "UNRWA", "Pope Leo XIV", "Donald Trump"],
+    "close_date": "2027-03-31"
+  }
+]
+```
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `pytest tests/test_market_provider.py -v`
+Expected: PASS (2 passed)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add resolution_finder/market_provider.py data/markets.json tests/test_market_provider.py
+git commit -m "feat: add JSON-file-backed market provider"
+```
+
+---
+
+### Task 4: Query Builder
+
+**Files:**
+- Create: `resolution_finder/query_builder.py`
+- Test: `tests/test_query_builder.py`
+
+**Interfaces:**
+- Consumes: `Market` (Task 1).
+- Produces: `extract_urls(text: str) -> list[str]`, `build_queries(market: Market) -> list[str]`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_query_builder.py
+from datetime import date
+from resolution_finder.models import Market
+from resolution_finder.query_builder import extract_urls, build_queries
+
+CLARITY_MARKET = Market(
+    id="clarity-act-2026",
+    title="Will the CLARITY act be signed into law in 2026?",
+    description=(
+        "This market resolves to \"Yes\" if the Digital Asset Market Clarity Act "
+        "of 2025 (H.R. 3633) is approved by both the U.S. House of Representatives "
+        "and the U.S. Senate. The primary resolution source will be the legislation "
+        "tracker on https://www.congress.gov/bill/119th-congress/house-bill/3633."
+    ),
+    options=[],
+    close_date=date(2026, 12, 31),
+)
+
+NOBEL_MARKET = Market(
+    id="nobel-peace-2026",
+    title="Who will win the 2026 Nobel Peace Prize?",
+    description="This market will be settled by the Norwegian Nobel Committee.",
+    options=["Yulia Navalnaya", "Volodymyr Zelenskyy", "UNRWA", "Pope Leo XIV", "Donald Trump"],
+    close_date=date(2027, 3, 31),
+)
+
+
+def test_extract_urls_finds_congress_link_without_trailing_period():
+    urls = extract_urls(CLARITY_MARKET.description)
+    assert urls == ["https://www.congress.gov/bill/119th-congress/house-bill/3633"]
+
+
+def test_build_queries_includes_title():
+    queries = build_queries(CLARITY_MARKET)
+    assert CLARITY_MARKET.title in queries
+
+
+def test_build_queries_includes_each_option():
+    queries = build_queries(NOBEL_MARKET)
+    for option in NOBEL_MARKET.options:
+        assert any(option in q for q in queries)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_query_builder.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.query_builder'`
+
+- [ ] **Step 3: Implement the query builder**
+
+```python
+# resolution_finder/query_builder.py
+import re
+import spacy
+from resolution_finder.models import Market
+from resolution_finder.config import SPACY_MODEL_NAME
+
+_nlp = None
+
+URL_PATTERN = re.compile(r"https?://[^\s)]+")
+
+
+def _get_nlp():
+    global _nlp
+    if _nlp is None:
+        _nlp = spacy.load(SPACY_MODEL_NAME)
+    return _nlp
+
+
+def extract_urls(text: str) -> list[str]:
+    raw = URL_PATTERN.findall(text)
+    return [u.rstrip(".,;:)") for u in raw]
+
+
+def extract_entities(text: str) -> list[str]:
+    doc = _get_nlp()(text)
+    seen = []
+    for ent in doc.ents:
+        if ent.label_ in {"PERSON", "ORG", "GPE", "LAW", "EVENT"} and ent.text not in seen:
+            seen.append(ent.text)
+    return seen
+
+
+def build_queries(market: Market) -> list[str]:
+    queries = [market.title]
+    entities = extract_entities(market.description)
+    if entities:
+        queries.append(" ".join(entities[:3]) + " " + market.title.split("?")[0])
+    for option in market.options:
+        queries.append(f"{option} {market.title}")
+    return queries
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_query_builder.py -v`
+Expected: PASS (3 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/query_builder.py tests/test_query_builder.py
+git commit -m "feat: add query builder for URL and entity extraction"
+```
+
+---
+
+### Task 5: Source config and named-source resolution
+
+**Files:**
+- Create: `resolution_finder/source_config.py`
+- Test: `tests/test_source_config.py`
+
+**Interfaces:**
+- Consumes: `extract_urls` (Task 4).
+- Produces: `TIER1_DOMAINS: dict`, `TIER2_OUTLETS: list[str]`, `resolve_named_source(description: str) -> Optional[str]` (returns a literal URL, a domain string, or `None`).
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_source_config.py
+from resolution_finder.source_config import resolve_named_source
+
+
+def test_resolves_literal_url_first():
+    description = "See https://www.congress.gov/bill/119th-congress/house-bill/3633 for status."
+    assert resolve_named_source(description) == "https://www.congress.gov/bill/119th-congress/house-bill/3633"
+
+
+def test_resolves_named_organization_to_domain():
+    description = (
+        "This market will be settled based on the recipient of the 2026 Nobel "
+        "Peace Prize officially announced by the Norwegian Nobel Committee."
+    )
+    assert resolve_named_source(description) == "nobelprize.org"
+
+
+def test_returns_none_when_no_named_source():
+    description = "This market resolves based on consensus of credible reporting."
+    assert resolve_named_source(description) is None
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_source_config.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.source_config'`
+
+- [ ] **Step 3: Implement source config**
+
+```python
+# resolution_finder/source_config.py
+from typing import Optional
+from resolution_finder.query_builder import extract_urls
+
+TIER1_DOMAINS = {
+    "congress.gov": "congress.gov",
+    "u.s. congress": "congress.gov",
+    "house of representatives": "congress.gov",
+    "norwegian nobel committee": "nobelprize.org",
+    "nobel committee": "nobelprize.org",
+    "sec.gov": "sec.gov",
+    "securities and exchange commission": "sec.gov",
+}
+
+TIER2_OUTLETS = [
+    "reuters.com",
+    "apnews.com",
+    "bbc.com",
+    "afp.com",
+    "npr.org",
+]
+
+# Reference only — NOT fetched automatically. Official X/Twitter accounts are a
+# legitimate high-value source, but X's API has no free tier (paid plans start
+# around $100/month) and scraping x.com directly is unreliable and against its
+# terms of service. Kept here so reviewers know which handle to check by hand
+# during manual review; wiring this up is future work only if that changes.
+TIER1_SOCIAL_ACCOUNTS = {
+    "congress.gov": "@HouseFloor",
+    "norwegian nobel committee": "@NobelPrize",
+    "sec.gov": "@SECGov",
+}
+
+
+def resolve_named_source(description: str) -> Optional[str]:
+    urls = extract_urls(description)
+    if urls:
+        return urls[0]
+    lowered = description.lower()
+    for phrase, domain in TIER1_DOMAINS.items():
+        if phrase in lowered:
+            return domain
+    return None
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_source_config.py -v`
+Expected: PASS (3 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/source_config.py tests/test_source_config.py
+git commit -m "feat: add tiered source config and named-source resolution"
+```
+
+---
+
+### Task 6: Evidence Retriever
+
+**Files:**
+- Create: `resolution_finder/evidence_retriever.py`
+- Test: `tests/test_evidence_retriever.py`
+
+**Interfaces:**
+- Consumes: `Market`, `ArticleRef` (Task 1); `resolve_named_source`, `TIER2_OUTLETS` (Task 5); `REQUEST_DELAY_SECONDS` (Task 1 config).
+- Produces: `search_google_news_rss(query, site=None) -> list[ArticleRef]`, `retrieve_evidence(market, queries) -> list[ArticleRef]`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_evidence_retriever.py
+from unittest.mock import patch, MagicMock
+from datetime import date
+from resolution_finder.models import Market
+from resolution_finder.evidence_retriever import search_google_news_rss, retrieve_evidence
+
+CLARITY_MARKET = Market(
+    id="clarity-act-2026",
+    title="Will the CLARITY act be signed into law in 2026?",
+    description="Primary resolution source: Congress.gov legislation tracker.",
+    options=[],
+    close_date=date(2026, 12, 31),
+)
+
+
+def make_fake_feed(entries):
+    feed = MagicMock()
+    feed.entries = entries
+    return feed
+
+
+def make_entry(link, title):
+    entry = MagicMock()
+    entry.link = link
+    entry.title = title
+    return entry
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_google_news_rss_tags_whitelisted_source(mock_parse):
+    mock_parse.return_value = make_fake_feed([
+        make_entry("https://www.reuters.com/article/x", "Reuters headline"),
+        make_entry("https://randomblog.com/article/y", "Random headline"),
+    ])
+    results = search_google_news_rss("CLARITY act")
+    assert results[0].source_type == "credible_backup"
+    assert results[1].source_type == "general"
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_uses_tier1_domain_scoped_search(mock_parse, mock_sleep):
+    mock_parse.return_value = make_fake_feed([
+        make_entry("https://www.congress.gov/bill/3633", "Bill status"),
+    ])
+    evidence = retrieve_evidence(CLARITY_MARKET, ["CLARITY act"])
+    assert any(e.source_type == "primary" for e in evidence)
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_deduplicates_urls(mock_parse, mock_sleep):
+    mock_parse.return_value = make_fake_feed([
+        make_entry("https://www.reuters.com/article/x", "Reuters headline"),
+    ])
+    evidence = retrieve_evidence(CLARITY_MARKET, ["CLARITY act", "CLARITY act status"])
+    urls = [e.url for e in evidence]
+    assert len(urls) == len(set(urls))
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_evidence_retriever.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.evidence_retriever'`
+
+- [ ] **Step 3: Implement the evidence retriever**
+
+```python
+# resolution_finder/evidence_retriever.py
+import time
+from typing import Optional
+from urllib.parse import quote_plus
+import feedparser
+from resolution_finder.models import Market, ArticleRef
+from resolution_finder.source_config import resolve_named_source, TIER2_OUTLETS
+from resolution_finder.config import REQUEST_DELAY_SECONDS
+
+GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+
+
+def _is_whitelisted(url: str) -> bool:
+    return any(outlet in url for outlet in TIER2_OUTLETS)
+
+
+def search_google_news_rss(query: str, site: Optional[str] = None) -> list[ArticleRef]:
+    full_query = f"{query} site:{site}" if site else query
+    url = GOOGLE_NEWS_RSS.format(query=quote_plus(full_query))
+    feed = feedparser.parse(url)
+    results = []
+    for entry in feed.entries:
+        source_type = "credible_backup" if _is_whitelisted(entry.link) else "general"
+        results.append(ArticleRef(url=entry.link, title=entry.title, source_type=source_type))
+    return results
+
+
+def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
+    evidence: list[ArticleRef] = []
+    named_source = resolve_named_source(market.description)
+
+    if named_source and named_source.startswith("http"):
+        evidence.append(ArticleRef(url=named_source, title="Named resolution source", source_type="primary"))
+    elif named_source:
+        for query in queries:
+            for ref in search_google_news_rss(query, site=named_source):
+                evidence.append(ArticleRef(url=ref.url, title=ref.title, source_type="primary"))
+            time.sleep(REQUEST_DELAY_SECONDS)
+
+    for query in queries:
+        for ref in search_google_news_rss(query):
+            if ref.source_type == "credible_backup":
+                evidence.append(ref)
+        time.sleep(REQUEST_DELAY_SECONDS)
+
+    seen_urls = set()
+    deduped = []
+    for ref in evidence:
+        if ref.url not in seen_urls:
+            seen_urls.add(ref.url)
+            deduped.append(ref)
+    return deduped
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_evidence_retriever.py -v`
+Expected: PASS (3 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/evidence_retriever.py tests/test_evidence_retriever.py
+git commit -m "feat: add tiered evidence retriever using Google News RSS"
+```
+
+---
+
+### Task 7: Article Extractor
+
+**Files:**
+- Create: `resolution_finder/article_extractor.py`
+- Test: `tests/test_article_extractor.py`
+
+**Interfaces:**
+- Produces: `extract_article_text(url: str, timeout: int = 10) -> Optional[str]`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_article_extractor.py
+from unittest.mock import patch, MagicMock
+import requests
+from resolution_finder.article_extractor import extract_article_text
+
+
+@patch("resolution_finder.article_extractor.trafilatura.extract")
+@patch("resolution_finder.article_extractor.requests.get")
+def test_extract_article_text_returns_clean_text(mock_get, mock_extract):
+    mock_response = MagicMock()
+    mock_response.text = "<html>...</html>"
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+    mock_extract.return_value = "The bill was signed into law today."
+
+    result = extract_article_text("https://example.com/article")
+    assert result == "The bill was signed into law today."
+
+
+@patch("resolution_finder.article_extractor.requests.get")
+def test_extract_article_text_returns_none_on_network_error(mock_get):
+    mock_get.side_effect = requests.ConnectionError("failed")
+    result = extract_article_text("https://example.com/article")
+    assert result is None
+
+
+@patch("resolution_finder.article_extractor.trafilatura.extract")
+@patch("resolution_finder.article_extractor.requests.get")
+def test_extract_article_text_returns_none_when_no_content_extracted(mock_get, mock_extract):
+    mock_response = MagicMock()
+    mock_response.text = "<html></html>"
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+    mock_extract.return_value = None
+
+    result = extract_article_text("https://example.com/empty")
+    assert result is None
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_article_extractor.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.article_extractor'`
+
+- [ ] **Step 3: Implement the article extractor**
+
+```python
+# resolution_finder/article_extractor.py
+from typing import Optional
+import requests
+import trafilatura
+
+
+def extract_article_text(url: str, timeout: int = 10) -> Optional[str]:
+    try:
+        response = requests.get(url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    text = trafilatura.extract(response.text)
+    if not text or not text.strip():
+        return None
+    return text
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_article_extractor.py -v`
+Expected: PASS (3 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/article_extractor.py tests/test_article_extractor.py
+git commit -m "feat: add article text extractor with failure handling"
+```
+
+---
+
+### Task 8: Relevance Ranker
+
+**Files:**
+- Create: `resolution_finder/relevance_ranker.py`
+- Test: `tests/test_relevance_ranker.py`
+
+**Interfaces:**
+- Consumes: `Market`, `ArticleRef`, `RankedArticle` (Task 1); `EMBEDDING_MODEL_NAME`, `SIMILARITY_THRESHOLD` (Task 1 config).
+- Produces: `rank_by_relevance(market, articles: list[tuple[ArticleRef, str]], threshold=SIMILARITY_THRESHOLD) -> list[RankedArticle]`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_relevance_ranker.py
+from unittest.mock import patch, MagicMock
+from datetime import date
+from resolution_finder.models import Market, ArticleRef
+from resolution_finder.relevance_ranker import rank_by_relevance
+
+MARKET = Market(
+    id="m1", title="Will X happen?", description="Resolves Yes if X.",
+    options=[], close_date=date(2026, 12, 31),
+)
+
+
+@patch("resolution_finder.relevance_ranker.util.cos_sim")
+@patch("resolution_finder.relevance_ranker._get_model")
+def test_filters_below_threshold(mock_get_model, mock_cos_sim):
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.side_effect = [[[0.9]], [[0.1]]]
+
+    articles = [
+        (ArticleRef(url="https://a.com", title="A", source_type="primary"), "relevant text"),
+        (ArticleRef(url="https://b.com", title="B", source_type="general"), "irrelevant text"),
+    ]
+    ranked = rank_by_relevance(MARKET, articles, threshold=0.35)
+    assert len(ranked) == 1
+    assert ranked[0].article.url == "https://a.com"
+
+
+@patch("resolution_finder.relevance_ranker.util.cos_sim")
+@patch("resolution_finder.relevance_ranker._get_model")
+def test_sorts_by_similarity_descending(mock_get_model, mock_cos_sim):
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.side_effect = [[[0.5]], [[0.8]]]
+
+    articles = [
+        (ArticleRef(url="https://a.com", title="A", source_type="primary"), "text a"),
+        (ArticleRef(url="https://b.com", title="B", source_type="general"), "text b"),
+    ]
+    ranked = rank_by_relevance(MARKET, articles, threshold=0.35)
+    assert [r.article.url for r in ranked] == ["https://b.com", "https://a.com"]
+
+
+def test_empty_articles_returns_empty_list():
+    ranked = rank_by_relevance(MARKET, [])
+    assert ranked == []
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_relevance_ranker.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.relevance_ranker'`
+
+- [ ] **Step 3: Implement the relevance ranker**
+
+```python
+# resolution_finder/relevance_ranker.py
+from sentence_transformers import SentenceTransformer, util
+from resolution_finder.models import Market, ArticleRef, RankedArticle
+from resolution_finder.config import EMBEDDING_MODEL_NAME, SIMILARITY_THRESHOLD
+
+_model = None
+
+
+def _get_model():
+    global _model
+    if _model is None:
+        _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    return _model
+
+
+def rank_by_relevance(
+    market: Market,
+    articles: list[tuple[ArticleRef, str]],
+    threshold: float = SIMILARITY_THRESHOLD,
+) -> list[RankedArticle]:
+    if not articles:
+        return []
+
+    model = _get_model()
+    query_text = f"{market.title} {market.description}"
+    query_embedding = model.encode(query_text, convert_to_tensor=True)
+
+    ranked = []
+    for article_ref, text in articles:
+        article_embedding = model.encode(text, convert_to_tensor=True)
+        similarity = float(util.cos_sim(query_embedding, article_embedding)[0][0])
+        if similarity >= threshold:
+            ranked.append(RankedArticle(article=article_ref, text=text, similarity=similarity))
+
+    ranked.sort(key=lambda r: r.similarity, reverse=True)
+    return ranked
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_relevance_ranker.py -v`
+Expected: PASS (3 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/relevance_ranker.py tests/test_relevance_ranker.py
+git commit -m "feat: add embedding-based relevance ranker"
+```
+
+---
+
+### Task 9: Verdict Engine
+
+**Files:**
+- Create: `resolution_finder/verdict_engine.py`
+- Test: `tests/test_verdict_engine.py`
+
+**Interfaces:**
+- Consumes: `Market`, `RankedArticle`, `Verdict` (Task 1).
+- Produces: `decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_verdict_engine.py
+from datetime import date, timedelta
+from resolution_finder.models import Market, ArticleRef, RankedArticle
+from resolution_finder.verdict_engine import decide
+
+CLARITY_DESCRIPTION = (
+    "This market resolves to \"Yes\" if the Digital Asset Market Clarity Act "
+    "of 2025 (H.R. 3633) is approved by both the U.S. House of Representatives "
+    "and the U.S. Senate, and is signed into law no later than December 31, 2026, "
+    "at 11:59 PM ET. If these conditions are not met by the deadline, the market "
+    "resolves to \"No\"."
+)
+
+CLARITY_MARKET = Market(
+    id="clarity-act-2026",
+    title="Will the CLARITY act be signed into law in 2026?",
+    description=CLARITY_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=365),
+)
+
+NOBEL_MARKET = Market(
+    id="nobel-peace-2026",
+    title="Who will win the 2026 Nobel Peace Prize?",
+    description="Settled based on the recipient officially announced by the Norwegian Nobel Committee.",
+    options=["Yulia Navalnaya", "Volodymyr Zelenskyy", "UNRWA", "Pope Leo XIV", "Donald Trump"],
+    close_date=date.today() + timedelta(days=365),
+)
+
+
+def make_ranked(text, url="https://congress.gov/bill/3633", source_type="primary", similarity=0.8):
+    return RankedArticle(
+        article=ArticleRef(url=url, title="t", source_type=source_type),
+        text=text,
+        similarity=similarity,
+    )
+
+
+def test_binary_market_resolves_yes_on_keyword_match():
+    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "YES"
+    assert verdict.source_url == "https://congress.gov/bill/3633"
+
+
+def test_binary_market_applies_stated_default_after_deadline():
+    past_deadline_market = Market(
+        id="clarity-act-2026",
+        title=CLARITY_MARKET.title,
+        description=CLARITY_DESCRIPTION,
+        options=[],
+        close_date=date.today() - timedelta(days=1),
+    )
+    verdict = decide(past_deadline_market, [])
+    assert verdict.outcome == "NO"
+
+
+def test_binary_market_unclear_when_evidence_inconclusive():
+    evidence = [make_ranked("The committee discussed the bill's implications for markets.")]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_binary_market_no_evidence():
+    verdict = decide(CLARITY_MARKET, [])
+    assert verdict.outcome == "NO_EVIDENCE"
+
+
+def test_multi_outcome_market_picks_matching_option():
+    evidence = [make_ranked(
+        "The Norwegian Nobel Committee announced that the prize is awarded to Pope Leo XIV.",
+        url="https://nobelprize.org/announcement",
+    )]
+    verdict = decide(NOBEL_MARKET, evidence)
+    assert verdict.outcome == "Pope Leo XIV"
+
+
+def test_multi_outcome_market_unclear_when_no_option_matches():
+    evidence = [make_ranked("The Nobel Committee will announce the winner next week.")]
+    verdict = decide(NOBEL_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_verdict_engine.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.verdict_engine'`
+
+- [ ] **Step 3: Implement the verdict engine**
+
+```python
+# resolution_finder/verdict_engine.py
+import re
+from datetime import date
+from typing import Optional
+from resolution_finder.models import Market, RankedArticle, Verdict
+
+DEFAULT_OUTCOME_PATTERN = re.compile(
+    r"not met.{0,80}?resolves? to \"(Yes|No)\"", re.IGNORECASE | re.DOTALL
+)
+
+BINARY_YES_KEYWORDS = ["signed into law", "became law", "enacted", "approved by both"]
+ANNOUNCEMENT_KEYWORDS = ["awarded to", "wins", "winner is", "named recipient", "recipient is"]
+
+
+def _extract_default_outcome(description: str) -> Optional[str]:
+    match = DEFAULT_OUTCOME_PATTERN.search(description)
+    if match:
+        return match.group(1).upper()
+    return None
+
+
+def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+    for item in ranked_evidence:
+        lowered = item.text.lower()
+        if any(keyword in lowered for keyword in BINARY_YES_KEYWORDS):
+            return Verdict(
+                outcome="YES",
+                confidence=item.similarity,
+                evidence_snippet=item.text[:280],
+                source_url=item.article.url,
+                source_type=item.article.source_type,
+            )
+
+    default_outcome = _extract_default_outcome(market.description)
+    if default_outcome and date.today() > market.close_date:
+        return Verdict(
+            outcome=default_outcome,
+            confidence=0.5,
+            evidence_snippet="Deadline passed with no matching evidence; applying stated default.",
+            source_url=None,
+            source_type=None,
+        )
+
+    if ranked_evidence:
+        top = ranked_evidence[0]
+        return Verdict(
+            outcome="UNCLEAR",
+            confidence=top.similarity,
+            evidence_snippet=top.text[:280],
+            source_url=top.article.url,
+            source_type=top.article.source_type,
+        )
+
+    return Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                    source_url=None, source_type=None)
+
+
+def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+    for item in ranked_evidence:
+        lowered = item.text.lower()
+        for option in market.options:
+            option_lower = option.lower()
+            for keyword in ANNOUNCEMENT_KEYWORDS:
+                pattern = re.compile(
+                    rf"{re.escape(option_lower)}.{{0,40}}{re.escape(keyword)}|"
+                    rf"{re.escape(keyword)}.{{0,40}}{re.escape(option_lower)}"
+                )
+                if pattern.search(lowered):
+                    return Verdict(
+                        outcome=option,
+                        confidence=item.similarity,
+                        evidence_snippet=item.text[:280],
+                        source_url=item.article.url,
+                        source_type=item.article.source_type,
+                    )
+
+    if ranked_evidence:
+        top = ranked_evidence[0]
+        return Verdict(outcome="UNCLEAR", confidence=top.similarity,
+                        evidence_snippet=top.text[:280], source_url=top.article.url,
+                        source_type=top.article.source_type)
+
+    return Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                    source_url=None, source_type=None)
+
+
+def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+    if market.options:
+        return _decide_multi_outcome(market, ranked_evidence)
+    return _decide_binary(market, ranked_evidence)
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_verdict_engine.py -v`
+Expected: PASS (6 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/verdict_engine.py tests/test_verdict_engine.py
+git commit -m "feat: add rule-based verdict engine for binary and multi-outcome markets"
+```
+
+---
+
+### Task 10: Pipeline wiring
+
+**Files:**
+- Create: `resolution_finder/pipeline.py`
+- Create: `run_scan.py`
+- Test: `tests/test_pipeline.py`
+
+**Interfaces:**
+- Consumes: `MarketProvider` (Task 3), `build_queries` (Task 4), `retrieve_evidence` (Task 6), `extract_article_text` (Task 7), `rank_by_relevance` (Task 8), `decide` (Task 9), `init_db`/`save_finding` (Task 2), `REQUEST_DELAY_SECONDS`/`DB_PATH`/`MARKETS_JSON_PATH` (Task 1 config).
+- Produces: `run_pipeline(market_provider, db_path) -> None`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_pipeline.py
+import os
+import tempfile
+from unittest.mock import patch
+from datetime import date, timedelta
+from resolution_finder.models import Market, ArticleRef
+from resolution_finder.pipeline import run_pipeline
+from resolution_finder.storage import get_latest_findings
+
+
+class FakeMarketProvider:
+    def get_unresolved_markets(self):
+        return [
+            Market(
+                id="clarity-act-2026",
+                title="Will the CLARITY act be signed into law in 2026?",
+                description="If these conditions are not met by the deadline, the market resolves to \"No\".",
+                options=[],
+                close_date=date.today() + timedelta(days=365),
+            )
+        ]
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_writes_a_finding_per_market(mock_retrieve, mock_extract, mock_rank, mock_sleep):
+    mock_retrieve.return_value = [
+        ArticleRef(url="https://congress.gov/bill/3633", title="t", source_type="primary")
+    ]
+    mock_extract.return_value = "The bill was signed into law today."
+    mock_rank.return_value = []
+
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+
+    run_pipeline(FakeMarketProvider(), db_path)
+
+    findings = get_latest_findings(db_path)
+    assert len(findings) == 1
+    assert findings[0]["market_id"] == "clarity-act-2026"
+    os.remove(db_path)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_pipeline.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.pipeline'`
+
+- [ ] **Step 3: Implement the pipeline and entry point**
+
+```python
+# resolution_finder/pipeline.py
+import time
+from datetime import datetime, timezone
+from resolution_finder.market_provider import MarketProvider
+from resolution_finder.query_builder import build_queries
+from resolution_finder.evidence_retriever import retrieve_evidence
+from resolution_finder.article_extractor import extract_article_text
+from resolution_finder.relevance_ranker import rank_by_relevance
+from resolution_finder.verdict_engine import decide
+from resolution_finder.storage import init_db, save_finding
+from resolution_finder.config import REQUEST_DELAY_SECONDS
+
+
+def run_pipeline(market_provider: MarketProvider, db_path: str) -> None:
+    init_db(db_path)
+    run_timestamp = datetime.now(timezone.utc).isoformat()
+
+    for market in market_provider.get_unresolved_markets():
+        queries = build_queries(market)
+        candidate_refs = retrieve_evidence(market, queries)
+
+        articles_with_text = []
+        for ref in candidate_refs:
+            text = extract_article_text(ref.url)
+            if text:
+                articles_with_text.append((ref, text))
+            time.sleep(REQUEST_DELAY_SECONDS)
+
+        ranked = rank_by_relevance(market, articles_with_text)
+        verdict = decide(market, ranked)
+        save_finding(db_path, market.id, run_timestamp, verdict)
+```
+
+```python
+# run_scan.py
+from resolution_finder.market_provider import JsonFileMarketProvider
+from resolution_finder.pipeline import run_pipeline
+from resolution_finder.config import DB_PATH, MARKETS_JSON_PATH
+
+
+def main():
+    provider = JsonFileMarketProvider(MARKETS_JSON_PATH)
+    run_pipeline(provider, DB_PATH)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_pipeline.py -v`
+Expected: PASS (1 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/pipeline.py run_scan.py tests/test_pipeline.py
+git commit -m "feat: wire pipeline stages together with a runnable entry point"
+```
+
+- [ ] **Step 6: Register the scheduled run (Windows Task Scheduler)**
+
+Open Task Scheduler, create a new task that runs:
+
+```
+python "C:\Users\liam\Documents\Resolution Finder\run_scan.py"
+```
+
+Set the trigger to repeat every few hours (or daily), with "Start in" set to the project directory so relative paths (`data/markets.json`, `data/resolution_finder.db`) resolve correctly. This is a one-time manual setup step, not part of the codebase.
+
+---
+
+### Task 11: Dashboard
+
+**Files:**
+- Create: `resolution_finder/dashboard.py`
+- Create: `resolution_finder/templates/index.html`
+- Test: `tests/test_dashboard.py`
+
+**Interfaces:**
+- Consumes: `get_latest_findings`, `set_review_status` (Task 2).
+- Produces: `create_app(db_path: str) -> Flask`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_dashboard.py
+import os
+import tempfile
+from resolution_finder.storage import init_db, save_finding
+from resolution_finder.models import Verdict
+from resolution_finder.dashboard import create_app
+
+
+def make_temp_db_with_finding():
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(path)
+    init_db(path)
+    verdict = Verdict(outcome="YES", confidence=0.8, evidence_snippet="signed into law",
+                       source_url="https://congress.gov/x", source_type="primary")
+    finding_id = save_finding(path, "clarity-act-2026", "2026-08-10T00:00:00", verdict)
+    return path, finding_id
+
+
+def test_index_lists_findings():
+    db_path, _ = make_temp_db_with_finding()
+    app = create_app(db_path)
+    client = app.test_client()
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b"clarity-act-2026" in response.data
+    assert b"YES" in response.data
+    os.remove(db_path)
+
+
+def test_review_updates_status_and_redirects():
+    db_path, finding_id = make_temp_db_with_finding()
+    app = create_app(db_path)
+    client = app.test_client()
+
+    response = client.post(f"/review/{finding_id}", data={"status": "Confirmed"})
+    assert response.status_code == 302
+
+    response = client.get("/")
+    assert b"Confirmed" in response.data
+    os.remove(db_path)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_dashboard.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'resolution_finder.dashboard'`
+
+- [ ] **Step 3: Implement the dashboard**
+
+```python
+# resolution_finder/dashboard.py
+from flask import Flask, render_template, request, redirect, url_for
+from resolution_finder.storage import get_latest_findings, set_review_status
+
+
+def create_app(db_path: str) -> Flask:
+    app = Flask(__name__)
+
+    @app.route("/")
+    def index():
+        findings = get_latest_findings(db_path)
+        return render_template("index.html", findings=findings)
+
+    @app.route("/review/<int:finding_id>", methods=["POST"])
+    def review(finding_id):
+        status = request.form["status"]
+        set_review_status(db_path, finding_id, status)
+        return redirect(url_for("index"))
+
+    return app
+```
+
+```html
+<!-- resolution_finder/templates/index.html -->
+<!doctype html>
+<html>
+<head><title>Resolution Finder — Review Queue</title></head>
+<body>
+  <h1>Review Queue</h1>
+  <table border="1">
+    <tr>
+      <th>Market</th><th>Outcome</th><th>Confidence</th><th>Evidence</th>
+      <th>Source</th><th>Status</th><th>Action</th>
+    </tr>
+    {% for f in findings %}
+    <tr>
+      <td>{{ f.market_id }}</td>
+      <td>{{ f.outcome }}</td>
+      <td>{{ "%.2f"|format(f.confidence) }}</td>
+      <td>{{ f.evidence_snippet or "-" }}</td>
+      <td>
+        {% if f.source_url %}<a href="{{ f.source_url }}">{{ f.source_type }}</a>{% else %}-{% endif %}
+      </td>
+      <td>{{ f.review_status }}</td>
+      <td>
+        <form method="post" action="{{ url_for('review', finding_id=f.id) }}">
+          <button name="status" value="Confirmed">Confirm</button>
+          <button name="status" value="Rejected">Reject</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/test_dashboard.py -v`
+Expected: PASS (2 passed)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resolution_finder/dashboard.py resolution_finder/templates/index.html tests/test_dashboard.py
+git commit -m "feat: add Flask review dashboard"
+```
+
+---
+
+### Task 12: End-to-end dry run against real data
+
+This task has no new code — it validates the whole pipeline against your real 62 markets.
+
+- [ ] **Step 1: Fill in the real markets**
+
+Edit `data/markets.json` and replace the two example entries with your actual 62 unresolved markets (title, description, options, close_date), following the same JSON shape used in Task 3.
+
+- [ ] **Step 2: Run the full test suite**
+
+Run: `pytest -v`
+Expected: All tests from Tasks 1–11 PASS.
+
+- [ ] **Step 3: Run a real scan**
+
+Run: `python run_scan.py`
+Expected: Completes without unhandled exceptions; `data/resolution_finder.db` is created/updated.
+
+- [ ] **Step 4: Start the dashboard and review the output**
+
+```bash
+python -c "from resolution_finder.dashboard import create_app; from resolution_finder.config import DB_PATH; create_app(DB_PATH).run(debug=True)"
+```
+
+Open `http://127.0.0.1:5000` and confirm every market appears with an outcome (`YES`/`NO`/an option name/`UNCLEAR`/`NO_EVIDENCE`).
+
+- [ ] **Step 5: Spot-check accuracy**
+
+Pick 5 markets whose real-world outcome you already know and confirm the dashboard's proposed verdict and evidence snippet agree with reality. Note any systematic misses (e.g., a keyword phrase this rule set doesn't catch) — those become follow-up `BINARY_YES_KEYWORDS`/`ANNOUNCEMENT_KEYWORDS` additions in `verdict_engine.py`, not new files.
+
+- [ ] **Step 6: Decide on markets.json and git**
+
+`data/markets.json` will contain real (possibly sensitive) market data once filled in. Either commit it if that's fine for this private repo, or add `data/markets.json` to a new `.gitignore` and commit an empty `data/markets.json.example` instead — your call at this point.
