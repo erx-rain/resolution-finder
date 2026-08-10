@@ -96,6 +96,7 @@ def test_market_creation():
 def test_article_ref_defaults():
     ref = ArticleRef(url="https://example.com/a", title="A", source_type="primary")
     assert ref.published_date is None
+    assert ref.summary is None
 
 
 def test_verdict_creation():
@@ -148,8 +149,11 @@ class Market:
 class ArticleRef:
     url: str
     title: str
-    source_type: str  # "primary", "credible_backup", or "general"
+    source_type: str  # "primary", "credible_backup", "official_social", or "general"
     published_date: Optional[date] = None
+    summary: Optional[str] = None  # search-result snippet text; used in place of a
+                                    # fetched page for "official_social" refs, since
+                                    # those URLs are never fetched directly
 
 
 @dataclass
@@ -666,13 +670,13 @@ git commit -m "feat: add query builder for URL and entity extraction"
 
 **Interfaces:**
 - Consumes: `extract_urls` (Task 4).
-- Produces: `TIER1_DOMAINS: dict`, `TIER2_OUTLETS: list[str]`, `resolve_named_source(description: str) -> Optional[str]` (returns a literal URL, a domain string, or `None`).
+- Produces: `TIER1_DOMAINS: dict`, `TIER2_OUTLETS: list[str]`, `TIER1_SOCIAL_ACCOUNTS: dict`, `resolve_named_source(description: str) -> Optional[str]` (returns a literal URL, a domain string, or `None`), `resolve_social_handle(description: str) -> Optional[str]` (returns an `@handle` string or `None`).
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/test_source_config.py
-from resolution_finder.source_config import resolve_named_source
+from resolution_finder.source_config import resolve_named_source, resolve_social_handle
 
 
 def test_resolves_literal_url_first():
@@ -691,6 +695,16 @@ def test_resolves_named_organization_to_domain():
 def test_returns_none_when_no_named_source():
     description = "This market resolves based on consensus of credible reporting."
     assert resolve_named_source(description) is None
+
+
+def test_resolves_social_handle_for_known_organization():
+    description = "Officially announced by the Norwegian Nobel Committee."
+    assert resolve_social_handle(description) == "@NobelPrize"
+
+
+def test_resolves_social_handle_returns_none_when_unknown():
+    description = "This market resolves based on consensus of credible reporting."
+    assert resolve_social_handle(description) is None
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -723,11 +737,13 @@ TIER2_OUTLETS = [
     "npr.org",
 ]
 
-# Reference only — NOT fetched automatically. Official X/Twitter accounts are a
-# legitimate high-value source, but X's API has no free tier (paid plans start
-# around $100/month) and scraping x.com directly is unreliable and against its
-# terms of service. Kept here so reviewers know which handle to check by hand
-# during manual review; wiring this up is future work only if that changes.
+# Official X/Twitter handles for named organizations. Used only to build a
+# site-scoped search query (see evidence_retriever.py) — the actual x.com page
+# is NEVER fetched. This is a best-effort, zero-cost lookup: it relies on
+# Google News RSS occasionally indexing a post, which is not guaranteed since
+# News RSS is scoped to news publishers, not general web/social content. Any
+# hit is surfaced to the reviewer as a link to check by hand, never treated as
+# confirmed evidence on its own.
 TIER1_SOCIAL_ACCOUNTS = {
     "congress.gov": "@HouseFloor",
     "norwegian nobel committee": "@NobelPrize",
@@ -744,18 +760,26 @@ def resolve_named_source(description: str) -> Optional[str]:
         if phrase in lowered:
             return domain
     return None
+
+
+def resolve_social_handle(description: str) -> Optional[str]:
+    lowered = description.lower()
+    for phrase, handle in TIER1_SOCIAL_ACCOUNTS.items():
+        if phrase in lowered:
+            return handle
+    return None
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_source_config.py -v`
-Expected: PASS (3 passed)
+Expected: PASS (5 passed)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add resolution_finder/source_config.py tests/test_source_config.py
-git commit -m "feat: add tiered source config and named-source resolution"
+git commit -m "feat: add tiered source config, named-source and social-handle resolution"
 ```
 
 ---
@@ -767,7 +791,7 @@ git commit -m "feat: add tiered source config and named-source resolution"
 - Test: `tests/test_evidence_retriever.py`
 
 **Interfaces:**
-- Consumes: `Market`, `ArticleRef` (Task 1); `resolve_named_source`, `TIER2_OUTLETS` (Task 5); `REQUEST_DELAY_SECONDS` (Task 1 config).
+- Consumes: `Market`, `ArticleRef` (Task 1); `resolve_named_source`, `resolve_social_handle`, `TIER2_OUTLETS` (Task 5); `REQUEST_DELAY_SECONDS` (Task 1 config).
 - Produces: `search_google_news_rss(query, site=None) -> list[ArticleRef]`, `retrieve_evidence(market, queries) -> list[ArticleRef]`.
 
 - [ ] **Step 1: Write the failing test**
@@ -831,6 +855,33 @@ def test_retrieve_evidence_deduplicates_urls(mock_parse, mock_sleep):
     evidence = retrieve_evidence(CLARITY_MARKET, ["CLARITY act", "CLARITY act status"])
     urls = [e.url for e in evidence]
     assert len(urls) == len(set(urls))
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_includes_social_search_for_known_organization(mock_parse, mock_sleep):
+    nobel_market = Market(
+        id="nobel-peace-2026",
+        title="Who will win the 2026 Nobel Peace Prize?",
+        description="Officially announced by the Norwegian Nobel Committee.",
+        options=["Pope Leo XIV"],
+        close_date=date(2027, 3, 31),
+    )
+    mock_parse.side_effect = [
+        make_fake_feed([]),  # Tier 1 domain-scoped search (nobelprize.org)
+        make_fake_feed([make_entry(
+            "https://x.com/NobelPrize/status/123",
+            "NobelPrize: The 2026 laureate is...",
+        )]),  # social search, scoped to x.com
+        make_fake_feed([]),  # Tier 2 general search
+    ]
+
+    evidence = retrieve_evidence(nobel_market, ["Nobel Peace Prize winner"])
+
+    social_hits = [e for e in evidence if e.source_type == "official_social"]
+    assert len(social_hits) == 1
+    assert social_hits[0].url == "https://x.com/NobelPrize/status/123"
+    assert social_hits[0].summary == "NobelPrize: The 2026 laureate is..."
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -847,7 +898,7 @@ from typing import Optional
 from urllib.parse import quote_plus
 import feedparser
 from resolution_finder.models import Market, ArticleRef
-from resolution_finder.source_config import resolve_named_source, TIER2_OUTLETS
+from resolution_finder.source_config import resolve_named_source, resolve_social_handle, TIER2_OUTLETS
 from resolution_finder.config import REQUEST_DELAY_SECONDS
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
@@ -880,6 +931,22 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
                 evidence.append(ArticleRef(url=ref.url, title=ref.title, source_type="primary"))
             time.sleep(REQUEST_DELAY_SECONDS)
 
+    # Best-effort only: this searches Google News RSS scoped to x.com for a
+    # known official handle, but never fetches the actual X page. News RSS is
+    # scoped to news publishers, so this frequently finds nothing — any hit
+    # is still surfaced to the reviewer as a link to verify by hand, never
+    # treated as confirmed evidence on its own (see source_config.py).
+    social_handle = resolve_social_handle(market.description)
+    if social_handle:
+        for ref in search_google_news_rss(f"{queries[0]} {social_handle}", site="x.com"):
+            evidence.append(ArticleRef(
+                url=ref.url,
+                title=ref.title,
+                source_type="official_social",
+                summary=ref.title,
+            ))
+        time.sleep(REQUEST_DELAY_SECONDS)
+
     for query in queries:
         for ref in search_google_news_rss(query):
             if ref.source_type == "credible_backup":
@@ -898,13 +965,13 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_evidence_retriever.py -v`
-Expected: PASS (3 passed)
+Expected: PASS (4 passed)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add resolution_finder/evidence_retriever.py tests/test_evidence_retriever.py
-git commit -m "feat: add tiered evidence retriever using Google News RSS"
+git commit -m "feat: add tiered evidence retriever with best-effort official-account search"
 ```
 
 ---
@@ -1392,6 +1459,33 @@ def test_run_pipeline_writes_a_finding_per_market(mock_retrieve, mock_extract, m
     assert len(findings) == 1
     assert findings[0]["market_id"] == "clarity-act-2026"
     os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_never_fetches_official_social_urls(mock_retrieve, mock_extract, mock_rank, mock_sleep):
+    mock_retrieve.return_value = [
+        ArticleRef(
+            url="https://x.com/NobelPrize/status/123",
+            title="NobelPrize post",
+            source_type="official_social",
+            summary="NobelPrize: The 2026 laureate is Pope Leo XIV.",
+        )
+    ]
+    mock_rank.return_value = []
+
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+
+    run_pipeline(FakeMarketProvider(), db_path)
+
+    mock_extract.assert_not_called()
+    articles_passed = mock_rank.call_args[0][1]
+    assert articles_passed[0][1] == "NobelPrize: The 2026 laureate is Pope Leo XIV."
+    os.remove(db_path)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1425,6 +1519,15 @@ def run_pipeline(market_provider: MarketProvider, db_path: str) -> None:
 
         articles_with_text = []
         for ref in candidate_refs:
+            if ref.source_type == "official_social":
+                # Never fetch the actual X page — only use the search-result
+                # snippet already captured by the retriever. The reviewer
+                # checks the real post by hand via the dashboard link.
+                text = ref.summary or ref.title
+                if text:
+                    articles_with_text.append((ref, text))
+                continue
+
             text = extract_article_text(ref.url)
             if text:
                 articles_with_text.append((ref, text))
@@ -1454,7 +1557,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_pipeline.py -v`
-Expected: PASS (1 passed)
+Expected: PASS (2 passed)
 
 - [ ] **Step 5: Commit**
 
@@ -1531,6 +1634,27 @@ def test_review_updates_status_and_redirects():
     response = client.get("/")
     assert b"Confirmed" in response.data
     os.remove(db_path)
+
+
+def test_index_flags_official_social_source_for_manual_verification():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    verdict = Verdict(outcome="Pope Leo XIV", confidence=0.5,
+                       evidence_snippet="NobelPrize: The 2026 laureate is Pope Leo XIV.",
+                       source_url="https://x.com/NobelPrize/status/123",
+                       source_type="official_social")
+    save_finding(db_path, "nobel-peace-2026", "2026-08-10T00:00:00", verdict)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"verify this is the real official account" in response.data
+    assert b"https://x.com/NobelPrize/status/123" in response.data
+    os.remove(db_path)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1582,7 +1706,13 @@ def create_app(db_path: str) -> Flask:
       <td>{{ "%.2f"|format(f.confidence) }}</td>
       <td>{{ f.evidence_snippet or "-" }}</td>
       <td>
-        {% if f.source_url %}<a href="{{ f.source_url }}">{{ f.source_type }}</a>{% else %}-{% endif %}
+        {% if f.source_url %}
+          {% if f.source_type == "official_social" %}
+            <a href="{{ f.source_url }}">verify this is the real official account</a>
+          {% else %}
+            <a href="{{ f.source_url }}">{{ f.source_type }}</a>
+          {% endif %}
+        {% else %}-{% endif %}
       </td>
       <td>{{ f.review_status }}</td>
       <td>
@@ -1601,13 +1731,13 @@ def create_app(db_path: str) -> Flask:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_dashboard.py -v`
-Expected: PASS (2 passed)
+Expected: PASS (3 passed)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add resolution_finder/dashboard.py resolution_finder/templates/index.html tests/test_dashboard.py
-git commit -m "feat: add Flask review dashboard"
+git commit -m "feat: add Flask review dashboard with official-account verification flag"
 ```
 
 ---

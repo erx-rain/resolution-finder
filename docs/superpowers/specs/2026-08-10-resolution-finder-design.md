@@ -87,8 +87,20 @@ Two source tiers, each result tagged with its tier for the dashboard:
   "consensus of credible reporting." Searches Google News RSS (free, no API
   key) filtered/preferred to a curated outlet whitelist, default: Reuters, AP,
   BBC, AFP, NPR — kept in an editable config file.
+- **Official-account search** (`source_type: official_social`, best-effort).
+  When the criteria names an organization with a known X/Twitter handle
+  (config-mapped, e.g. Norwegian Nobel Committee → `@NobelPrize`), the
+  retriever runs one extra Google News RSS search scoped to `x.com`. This
+  frequently finds nothing, since News RSS indexes news publishers rather
+  than social posts — it is zero-cost and requires no signup, unlike a real
+  X API or a general search API, so it is included as a cheap best effort
+  rather than skipped entirely. The actual x.com page is never fetched: only
+  the search result's own title/snippet text is used as evidence, and the
+  link is surfaced to the reviewer explicitly labeled for manual
+  verification that the account is genuine and the post is real — it is
+  never treated as confirmed evidence on its own.
 
-If both tiers return nothing, the market is recorded as `NO_EVIDENCE` — the
+If no tier returns anything, the market is recorded as `NO_EVIDENCE` — the
 pipeline does not fall back further or guess.
 
 ### Article Extractor
@@ -140,8 +152,12 @@ is preserved; the dashboard shows the latest run per market by default.
 
 Small local Flask app. Lists latest finding per market, sorted so markets
 with a proposed verdict surface above `NO_EVIDENCE` ones. Each row expands to
-show evidence snippets, source links, and source tier. Buttons let the team
-set `review_status`. Read access to run history per market.
+show evidence snippets, source links, and source tier. `official_social`
+sources are shown with an explicit "verify this is the real official
+account" label rather than a plain source-type label, since that evidence is
+a search result the reviewer must confirm by hand, not a fetched page.
+Buttons let the team set `review_status`. Read access to run history per
+market.
 
 ## Error Handling
 
@@ -168,13 +184,11 @@ set `review_status`. Read access to run history per market.
   `UNCLEAR`.
 - Per-source navigation plugins for official sources that require multi-step
   browsing rather than a single page fetch.
-- **Official X (Twitter) accounts as a Tier 1 source.** Posts from an
-  organization's official account (e.g. the Nobel Committee's or a
-  government body's verified account) are a legitimate, high-value
-  resolution signal. This is documented here as a known-valuable source
-  type, not built: X's API has no usable free tier (paid plans start
-  around $100/month), and scraping x.com directly is unreliable and
-  against its terms of service. Given the project's zero-cost constraint,
-  this is unlikely to ever be implemented unless that changes — treat it
-  as a placeholder for future manual reference during human review, not a
-  planned automation target.
+- **Real X (Twitter) API integration.** v1 only does a best-effort, zero-cost
+  search-engine lookup for official accounts (see Evidence Retriever above),
+  which frequently finds nothing because it isn't a real search of X itself.
+  A proper integration (the real X API, or a general search API) would find
+  posts much more reliably, but X's API has no usable free tier (paid plans
+  start around $100/month) and scraping x.com directly is against its terms
+  of service. Given the project's zero-cost constraint, this is unlikely to
+  ever be built unless that changes.
