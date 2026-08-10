@@ -15,7 +15,7 @@
 - Verdict Engine must be swappable for an AI-based engine with zero changes upstream (spec: "no restructuring required").
 - No per-source navigation scrapers (multi-step browsing simulation) in this plan — a single page fetch + text extraction only (spec Non-goals).
 - This tool never auto-settles a market. It only ever writes proposed verdicts to a review queue.
-- Official X (Twitter) accounts are documented as a known-valuable Tier 1 source but are NOT fetched automatically in this plan — X's API has no free tier (spec Future Extensions). `TIER1_SOCIAL_ACCOUNTS` in Task 5 is reference data for manual review only.
+- Official X (Twitter) accounts: the actual x.com page is NEVER fetched directly anywhere in this plan (no X API, no scraping x.com) — the real X API has no free tier and scraping violates its ToS. Task 6 does perform a best-effort, zero-cost Google News RSS search scoped to `site:x.com` when `TIER1_SOCIAL_ACCOUNTS` (Task 5) has a known handle for the market's named organization; only the search result's own title/snippet is used as evidence, tagged `source_type: official_social`, and the dashboard (Task 11) must flag it for manual verification rather than presenting it as confirmed evidence.
 
 ---
 
