@@ -1,0 +1,16 @@
+[
+  {
+    "id": "clarity-act-2026",
+    "title": "Will the CLARITY act be signed into law in 2026?",
+    "description": "This market resolves to \"Yes\" if the Digital Asset Market Clarity Act of 2025 (H.R. 3633) is approved by both the U.S. House of Representatives and the U.S. Senate, and is signed into law no later than December 31, 2026, at 11:59 PM ET. If these conditions are not met by the deadline, the market resolves to \"No\". The primary resolution source will be the legislation tracker on Congress.gov, along with other official information published by the United States government. If necessary, a consensus of credible reporting may also be used to determine the outcome.",
+    "options": [],
+    "close_date": "2026-12-31"
+  },
+  {
+    "id": "nobel-peace-2026",
+    "title": "Who will win the 2026 Nobel Peace Prize?",
+    "description": "This market will be settled based on the recipient of the 2026 Nobel Peace Prize officially announced by the Norwegian Nobel Committee. The listed person or entity that receives the 2026 Nobel Peace Prize will resolve to \"Yes\", and all other listed outcomes will resolve to \"No\". If multiple listed individuals or entities jointly receive the prize, the listed individual whose last name, or the entity whose name, comes first alphabetically will resolve to \"Yes\", and all other listed recipients will resolve to \"No\". If none of the listed individuals or entities receive the prize, all listed outcomes will resolve to \"No\". If the 2026 Nobel Peace Prize has not been officially announced by March 31, 2027, 11:59 PM ET, all listed outcomes will resolve to \"No\". The market will use the first official announcement issued by the Norwegian Nobel Committee as its resolution source.",
+    "options": ["Yulia Navalnaya", "Volodymyr Zelenskyy", "UNRWA", "Pope Leo XIV", "Donald Trump"],
+    "close_date": "2027-03-31"
+  }
+]
