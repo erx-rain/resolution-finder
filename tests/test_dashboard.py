@@ -61,3 +61,23 @@ def test_index_flags_official_social_source_for_manual_verification():
     assert b"verify this is the real official account" in response.data
     assert b"https://x.com/NobelPrize/status/123" in response.data
     os.remove(db_path)
+
+
+def test_index_does_not_render_non_http_source_url_as_link():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    verdict = Verdict(outcome="YES", confidence=0.6, evidence_snippet="test",
+                       source_url="javascript:alert(1)", source_type="primary")
+    save_finding(db_path, "malicious-market", "2026-08-10T00:00:00", verdict)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b'href="javascript:alert(1)"' not in response.data
+    assert b"javascript:alert(1)" not in response.data
+    assert b"primary" in response.data
+    os.remove(db_path)
