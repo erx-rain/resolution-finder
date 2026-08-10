@@ -1866,18 +1866,195 @@ git commit -m "feat: add Flask review dashboard with official-account verificati
 
 ---
 
-### Task 12: End-to-end dry run against real data
+### Task 12: Extend official-account search to Instagram
+
+> **Note (added after Task 11):** the user asked to also check official
+> Instagram accounts, the same way Task 6 added a best-effort X/Twitter
+> search. This reuses the existing `official_social` source type and
+> dashboard label unchanged — both are already platform-agnostic — so this
+> task only touches source config and the evidence retriever. Instagram is
+> even less indexed by Google than X/news, so this will succeed even less
+> often than the X search; it's included anyway since it costs nothing and
+> everything it finds still goes through the same manual-verification flag.
+> This modifies two already-completed, already-reviewed files (Task 5's
+> `source_config.py`, Task 6's `evidence_retriever.py`), including one of
+> Task 6's existing tests, which now needs a fourth mocked search call in
+> its sequence — that update is spelled out below.
+
+**Files:**
+- Modify: `resolution_finder/source_config.py` (add `TIER1_INSTAGRAM_ACCOUNTS` and `resolve_instagram_handle`)
+- Modify: `resolution_finder/evidence_retriever.py` (add an Instagram-scoped search block, mirroring the X one)
+- Modify: `tests/test_source_config.py` (2 new tests)
+- Modify: `tests/test_evidence_retriever.py` (1 new test; update the existing X social-search test's mock sequence)
+
+**Interfaces:**
+- Consumes: `extract_urls` (Task 4) — unchanged.
+- Produces: `TIER1_INSTAGRAM_ACCOUNTS: dict`, `resolve_instagram_handle(description: str) -> Optional[str]`. `retrieve_evidence`'s existing signature and return type (`list[ArticleRef]`) are unchanged — this only adds another source of `official_social`-tagged entries.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/test_source_config.py` (update the import line to include `resolve_instagram_handle`):
+
+```python
+def test_resolves_instagram_handle_for_known_organization():
+    description = "Officially announced by the Norwegian Nobel Committee."
+    assert resolve_instagram_handle(description) == "@nobelprize_org"
+
+
+def test_resolves_instagram_handle_returns_none_when_unknown():
+    description = "This market resolves based on consensus of credible reporting."
+    assert resolve_instagram_handle(description) is None
+```
+
+In `tests/test_evidence_retriever.py`, update the existing social-search test to account for the new Instagram search call between the X search and the Tier 2 general search:
+
+```python
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_includes_social_search_for_known_organization(mock_parse, mock_sleep):
+    nobel_market = Market(
+        id="nobel-peace-2026",
+        title="Who will win the 2026 Nobel Peace Prize?",
+        description="Officially announced by the Norwegian Nobel Committee.",
+        options=["Pope Leo XIV"],
+        close_date=date(2027, 3, 31),
+    )
+    mock_parse.side_effect = [
+        make_fake_feed([]),  # Tier 1 domain-scoped search (nobelprize.org)
+        make_fake_feed([make_entry(
+            "https://x.com/NobelPrize/status/123",
+            "NobelPrize: The 2026 laureate is...",
+        )]),  # X social search
+        make_fake_feed([]),  # Instagram social search
+        make_fake_feed([]),  # Tier 2 general search
+    ]
+
+    evidence = retrieve_evidence(nobel_market, ["Nobel Peace Prize winner"])
+
+    social_hits = [e for e in evidence if e.source_type == "official_social"]
+    assert len(social_hits) == 1
+    assert social_hits[0].url == "https://x.com/NobelPrize/status/123"
+    assert social_hits[0].summary == "NobelPrize: The 2026 laureate is..."
+```
+
+Add a new test alongside it for the Instagram path:
+
+```python
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_includes_instagram_search_for_known_organization(mock_parse, mock_sleep):
+    nobel_market = Market(
+        id="nobel-peace-2026",
+        title="Who will win the 2026 Nobel Peace Prize?",
+        description="Officially announced by the Norwegian Nobel Committee.",
+        options=["Pope Leo XIV"],
+        close_date=date(2027, 3, 31),
+    )
+    mock_parse.side_effect = [
+        make_fake_feed([]),  # Tier 1 domain-scoped search (nobelprize.org)
+        make_fake_feed([]),  # X social search
+        make_fake_feed([make_entry(
+            "https://instagram.com/p/abc123",
+            "nobelprize_org: The 2026 laureate is...",
+        )]),  # Instagram social search
+        make_fake_feed([]),  # Tier 2 general search
+    ]
+
+    evidence = retrieve_evidence(nobel_market, ["Nobel Peace Prize winner"])
+
+    social_hits = [e for e in evidence if e.source_type == "official_social"]
+    assert len(social_hits) == 1
+    assert social_hits[0].url == "https://instagram.com/p/abc123"
+```
+
+- [ ] **Step 2: Run tests to verify the new/updated ones fail**
+
+Run: `pytest tests/test_source_config.py tests/test_evidence_retriever.py -v`
+Expected: the two new `source_config` tests FAIL with `ImportError` (`resolve_instagram_handle` doesn't exist yet); `test_retrieve_evidence_includes_instagram_search_for_known_organization` FAILS; `test_retrieve_evidence_includes_social_search_for_known_organization` FAILS too, since `retrieve_evidence` doesn't yet make a 3rd `feedparser.parse` call and will get the Tier-2 empty feed where the test now expects the Instagram slot (the `side_effect` list is consumed one call short, so the test's own assertions no longer match — confirms the test was actually updated to require the new behavior, not accidentally already passing).
+
+- [ ] **Step 3: Implement the Instagram handle resolver**
+
+Add to `resolution_finder/source_config.py`, right after `TIER1_SOCIAL_ACCOUNTS`:
+
+```python
+# Same rationale as TIER1_SOCIAL_ACCOUNTS above, for Instagram instead of X.
+# Instagram content is indexed by Google even less than X/news, so this will
+# succeed less often — kept anyway since it's zero-cost and any hit still
+# goes through the same official_social manual-verification flag.
+TIER1_INSTAGRAM_ACCOUNTS = {
+    "congress.gov": "@housefloor",
+    "norwegian nobel committee": "@nobelprize_org",
+    "sec.gov": "@secgov",
+}
+
+
+def resolve_instagram_handle(description: str) -> Optional[str]:
+    lowered = description.lower()
+    for phrase, handle in TIER1_INSTAGRAM_ACCOUNTS.items():
+        if phrase in lowered:
+            return handle
+    return None
+```
+
+- [ ] **Step 4: Add the Instagram search to the evidence retriever**
+
+In `resolution_finder/evidence_retriever.py`, update the import line:
+
+```python
+from resolution_finder.source_config import (
+    resolve_named_source,
+    resolve_social_handle,
+    resolve_instagram_handle,
+    TIER2_OUTLETS,
+)
+```
+
+Add this block immediately after the existing X/Twitter social-search block (after its `time.sleep(REQUEST_DELAY_SECONDS)`, before the Tier 2 general-search loop):
+
+```python
+    instagram_handle = resolve_instagram_handle(market.description)
+    if instagram_handle and queries:
+        for ref in search_google_news_rss(f"{queries[0]} {instagram_handle}", site="instagram.com"):
+            evidence.append(ArticleRef(
+                url=ref.url,
+                title=ref.title,
+                source_type="official_social",
+                summary=ref.title,
+            ))
+        time.sleep(REQUEST_DELAY_SECONDS)
+```
+
+(Note the `and queries` guard is included from the start this time — Task 6 needed a fix round to add the equivalent guard to the X block after review caught its absence.)
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `pytest tests/test_source_config.py tests/test_evidence_retriever.py -v`
+Expected: PASS (7 passed in test_source_config.py, 6 passed in test_evidence_retriever.py)
+
+Run: `pytest -v`
+Expected: full suite passes with no regressions.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add resolution_finder/source_config.py resolution_finder/evidence_retriever.py tests/test_source_config.py tests/test_evidence_retriever.py
+git commit -m "feat: extend official-account search to Instagram"
+```
+
+---
+
+### Task 13: End-to-end dry run against real data
 
 This task has no new code — it validates the whole pipeline against your real 62 markets.
 
 - [ ] **Step 1: Fill in the real markets**
 
-Edit `data/markets.json` and replace the two example entries with your actual 62 unresolved markets (title, description, options, close_date), following the same JSON shape used in Task 3.
+Edit `data/markets.json` and replace the two example entries with your actual 62 unresolved markets (title, description, options, close_date), following the same JSON shape used in Task 3. Include the "Which team will Vinicius Junior join next?" market (title, description, options `["Real Madrid", "Arsenal"]`, close date 2026-09-01) discussed during planning, since the user specifically wants that one checked once the pipeline is running.
 
 - [ ] **Step 2: Run the full test suite**
 
 Run: `pytest -v`
-Expected: All tests from Tasks 1–11 PASS.
+Expected: All tests from Tasks 1–12 PASS.
 
 - [ ] **Step 3: Run a real scan**
 
