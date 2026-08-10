@@ -1,0 +1,7 @@
+requests
+feedparser
+trafilatura
+sentence-transformers
+spacy
+flask
+pytest
