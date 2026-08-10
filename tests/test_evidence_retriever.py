@@ -73,7 +73,8 @@ def test_retrieve_evidence_includes_social_search_for_known_organization(mock_pa
         make_fake_feed([make_entry(
             "https://x.com/NobelPrize/status/123",
             "NobelPrize: The 2026 laureate is...",
-        )]),  # social search, scoped to x.com
+        )]),  # X social search
+        make_fake_feed([]),  # Instagram social search
         make_fake_feed([]),  # Tier 2 general search
     ]
 
@@ -83,6 +84,33 @@ def test_retrieve_evidence_includes_social_search_for_known_organization(mock_pa
     assert len(social_hits) == 1
     assert social_hits[0].url == "https://x.com/NobelPrize/status/123"
     assert social_hits[0].summary == "NobelPrize: The 2026 laureate is..."
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_includes_instagram_search_for_known_organization(mock_parse, mock_sleep):
+    nobel_market = Market(
+        id="nobel-peace-2026",
+        title="Who will win the 2026 Nobel Peace Prize?",
+        description="Officially announced by the Norwegian Nobel Committee.",
+        options=["Pope Leo XIV"],
+        close_date=date(2027, 3, 31),
+    )
+    mock_parse.side_effect = [
+        make_fake_feed([]),  # Tier 1 domain-scoped search (nobelprize.org)
+        make_fake_feed([]),  # X social search
+        make_fake_feed([make_entry(
+            "https://instagram.com/p/abc123",
+            "nobelprize_org: The 2026 laureate is...",
+        )]),  # Instagram social search
+        make_fake_feed([]),  # Tier 2 general search
+    ]
+
+    evidence = retrieve_evidence(nobel_market, ["Nobel Peace Prize winner"])
+
+    social_hits = [e for e in evidence if e.source_type == "official_social"]
+    assert len(social_hits) == 1
+    assert social_hits[0].url == "https://instagram.com/p/abc123"
 
 
 @patch("resolution_finder.evidence_retriever.time.sleep")

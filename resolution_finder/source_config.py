@@ -33,6 +33,25 @@ TIER1_SOCIAL_ACCOUNTS = {
 }
 
 
+# Same rationale as TIER1_SOCIAL_ACCOUNTS above, for Instagram instead of X.
+# Instagram content is indexed by Google even less than X/news, so this will
+# succeed less often — kept anyway since it's zero-cost and any hit still
+# goes through the same official_social manual-verification flag.
+TIER1_INSTAGRAM_ACCOUNTS = {
+    "congress.gov": "@housefloor",
+    "norwegian nobel committee": "@nobelprize_org",
+    "sec.gov": "@secgov",
+}
+
+
+def resolve_instagram_handle(description: str) -> Optional[str]:
+    lowered = description.lower()
+    for phrase, handle in TIER1_INSTAGRAM_ACCOUNTS.items():
+        if phrase in lowered:
+            return handle
+    return None
+
+
 def resolve_named_source(description: str) -> Optional[str]:
     urls = extract_urls(description)
     if urls:

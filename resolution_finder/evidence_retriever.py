@@ -4,7 +4,12 @@ from typing import Optional
 from urllib.parse import quote_plus
 import feedparser
 from resolution_finder.models import Market, ArticleRef
-from resolution_finder.source_config import resolve_named_source, resolve_social_handle, TIER2_OUTLETS
+from resolution_finder.source_config import (
+    resolve_named_source,
+    resolve_social_handle,
+    resolve_instagram_handle,
+    TIER2_OUTLETS,
+)
 from resolution_finder.config import REQUEST_DELAY_SECONDS
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
@@ -45,6 +50,17 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
     social_handle = resolve_social_handle(market.description)
     if social_handle and queries:
         for ref in search_google_news_rss(f"{queries[0]} {social_handle}", site="x.com"):
+            evidence.append(ArticleRef(
+                url=ref.url,
+                title=ref.title,
+                source_type="official_social",
+                summary=ref.title,
+            ))
+        time.sleep(REQUEST_DELAY_SECONDS)
+
+    instagram_handle = resolve_instagram_handle(market.description)
+    if instagram_handle and queries:
+        for ref in search_google_news_rss(f"{queries[0]} {instagram_handle}", site="instagram.com"):
             evidence.append(ArticleRef(
                 url=ref.url,
                 title=ref.title,

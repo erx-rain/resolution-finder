@@ -1,5 +1,5 @@
 # tests/test_source_config.py
-from resolution_finder.source_config import resolve_named_source, resolve_social_handle
+from resolution_finder.source_config import resolve_named_source, resolve_social_handle, resolve_instagram_handle
 
 
 def test_resolves_literal_url_first():
@@ -28,3 +28,13 @@ def test_resolves_social_handle_for_known_organization():
 def test_resolves_social_handle_returns_none_when_unknown():
     description = "This market resolves based on consensus of credible reporting."
     assert resolve_social_handle(description) is None
+
+
+def test_resolves_instagram_handle_for_known_organization():
+    description = "Officially announced by the Norwegian Nobel Committee."
+    assert resolve_instagram_handle(description) == "@nobelprize_org"
+
+
+def test_resolves_instagram_handle_returns_none_when_unknown():
+    description = "This market resolves based on consensus of credible reporting."
+    assert resolve_instagram_handle(description) is None
