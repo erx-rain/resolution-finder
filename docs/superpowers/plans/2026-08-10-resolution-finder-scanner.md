@@ -1218,6 +1218,19 @@ git commit -m "feat: add embedding-based relevance ranker"
 
 ### Task 9: Verdict Engine
 
+> **Note (added before dispatch, from a real market example):** a
+> "Which team will Vinicius Junior join next?" market showed that
+> multi-outcome markets can ALSO have a deadline-based default — but unlike
+> the CLARITY Act's plain "resolves to No", this one defaults to a specific
+> *named option* ("...the market will resolve to 'Real Madrid'") if no
+> transfer happens by the deadline. The original plan only gave
+> `_decide_binary` a default-outcome check; this version generalizes
+> `_extract_default_outcome` to capture either "Yes"/"No" or an arbitrary
+> option name, and adds the same deadline-default check to
+> `_decide_multi_outcome`. Verified by hand against all three real market
+> descriptions (CLARITY Act, Nobel Peace Prize, Vinicius Junior) before
+> writing this brief — each extracts exactly the right default.
+
 **Files:**
 - Create: `resolution_finder/verdict_engine.py`
 - Test: `tests/test_verdict_engine.py`
@@ -1250,11 +1263,36 @@ CLARITY_MARKET = Market(
     close_date=date.today() + timedelta(days=365),
 )
 
+NOBEL_DESCRIPTION = (
+    "This market will be settled based on the recipient of the 2026 Nobel "
+    "Peace Prize officially announced by the Norwegian Nobel Committee. "
+    "The listed person or entity that receives the 2026 Nobel Peace Prize "
+    "will resolve to \"Yes\", and all other listed outcomes will resolve to "
+    "\"No\". If the 2026 Nobel Peace Prize has not been officially announced "
+    "by March 31, 2027, 11:59 PM ET, all listed outcomes will resolve to \"No\"."
+)
+
 NOBEL_MARKET = Market(
     id="nobel-peace-2026",
     title="Who will win the 2026 Nobel Peace Prize?",
-    description="Settled based on the recipient officially announced by the Norwegian Nobel Committee.",
+    description=NOBEL_DESCRIPTION,
     options=["Yulia Navalnaya", "Volodymyr Zelenskyy", "UNRWA", "Pope Leo XIV", "Donald Trump"],
+    close_date=date.today() + timedelta(days=365),
+)
+
+VINICIUS_DESCRIPTION = (
+    "This market will settle based on the next team Vinicius Junior "
+    "officially joins by September 1, 2026, at 11:59 PM ET. If he has not "
+    "officially joined a new team by that deadline, the market will resolve "
+    "to \"Real Madrid\". If he joins a team that is not included among the "
+    "listed options, all listed teams on this market will resolve to \"No\"."
+)
+
+VINICIUS_MARKET = Market(
+    id="vinicius-transfer-2026",
+    title="Which team will Vinicius Junior join next?",
+    description=VINICIUS_DESCRIPTION,
+    options=["Real Madrid", "Arsenal"],
     close_date=date.today() + timedelta(days=365),
 )
 
@@ -1310,6 +1348,30 @@ def test_multi_outcome_market_unclear_when_no_option_matches():
     evidence = [make_ranked("The Nobel Committee will announce the winner next week.")]
     verdict = decide(NOBEL_MARKET, evidence)
     assert verdict.outcome == "UNCLEAR"
+
+
+def test_multi_outcome_market_applies_stated_no_default_after_deadline():
+    past_deadline_market = Market(
+        id="nobel-peace-2026",
+        title=NOBEL_MARKET.title,
+        description=NOBEL_DESCRIPTION,
+        options=NOBEL_MARKET.options,
+        close_date=date.today() - timedelta(days=1),
+    )
+    verdict = decide(past_deadline_market, [])
+    assert verdict.outcome == "NO"
+
+
+def test_multi_outcome_market_applies_stated_option_default_after_deadline():
+    past_deadline_market = Market(
+        id="vinicius-transfer-2026",
+        title=VINICIUS_MARKET.title,
+        description=VINICIUS_DESCRIPTION,
+        options=VINICIUS_MARKET.options,
+        close_date=date.today() - timedelta(days=1),
+    )
+    verdict = decide(past_deadline_market, [])
+    assert verdict.outcome == "Real Madrid"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1326,8 +1388,14 @@ from datetime import date
 from typing import Optional
 from resolution_finder.models import Market, RankedArticle, Verdict
 
+# Generalized: captures a plain Yes/No default (CLARITY Act, Nobel Prize) OR a
+# specific named option default (Vinicius Junior -> "Real Madrid"). The
+# trigger phrases anchor on deadline-miss language so this doesn't match an
+# unrelated "resolves to X" sentence describing the normal win condition.
 DEFAULT_OUTCOME_PATTERN = re.compile(
-    r"not met.{0,80}?resolves? to \"(Yes|No)\"", re.IGNORECASE | re.DOTALL
+    r"(?:not met|has not|have not|not officially|not been)[^.]{0,150}?"
+    r"resolve[s]?\s+to\s+\"?([A-Za-z][A-Za-z0-9 .&'-]*?)\"?[.\n]",
+    re.IGNORECASE | re.DOTALL,
 )
 
 BINARY_YES_KEYWORDS = ["signed into law", "became law", "enacted", "approved by both"]
@@ -1336,9 +1404,14 @@ ANNOUNCEMENT_KEYWORDS = ["awarded to", "wins", "winner is", "named recipient", "
 
 def _extract_default_outcome(description: str) -> Optional[str]:
     match = DEFAULT_OUTCOME_PATTERN.search(description)
-    if match:
-        return match.group(1).upper()
-    return None
+    if not match:
+        return None
+    candidate = match.group(1).strip()
+    if candidate.lower() == "yes":
+        return "YES"
+    if candidate.lower() == "no":
+        return "NO"
+    return candidate
 
 
 def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
@@ -1354,7 +1427,7 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
             )
 
     default_outcome = _extract_default_outcome(market.description)
-    if default_outcome and date.today() > market.close_date:
+    if default_outcome in ("YES", "NO") and date.today() > market.close_date:
         return Verdict(
             outcome=default_outcome,
             confidence=0.5,
@@ -1396,6 +1469,32 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                         source_type=item.article.source_type,
                     )
 
+    default_outcome = _extract_default_outcome(market.description)
+    if default_outcome and date.today() > market.close_date:
+        if default_outcome == "NO":
+            return Verdict(
+                outcome="NO",
+                confidence=0.5,
+                evidence_snippet=(
+                    "Deadline passed with no matching evidence; applying "
+                    "stated default (no listed option resolves Yes)."
+                ),
+                source_url=None,
+                source_type=None,
+            )
+        matching_option = next(
+            (opt for opt in market.options if opt.lower() == default_outcome.lower()),
+            None,
+        )
+        if matching_option:
+            return Verdict(
+                outcome=matching_option,
+                confidence=0.5,
+                evidence_snippet="Deadline passed with no matching evidence; applying stated default option.",
+                source_url=None,
+                source_type=None,
+            )
+
     if ranked_evidence:
         top = ranked_evidence[0]
         return Verdict(outcome="UNCLEAR", confidence=top.similarity,
@@ -1415,13 +1514,13 @@ def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_verdict_engine.py -v`
-Expected: PASS (6 passed)
+Expected: PASS (8 passed)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add resolution_finder/verdict_engine.py tests/test_verdict_engine.py
-git commit -m "feat: add rule-based verdict engine for binary and multi-outcome markets"
+git commit -m "feat: add rule-based verdict engine with generalized deadline defaults"
 ```
 
 ---
