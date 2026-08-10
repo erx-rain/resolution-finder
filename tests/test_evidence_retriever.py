@@ -83,3 +83,22 @@ def test_retrieve_evidence_includes_social_search_for_known_organization(mock_pa
     assert len(social_hits) == 1
     assert social_hits[0].url == "https://x.com/NobelPrize/status/123"
     assert social_hits[0].summary == "NobelPrize: The 2026 laureate is..."
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_handles_empty_queries_for_known_organization(mock_parse, mock_sleep):
+    nobel_market = Market(
+        id="nobel-peace-2026",
+        title="Who will win the 2026 Nobel Peace Prize?",
+        description="Officially announced by the Norwegian Nobel Committee.",
+        options=["Pope Leo XIV"],
+        close_date=date(2027, 3, 31),
+    )
+    mock_parse.return_value = make_fake_feed([])
+
+    evidence = retrieve_evidence(nobel_market, [])
+
+    assert evidence == []
+    social_hits = [e for e in evidence if e.source_type == "official_social"]
+    assert len(social_hits) == 0

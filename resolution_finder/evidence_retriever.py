@@ -43,7 +43,7 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
     # is still surfaced to the reviewer as a link to verify by hand, never
     # treated as confirmed evidence on its own (see source_config.py).
     social_handle = resolve_social_handle(market.description)
-    if social_handle:
+    if social_handle and queries:
         for ref in search_google_news_rss(f"{queries[0]} {social_handle}", site="x.com"):
             evidence.append(ArticleRef(
                 url=ref.url,
