@@ -2076,3 +2076,250 @@ Pick 5 markets whose real-world outcome you already know and confirm the dashboa
 - [ ] **Step 6: Decide on markets.json and git**
 
 `data/markets.json` will contain real (possibly sensitive) market data once filled in. Either commit it if that's fine for this private repo, or add `data/markets.json` to a new `.gitignore` and commit an empty `data/markets.json.example` instead — your call at this point.
+
+---
+
+### Task 14: Fix Tier 2 evidence retrieval by switching to Bing News RSS
+
+> **Note (added after the final whole-branch review and its fix wave):** the
+> review found — and a live dry run confirmed — that Google News RSS's
+> `entry.link` is a `news.google.com/rss/articles/...` redirect wrapper that
+> requires JavaScript to resolve to the real article. The fix wave (commits
+> `85e5ae5..ced44cb`) correctly fixed how results are *tagged* (using
+> `entry.source.href`/`.title` instead of the wrapper URL), but confirmed
+> empirically that the wrapper itself still cannot be fetched into usable
+> article text via `requests`+`trafilatura` (336/336 live fetches failed).
+> This means Tier 2 (credible outlet) evidence was still never reaching the
+> verdict engine, even after that fix.
+>
+> Empirical investigation for this task (done before writing this brief):
+> decoding the Google wrapper is a dead end (its path segment is an opaque
+> protobuf blob, not a real URL; the fetched interstitial page doesn't embed
+> the target URL either — confirmed by fetching a real wrapper page and
+> searching its HTML). Reverse-engineering Google's internal redirect API was
+> considered and rejected as too fragile for a v1 tool (matches the original
+> fix wave's reasoning). **Bing News RSS** (`bing.com/news/search?...&format=RSS`)
+> was tested instead: it also wraps links (`bing.com/news/apiclick.aspx?...`),
+> but the real destination is a plain `url=` query parameter — no decoding,
+> no JS execution needed. Verified against 3 real Bing results: 2 of 3
+> fetched and extracted real article text (trafilatura got 2278 and 3161
+> characters respectively); the third failed with an ordinary per-site 403
+> (normal bot-blocking on some sites, not a systemic problem). This is a
+> categorically different failure mode than Google's 0/336 — most Bing
+> results should now be usable.
+>
+> One limitation found: Bing's RSS endpoint does **not** honor `site:`
+> scoping (verified: `Nobel Peace Prize site:bbc.com` and `site:reuters.com`
+> both returned 0 entries via Bing, while the same query unscoped returned
+> 10). So this task only replaces the **Tier 2 general/unscoped search**
+> (the credible-outlet fallback) with Bing. Tier 1 (named-source, domain-
+> scoped) and the X/Instagram social searches still need `site:` scoping and
+> stay on Google News RSS — they already validate the real source domain
+> before tagging (from the prior fix wave), so they continue to degrade
+> safely rather than mislabeling anything; they just don't get this
+> extraction improvement. A future task could revisit Tier 1/social coverage
+> separately if needed.
+
+**Files:**
+- Modify: `resolution_finder/evidence_retriever.py` (add `search_bing_news_rss`, a `_host_of` helper, and update `retrieve_evidence`'s Tier 2 loop to call it)
+- Modify: `tests/test_evidence_retriever.py` (new tests for Bing extraction/tagging; update any existing test whose mock assumptions no longer hold for the Tier 2 loop)
+
+**Interfaces:**
+- Consumes: `ArticleRef` (Task 1), `_is_whitelisted`/`TIER2_OUTLETS` (already in this file/Task 5).
+- Produces: `search_bing_news_rss(query: str) -> list[ArticleRef]`. `retrieve_evidence`'s existing signature and return type are unchanged.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/test_evidence_retriever.py` (these test `search_bing_news_rss` directly, using realistic Bing wrapper URLs — the wrapper shape and the fact that `url=` carries the real, url-encoded destination were verified against live Bing News RSS output):
+
+```python
+from urllib.parse import quote
+
+
+def make_bing_entry(title, real_url):
+    entry = MagicMock()
+    entry.title = title
+    entry.link = (
+        "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=abc123"
+        f"&url={quote(real_url, safe='')}&c=123&mkt=en-ww"
+    )
+    return entry
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_extracts_real_url_and_tags_whitelisted(mock_parse):
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Reuters headline", "https://www.reuters.com/article/x"),
+        make_bing_entry("Random headline", "https://randomblog.com/article/y"),
+    ])
+    results = search_bing_news_rss("CLARITY act")
+    assert results[0].url == "https://www.reuters.com/article/x"
+    assert results[0].source_type == "credible_backup"
+    assert results[1].url == "https://randomblog.com/article/y"
+    assert results[1].source_type == "general"
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_skips_entries_without_resolvable_url(mock_parse):
+    unresolvable = MagicMock()
+    unresolvable.title = "No url param"
+    unresolvable.link = "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&c=1&mkt=en-ww"
+    mock_parse.return_value = make_fake_feed([unresolvable])
+    results = search_bing_news_rss("CLARITY act")
+    assert results == []
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/test_evidence_retriever.py -v`
+Expected: FAIL with `ImportError` (`search_bing_news_rss` doesn't exist yet).
+
+- [ ] **Step 3: Implement the Bing search function**
+
+Update the import line in `resolution_finder/evidence_retriever.py`:
+
+```python
+from urllib.parse import quote_plus, urlparse, parse_qs
+```
+
+Add a shared host-parsing helper and refactor `entry_source_domain` to use it (removes the one in-file duplication; `article_extractor.py`'s separate copy is a known, already-deferred minor item — don't touch that file in this task):
+
+```python
+def _host_of(netloc_source: str) -> Optional[str]:
+    """Lowercase host from a URL or bare `host[:port]` string, no scheme required."""
+    netloc = urlparse(netloc_source if "//" in netloc_source else "//" + netloc_source).netloc
+    host = netloc.split("@")[-1].split(":")[0].strip().lower()
+    return host or None
+```
+
+In `entry_source_domain`, replace the inline netloc-parsing block:
+
+```python
+    href = _source_field(source, "href")
+    if href:
+        host = _host_of(href)
+        if host:
+            return host
+```
+
+Add, after `_is_whitelisted`:
+
+```python
+BING_NEWS_RSS = "https://www.bing.com/news/search?q={query}&format=RSS"
+
+
+def _bing_target_url(wrapper_url: str) -> Optional[str]:
+    """The real article URL from a Bing News RSS wrapper link.
+
+    Unlike Google News RSS's opaque redirect, Bing's wrapper
+    (`bing.com/news/apiclick.aspx?...`) carries the real destination as a
+    plain `url` query parameter — verified against live Bing output. No
+    decoding or JavaScript execution needed, just URL parsing.
+    """
+    values = parse_qs(urlparse(wrapper_url).query).get("url")
+    return values[0] if values else None
+
+
+def search_bing_news_rss(query: str) -> list[ArticleRef]:
+    """General (unscoped) credible-outlet search, replacing Google News RSS
+    for Tier 2. Bing's RSS endpoint doesn't honor `site:` scoping (verified
+    empirically — see plan Task 14), so this is only used for the unscoped
+    Tier 2 fallback. Bing wrapper links resolve to real, directly fetchable
+    URLs, unlike Google's JS-redirect wrapper, which is why Tier 2 moved
+    here instead of trying to unwrap Google's link.
+    """
+    url = BING_NEWS_RSS.format(query=quote_plus(query))
+    feed = feedparser.parse(url)
+    results = []
+    for entry in feed.entries:
+        real_url = _bing_target_url(entry.link)
+        if not real_url:
+            logger.warning(
+                "Bing News RSS entry has no resolvable url= param: %r",
+                getattr(entry, "title", "?"),
+            )
+            continue
+        domain = _host_of(real_url)
+        source_type = "credible_backup" if _is_whitelisted(domain) else "general"
+        results.append(ArticleRef(
+            url=real_url,
+            title=entry.title,
+            source_type=source_type,
+            source_domain=domain,
+        ))
+    return results
+```
+
+- [ ] **Step 4: Point the Tier 2 loop at Bing**
+
+In `retrieve_evidence`, replace the final loop:
+
+```python
+    for query in queries:
+        for ref in search_google_news_rss(query):
+            if ref.source_type == "credible_backup":
+                evidence.append(ref)
+        time.sleep(REQUEST_DELAY_SECONDS)
+```
+
+with:
+
+```python
+    for query in queries:
+        for ref in search_bing_news_rss(query):
+            if ref.source_type == "credible_backup":
+                evidence.append(ref)
+        time.sleep(REQUEST_DELAY_SECONDS)
+```
+
+- [ ] **Step 5: Run the new tests, then the full suite, and fix any mock-shape mismatches**
+
+Run: `pytest tests/test_evidence_retriever.py -v`
+Expected: the 2 new tests PASS.
+
+Run: `pytest -v`
+Expected: the full suite passes. Some existing tests in `test_evidence_retriever.py` mock `feedparser.parse` with a single `side_effect` list covering every call `retrieve_evidence` makes (Tier 1, social, Tier 2 in order) — since the Tier 2 slot now goes through `search_bing_news_rss` instead of `search_google_news_rss`, any test whose Tier-2-slot mock feed is Google-shaped (a plain `.link` with no `url=` param) will now find `_bing_target_url` returns `None` for those entries and they'll be silently skipped rather than counted as evidence — which will change that test's assertions if it relied on Tier-2-sourced entries. Read each failure, and update the affected mock's final slot(s) to use `make_bing_entry(...)` instead of `make_entry(...)` so the test still exercises what it originally intended. Do not weaken assertions to make them pass — fix the mock shape to match which backend that call slot now actually represents.
+
+- [ ] **Step 6: Empirically verify against live data**
+
+Run a real, live check (not mocked) to confirm this works against the actual internet, similar to what was done for the earlier fix wave:
+
+```python
+python -c "
+from resolution_finder.evidence_retriever import search_bing_news_rss
+results = search_bing_news_rss('Nobel Peace Prize 2026')
+for r in results[:5]:
+    print(r.source_type, r.url)
+"
+```
+
+Expected: real URLs printed (not `bing.com/news/apiclick...` wrapper links), with at least some tagged based on their real domain.
+
+- [ ] **Step 7: Re-run the real end-to-end dry run**
+
+Run: `python run_scan.py` against the current `data/markets.json` (3 real markets), then inspect `data/resolution_finder.db`:
+
+```python
+python -c "
+from resolution_finder.storage import get_latest_findings
+for f in get_latest_findings('data/resolution_finder.db'):
+    print(f['market_id'], '->', f['outcome'], f'(confidence={f[\"confidence\"]:.2f}, source_type={f[\"source_type\"]})')
+"
+```
+
+Report whether Tier 2 (`credible_backup`) evidence now actually reaches a stored verdict for at least one market — this is the real pass/fail signal, not just "no exceptions." (It may still show `NO_EVIDENCE`/`UNCLEAR` if no genuinely relevant credible-outlet coverage exists for these specific three markets right now — that would be a correct result, not a bug. The bar is "Tier 2 evidence can reach the verdict engine when it exists," not "these three specific test markets must resolve.")
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add resolution_finder/evidence_retriever.py tests/test_evidence_retriever.py
+git commit -m "fix: switch Tier 2 evidence search to Bing News RSS
+
+Google News RSS wrapper links cannot be resolved into fetchable
+article text (confirmed: 336/336 live fetches failed after the prior
+fix wave correctly fixed tagging but not fetchability). Bing News RSS
+wrapper links carry the real URL as a plain query parameter, verified
+against live data. Bing's RSS endpoint doesn't support site: scoping,
+so only the unscoped Tier 2 fallback moves to Bing; Tier 1 and the
+social searches stay on Google News RSS."
+```
