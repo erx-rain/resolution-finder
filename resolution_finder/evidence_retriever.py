@@ -2,7 +2,7 @@
 import logging
 import time
 from typing import Optional
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse, parse_qs
 import feedparser
 from resolution_finder.models import Market, ArticleRef
 from resolution_finder.source_config import (
@@ -39,6 +39,13 @@ def _source_field(source, name: str):
     return value if isinstance(value, str) else None
 
 
+def _host_of(netloc_source: str) -> Optional[str]:
+    """Lowercase host from a URL or bare `host[:port]` string, no scheme required."""
+    netloc = urlparse(netloc_source if "//" in netloc_source else "//" + netloc_source).netloc
+    host = netloc.split("@")[-1].split(":")[0].strip().lower()
+    return host or None
+
+
 def entry_source_domain(entry) -> Optional[str]:
     """The REAL publisher host for a Google News RSS entry.
 
@@ -54,8 +61,7 @@ def entry_source_domain(entry) -> Optional[str]:
 
     href = _source_field(source, "href")
     if href:
-        netloc = urlparse(href if "//" in href else "//" + href).netloc
-        host = netloc.split("@")[-1].split(":")[0].strip().lower()
+        host = _host_of(href)
         if host:
             return host
 
@@ -87,6 +93,51 @@ def _domain_matches(host: Optional[str], domain: str) -> bool:
 
 def _is_whitelisted(host: Optional[str]) -> bool:
     return any(_domain_matches(host, outlet) for outlet in TIER2_OUTLETS)
+
+
+BING_NEWS_RSS = "https://www.bing.com/news/search?q={query}&format=RSS"
+
+
+def _bing_target_url(wrapper_url: str) -> Optional[str]:
+    """The real article URL from a Bing News RSS wrapper link.
+
+    Unlike Google News RSS's opaque redirect, Bing's wrapper
+    (`bing.com/news/apiclick.aspx?...`) carries the real destination as a
+    plain `url` query parameter — verified against live Bing output. No
+    decoding or JavaScript execution needed, just URL parsing.
+    """
+    values = parse_qs(urlparse(wrapper_url).query).get("url")
+    return values[0] if values else None
+
+
+def search_bing_news_rss(query: str) -> list[ArticleRef]:
+    """General (unscoped) credible-outlet search, replacing Google News RSS
+    for Tier 2. Bing's RSS endpoint doesn't honor `site:` scoping (verified
+    empirically — see plan Task 14), so this is only used for the unscoped
+    Tier 2 fallback. Bing wrapper links resolve to real, directly fetchable
+    URLs, unlike Google's JS-redirect wrapper, which is why Tier 2 moved
+    here instead of trying to unwrap Google's link.
+    """
+    url = BING_NEWS_RSS.format(query=quote_plus(query))
+    feed = feedparser.parse(url)
+    results = []
+    for entry in feed.entries:
+        real_url = _bing_target_url(entry.link)
+        if not real_url:
+            logger.warning(
+                "Bing News RSS entry has no resolvable url= param: %r",
+                getattr(entry, "title", "?"),
+            )
+            continue
+        domain = _host_of(real_url)
+        source_type = "credible_backup" if _is_whitelisted(domain) else "general"
+        results.append(ArticleRef(
+            url=real_url,
+            title=entry.title,
+            source_type=source_type,
+            source_domain=domain,
+        ))
+    return results
 
 
 def search_google_news_rss(query: str, site: Optional[str] = None) -> list[ArticleRef]:
@@ -184,7 +235,7 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
         time.sleep(REQUEST_DELAY_SECONDS)
 
     for query in queries:
-        for ref in search_google_news_rss(query):
+        for ref in search_bing_news_rss(query):
             if ref.source_type == "credible_backup":
                 evidence.append(ref)
         time.sleep(REQUEST_DELAY_SECONDS)

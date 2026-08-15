@@ -1,9 +1,11 @@
 # tests/test_evidence_retriever.py
 from unittest.mock import patch, MagicMock
 from datetime import date
+from urllib.parse import quote
 from resolution_finder.models import Market
 from resolution_finder.evidence_retriever import (
     search_google_news_rss,
+    search_bing_news_rss,
     retrieve_evidence,
     entry_source_domain,
 )
@@ -52,6 +54,16 @@ def make_entry(title, source_href, source_title=None, link=None):
     source.href = source_href
     source.title = source_title or source_href
     entry.source = source
+    return entry
+
+
+def make_bing_entry(title, real_url):
+    entry = MagicMock()
+    entry.title = title
+    entry.link = (
+        "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=abc123"
+        f"&url={quote(real_url, safe='')}&c=123&mkt=en-ww"
+    )
     return entry
 
 
@@ -134,6 +146,31 @@ def test_search_google_news_rss_handles_entry_without_source(mock_parse):
     assert results[0].source_domain is None
 
 
+# --- search_bing_news_rss ----------------------------------------------------
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_extracts_real_url_and_tags_whitelisted(mock_parse):
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Reuters headline", "https://www.reuters.com/article/x"),
+        make_bing_entry("Random headline", "https://randomblog.com/article/y"),
+    ])
+    results = search_bing_news_rss("CLARITY act")
+    assert results[0].url == "https://www.reuters.com/article/x"
+    assert results[0].source_type == "credible_backup"
+    assert results[1].url == "https://randomblog.com/article/y"
+    assert results[1].source_type == "general"
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_skips_entries_without_resolvable_url(mock_parse):
+    unresolvable = MagicMock()
+    unresolvable.title = "No url param"
+    unresolvable.link = "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&c=1&mkt=en-ww"
+    mock_parse.return_value = make_fake_feed([unresolvable])
+    results = search_bing_news_rss("CLARITY act")
+    assert results == []
+
+
 # --- Tier 1 (domain-scoped) --------------------------------------------------
 
 @patch("resolution_finder.evidence_retriever.time.sleep")
@@ -193,15 +230,21 @@ def test_retrieve_evidence_surfaces_tier2_evidence(mock_parse, mock_sleep):
         options=["Real Madrid", "Arsenal"],
         close_date=date(2026, 9, 1),
     )
+    # This market has no named source and no known social account, so the only
+    # search `retrieve_evidence` runs is the Tier 2 fallback — which now goes
+    # through Bing News RSS, so the mock feed must be Bing-shaped.
     mock_parse.return_value = make_fake_feed([
-        make_entry("Will Gunners sign Vinicius Jr? - BBC", "https://www.bbc.com", "BBC"),
-        make_entry("Transfer rumour roundup", "https://www.football365.com", "Football365"),
+        make_bing_entry("Will Gunners sign Vinicius Jr? - BBC",
+                        "https://www.bbc.com/sport/football/articles/abc123"),
+        make_bing_entry("Transfer rumour roundup",
+                        "https://www.football365.com/news/rumour-roundup"),
     ])
     evidence = retrieve_evidence(vinicius, ["Vinicius Junior transfer"])
 
     backups = [e for e in evidence if e.source_type == "credible_backup"]
     assert len(backups) == 1
     assert backups[0].source_domain == "www.bbc.com"
+    assert backups[0].url == "https://www.bbc.com/sport/football/articles/abc123"
 
 
 @patch("resolution_finder.evidence_retriever.time.sleep")
