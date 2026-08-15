@@ -18,6 +18,27 @@ BINARY_YES_KEYWORDS = ["signed into law", "became law", "enacted", "approved by 
 ANNOUNCEMENT_KEYWORDS = ["awarded to", "wins", "winner is", "named recipient", "recipient is"]
 
 
+def _word_boundary(phrase: str) -> str:
+    r"""Regex source matching `phrase` only as whole words.
+
+    Keywords are matched on word boundaries rather than as bare substrings so
+    that e.g. "wins" does not fire on "Winston" — a real risk now that market
+    options include short common words like "Arsenal".
+
+    `\b` is only added on an edge that is actually a word character; a phrase
+    ending in punctuation (an option like "Acme Inc.") would otherwise produce
+    a pattern that can never match.
+    """
+    escaped = re.escape(phrase)
+    prefix = r"\b" if phrase[:1].isalnum() or phrase[:1] == "_" else ""
+    suffix = r"\b" if phrase[-1:].isalnum() or phrase[-1:] == "_" else ""
+    return prefix + escaped + suffix
+
+
+def _contains_keyword(text: str, keyword: str) -> bool:
+    return re.search(_word_boundary(keyword), text) is not None
+
+
 def _extract_default_outcome(description: str) -> Optional[str]:
     match = DEFAULT_OUTCOME_PATTERN.search(description)
     if not match:
@@ -33,7 +54,7 @@ def _extract_default_outcome(description: str) -> Optional[str]:
 def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
     for item in ranked_evidence:
         lowered = item.text.lower()
-        if any(keyword in lowered for keyword in BINARY_YES_KEYWORDS):
+        if any(_contains_keyword(lowered, keyword) for keyword in BINARY_YES_KEYWORDS):
             return Verdict(
                 outcome="YES",
                 confidence=item.similarity,
@@ -70,11 +91,15 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
     for item in ranked_evidence:
         lowered = item.text.lower()
         for option in market.options:
-            option_lower = option.lower()
+            option_lower = option.strip().lower()
+            if not option_lower:
+                continue
             for keyword in ANNOUNCEMENT_KEYWORDS:
+                option_re = _word_boundary(option_lower)
+                keyword_re = _word_boundary(keyword)
                 pattern = re.compile(
-                    rf"{re.escape(option_lower)}.{{0,40}}{re.escape(keyword)}|"
-                    rf"{re.escape(keyword)}.{{0,40}}{re.escape(option_lower)}"
+                    rf"{option_re}.{{0,40}}{keyword_re}|"
+                    rf"{keyword_re}.{{0,40}}{option_re}"
                 )
                 if pattern.search(lowered):
                     return Verdict(

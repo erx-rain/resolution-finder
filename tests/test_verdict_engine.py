@@ -118,6 +118,50 @@ def test_multi_outcome_market_applies_stated_no_default_after_deadline():
     assert verdict.outcome == "NO"
 
 
+def test_multi_outcome_market_matches_announcement_keyword_as_whole_word():
+    evidence = [make_ranked(
+        "Official: Arsenal wins the race for Vinicius Junior.",
+        url="https://www.bbc.com/sport/1",
+        source_type="credible_backup",
+    )]
+    verdict = decide(VINICIUS_MARKET, evidence)
+    assert verdict.outcome == "Arsenal"
+
+
+def test_multi_outcome_market_ignores_keyword_inside_a_longer_word():
+    """"wins" must not fire on "Winston" / "winsome" — a real risk now that
+    options include short common words like "Arsenal"."""
+    evidence = [make_ranked(
+        "Arsenal supporter Winston Reid offered a winsome take on the transfer.",
+        url="https://www.bbc.com/sport/2",
+        source_type="credible_backup",
+    )]
+    verdict = decide(VINICIUS_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_multi_outcome_market_ignores_option_inside_a_longer_word():
+    evidence = [make_ranked(
+        "Arsenalization of the transfer market wins few fans.",
+        url="https://www.bbc.com/sport/3",
+        source_type="credible_backup",
+    )]
+    verdict = decide(VINICIUS_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_binary_market_ignores_yes_keyword_inside_a_longer_word():
+    evidence = [make_ranked("The bill was re-enactedly mischaracterised by pundits.")]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_binary_market_matches_yes_keyword_as_whole_word():
+    evidence = [make_ranked("Congress enacted the measure this morning.")]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
 def test_multi_outcome_market_applies_stated_option_default_after_deadline():
     past_deadline_market = Market(
         id="vinicius-transfer-2026",
