@@ -12,5 +12,12 @@
     "description": "This market will be settled based on the recipient of the 2026 Nobel Peace Prize officially announced by the Norwegian Nobel Committee. The listed person or entity that receives the 2026 Nobel Peace Prize will resolve to \"Yes\", and all other listed outcomes will resolve to \"No\". If multiple listed individuals or entities jointly receive the prize, the listed individual whose last name, or the entity whose name, comes first alphabetically will resolve to \"Yes\", and all other listed recipients will resolve to \"No\". If none of the listed individuals or entities receive the prize, all listed outcomes will resolve to \"No\". If the 2026 Nobel Peace Prize has not been officially announced by March 31, 2027, 11:59 PM ET, all listed outcomes will resolve to \"No\". The market will use the first official announcement issued by the Norwegian Nobel Committee as its resolution source.",
     "options": ["Yulia Navalnaya", "Volodymyr Zelenskyy", "UNRWA", "Pope Leo XIV", "Donald Trump"],
     "close_date": "2027-03-31"
+  },
+  {
+    "id": "vinicius-transfer-2026",
+    "title": "Which team will Vinicius Junior join next?",
+    "description": "This market will settle based on the next team Vinicius Junior officially joins by September 1, 2026, at 11:59 PM ET. If he has not officially joined a new team by that deadline, the market will resolve to \"Real Madrid\". If he joins a team that is not included among the listed options, all listed teams on this market will resolve to \"No\". The market will also resolve to \"No\" if Vinicius Junior is released, retires, or is not under contract with any professional team by September 1, 2026, at 11:59 PM ET. An official transfer announcement made before the market closes will immediately resolve the market to the matching option. Official announcements from Real Madrid and/or the team acquiring Vinicius Junior will be the primary resolution sources. A consensus of credible media reporting may also be used.",
+    "options": ["Real Madrid", "Arsenal"],
+    "close_date": "2026-09-01"
   }
 ]
