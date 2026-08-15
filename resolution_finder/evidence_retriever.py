@@ -1,7 +1,8 @@
 # resolution_finder/evidence_retriever.py
+import logging
 import time
 from typing import Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 import feedparser
 from resolution_finder.models import Market, ArticleRef
 from resolution_finder.source_config import (
@@ -12,11 +13,80 @@ from resolution_finder.source_config import (
 )
 from resolution_finder.config import REQUEST_DELAY_SECONDS
 
+logger = logging.getLogger(__name__)
+
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 
+# Hosts that count as "the X/Twitter platform" and "the Instagram platform"
+# when validating a site-scoped social search result.
+SOCIAL_PLATFORM_HOSTS = {
+    "x.com": ("x.com", "twitter.com"),
+    "instagram.com": ("instagram.com",),
+}
 
-def _is_whitelisted(url: str) -> bool:
-    return any(outlet in url for outlet in TIER2_OUTLETS)
+
+def _source_field(source, name: str):
+    """Read a field from a feedparser `entry.source`.
+
+    feedparser returns a FeedParserDict, which supports both attribute and
+    key access; be tolerant of either shape.
+    """
+    if source is None:
+        return None
+    value = getattr(source, name, None)
+    if value is None and isinstance(source, dict):
+        value = source.get(name)
+    return value if isinstance(value, str) else None
+
+
+def entry_source_domain(entry) -> Optional[str]:
+    """The REAL publisher host for a Google News RSS entry.
+
+    `entry.link` is a `https://news.google.com/rss/articles/CBMi...` redirect
+    wrapper and never contains the publisher's domain, so it must not be used
+    to identify the source. Google News populates the RSS `<source url="...">`
+    tag with the publisher origin (e.g. `https://www.reuters.com`), which
+    feedparser exposes as `entry.source.href`, with `entry.source.title` as a
+    human-readable name that is *sometimes* itself a bare domain
+    ("thebanker.com", "NobelPrize.org") and sometimes not ("Reuters").
+    """
+    source = getattr(entry, "source", None)
+
+    href = _source_field(source, "href")
+    if href:
+        netloc = urlparse(href if "//" in href else "//" + href).netloc
+        host = netloc.split("@")[-1].split(":")[0].strip().lower()
+        if host:
+            return host
+
+    title = _source_field(source, "title")
+    if title:
+        candidate = title.strip().lower()
+        # Only usable as a domain when it actually looks like one.
+        if candidate and " " not in candidate and "." in candidate:
+            return candidate
+
+    return None
+
+
+def _domain_matches(host: Optional[str], domain: str) -> bool:
+    """True if `host` is `domain` or a subdomain of it.
+
+    Suffix-aware rather than a substring test, so "www.reuters.com" and
+    "feeds.reuters.com" match "reuters.com" while "notreuters.com" and
+    "reuters.com.example.net" do not.
+    """
+    if not host or not domain:
+        return False
+    host = host.strip().lower().strip(".")
+    domain = domain.strip().lower().strip(".")
+    if not host or not domain:
+        return False
+    return host == domain or host.endswith("." + domain)
+
+
+def _is_whitelisted(host: Optional[str]) -> bool:
+    return any(_domain_matches(host, outlet) for outlet in TIER2_OUTLETS)
 
 
 def search_google_news_rss(query: str, site: Optional[str] = None) -> list[ArticleRef]:
@@ -25,9 +95,48 @@ def search_google_news_rss(query: str, site: Optional[str] = None) -> list[Artic
     feed = feedparser.parse(url)
     results = []
     for entry in feed.entries:
-        source_type = "credible_backup" if _is_whitelisted(entry.link) else "general"
-        results.append(ArticleRef(url=entry.link, title=entry.title, source_type=source_type))
+        domain = entry_source_domain(entry)
+        if domain is None:
+            logger.warning(
+                "Google News RSS entry has no usable <source> domain; "
+                "cannot verify publisher for %r", getattr(entry, "title", "?")
+            )
+        source_type = "credible_backup" if _is_whitelisted(domain) else "general"
+        results.append(ArticleRef(
+            url=entry.link,
+            title=entry.title,
+            source_type=source_type,
+            source_domain=domain,
+        ))
     return results
+
+
+def _social_refs(query: str, site: str) -> list[ArticleRef]:
+    """Site-scoped social search, validated to actually be from that platform.
+
+    Google News RSS does not strictly honour the `site:` operator, so results
+    are re-checked against their real publisher domain. Anything that isn't
+    genuinely from the platform is discarded rather than mislabelled — the
+    dashboard asks a human to "verify this is the real official account",
+    which is actively misleading when the item is ordinary news coverage.
+    """
+    allowed = SOCIAL_PLATFORM_HOSTS.get(site, (site,))
+    refs = []
+    for ref in search_google_news_rss(query, site=site):
+        if any(_domain_matches(ref.source_domain, host) for host in allowed):
+            refs.append(ArticleRef(
+                url=ref.url,
+                title=ref.title,
+                source_type="official_social",
+                summary=ref.title,
+                source_domain=ref.source_domain,
+            ))
+        else:
+            logger.warning(
+                "Discarding site:%s result not actually from that platform "
+                "(source domain %r): %r", site, ref.source_domain, ref.title
+            )
+    return refs
 
 
 def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
@@ -39,7 +148,24 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
     elif named_source:
         for query in queries:
             for ref in search_google_news_rss(query, site=named_source):
-                evidence.append(ArticleRef(url=ref.url, title=ref.title, source_type="primary"))
+                # Only tag "primary" when the result really came from the named
+                # source's domain. A domain-scoped search is a request, not a
+                # guarantee, and "primary" is the highest-confidence tier — a
+                # mislabel here is worse than dropping the result.
+                if _domain_matches(ref.source_domain, named_source):
+                    evidence.append(ArticleRef(
+                        url=ref.url,
+                        title=ref.title,
+                        source_type="primary",
+                        source_domain=ref.source_domain,
+                    ))
+                elif ref.source_type == "credible_backup":
+                    evidence.append(ref)
+                else:
+                    logger.warning(
+                        "Dropping site:%s result from unverified domain %r: %r",
+                        named_source, ref.source_domain, ref.title
+                    )
             time.sleep(REQUEST_DELAY_SECONDS)
 
     # Best-effort only: this searches Google News RSS scoped to x.com for a
@@ -49,24 +175,12 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
     # treated as confirmed evidence on its own (see source_config.py).
     social_handle = resolve_social_handle(market.description)
     if social_handle and queries:
-        for ref in search_google_news_rss(f"{queries[0]} {social_handle}", site="x.com"):
-            evidence.append(ArticleRef(
-                url=ref.url,
-                title=ref.title,
-                source_type="official_social",
-                summary=ref.title,
-            ))
+        evidence.extend(_social_refs(f"{queries[0]} {social_handle}", site="x.com"))
         time.sleep(REQUEST_DELAY_SECONDS)
 
     instagram_handle = resolve_instagram_handle(market.description)
     if instagram_handle and queries:
-        for ref in search_google_news_rss(f"{queries[0]} {instagram_handle}", site="instagram.com"):
-            evidence.append(ArticleRef(
-                url=ref.url,
-                title=ref.title,
-                source_type="official_social",
-                summary=ref.title,
-            ))
+        evidence.extend(_social_refs(f"{queries[0]} {instagram_handle}", site="instagram.com"))
         time.sleep(REQUEST_DELAY_SECONDS)
 
     for query in queries:

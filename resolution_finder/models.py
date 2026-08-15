@@ -21,6 +21,10 @@ class ArticleRef:
     summary: Optional[str] = None  # search-result snippet text; used in place of a
                                     # fetched page for "official_social" refs, since
                                     # those URLs are never fetched directly
+    source_domain: Optional[str] = None  # real publisher host (e.g. "www.reuters.com").
+                                          # `url` is often a news.google.com redirect
+                                          # wrapper, so it can NOT be used to identify
+                                          # the publisher — see evidence_retriever.py.
 
 
 @dataclass
