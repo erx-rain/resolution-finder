@@ -207,6 +207,19 @@ def test_binary_market_still_resolves_yes_on_genuine_match():
     assert "CLARITY Act was signed into law" in verdict.evidence_snippet
 
 
+def test_binary_market_ignores_unrelated_entity_across_an_abbreviation():
+    # Regression guard for the sentence splitter: a naive split on "[.!?]\s+"
+    # breaks this sentence at "U.S." and leaves "signed into law" in a fragment
+    # with no "GENIUS" in it, so the wrong-subject veto never fires and the
+    # original production false positive returns. This domain is US
+    # legislation, so "U.S. Senate" / "H.R. ####" are everywhere.
+    evidence = [make_ranked(
+        "The GENIUS Act was passed by the U.S. Senate and signed into law in July 2025."
+    )]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
 def test_binary_market_resolves_yes_on_keyword_match_still_passes_without_subject_mention():
     # Existing test fixture (Task 9), re-asserted here: a sentence that names
     # no other entity should still match even without repeating the market's

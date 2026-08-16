@@ -18,7 +18,19 @@ DEFAULT_OUTCOME_PATTERN = re.compile(
 BINARY_YES_KEYWORDS = ["signed into law", "became law", "enacted", "approved by both"]
 ANNOUNCEMENT_KEYWORDS = ["awarded to", "wins", "winner is", "named recipient", "recipient is"]
 
-SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
+# The `(?<![A-Z]\.)` lookbehind is load-bearing — do NOT "simplify" it away.
+# Without it, a period preceded by a single capital letter (the "S." in "U.S.",
+# the "R." in "H.R. 3633") counts as a sentence boundary, and the split lands
+# BETWEEN a disqualifying signal and the keyword: "The GENIUS Act was passed by
+# the U.S. Senate and signed into law in July 2025." becomes "...the U.S." +
+# "Senate and signed into law in July 2025." — the second fragment carries the
+# keyword with no "GENIUS" left in it, so the wrong-subject veto never sees the
+# other entity and the exact production false positive this module exists to
+# prevent comes right back. This domain is US legislation, so "U.S. Senate",
+# "U.S. House" and "H.R. ####" are everywhere, including in market descriptions.
+# Known residual gap (accepted): Title-case abbreviations like "Sen.", "Rep."
+# and "Jan." still split, since matching those needs a real abbreviation list.
+SENTENCE_SPLIT_PATTERN = re.compile(r"(?<![A-Z]\.)(?<=[.!?])\s+")
 
 # Words/phrases that turn a sentence hypothetical or negated, e.g. "if
 # enacted" or "has not been signed" — a keyword match inside one of these
