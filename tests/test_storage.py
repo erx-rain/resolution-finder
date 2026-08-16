@@ -3,6 +3,7 @@ import tempfile
 from resolution_finder.models import Verdict
 from resolution_finder.storage import (
     init_db, save_finding, get_latest_findings, get_history, set_review_status,
+    get_setting, set_setting,
 )
 
 
@@ -56,4 +57,25 @@ def test_set_review_status():
 
     latest = get_latest_findings(db_path)
     assert latest[0]["review_status"] == "Confirmed"
+    os.remove(db_path)
+
+
+def test_set_and_get_setting():
+    db_path = make_temp_db()
+    set_setting(db_path, "currents_api_key", "abc123")
+    assert get_setting(db_path, "currents_api_key") == "abc123"
+    os.remove(db_path)
+
+
+def test_get_setting_returns_none_when_unset():
+    db_path = make_temp_db()
+    assert get_setting(db_path, "currents_api_key") is None
+    os.remove(db_path)
+
+
+def test_set_setting_overwrites_existing_value():
+    db_path = make_temp_db()
+    set_setting(db_path, "currents_api_key", "first")
+    set_setting(db_path, "currents_api_key", "second")
+    assert get_setting(db_path, "currents_api_key") == "second"
     os.remove(db_path)

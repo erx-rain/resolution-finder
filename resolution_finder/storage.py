@@ -1,4 +1,5 @@
 import sqlite3
+from typing import Optional
 from resolution_finder.models import Verdict
 
 SCHEMA = """
@@ -13,13 +14,18 @@ CREATE TABLE IF NOT EXISTS findings (
     source_type TEXT,
     review_status TEXT NOT NULL DEFAULT 'Pending'
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
 def init_db(db_path: str) -> None:
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute(SCHEMA)
+        conn.executescript(SCHEMA)
         conn.commit()
     finally:
         conn.close()
@@ -96,6 +102,28 @@ def set_review_status(db_path: str, finding_id: int, status: str) -> None:
     try:
         conn.execute(
             "UPDATE findings SET review_status = ? WHERE id = ?", (status, finding_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_setting(db_path: str, key: str) -> Optional[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def set_setting(db_path: str, key: str, value: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
         )
         conn.commit()
     finally:
