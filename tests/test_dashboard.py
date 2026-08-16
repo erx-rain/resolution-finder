@@ -84,6 +84,26 @@ def test_index_flags_secondary_tier_source_as_lower_reliability():
     os.remove(db_path)
 
 
+def test_index_flags_peer_market_source_for_manual_verification():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    verdict = Verdict(outcome="YES", confidence=0.85,
+                       evidence_snippet="Resolved \"Yes\" on Polymarket for a similar question",
+                       source_url="https://polymarket.com/event/clarity-act",
+                       source_type="peer_market")
+    save_finding(db_path, "clarity-act-2026", "2026-08-16T00:00:00", verdict)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"verify this is genuinely the same event" in response.data
+    os.remove(db_path)
+
+
 def test_index_does_not_render_non_http_source_url_as_link():
     fd, db_path = tempfile.mkstemp(suffix=".db")
     os.close(fd)

@@ -10,6 +10,7 @@ from resolution_finder.evidence_retriever import retrieve_evidence
 from resolution_finder.article_extractor import extract_article_text
 from resolution_finder.relevance_ranker import rank_by_relevance
 from resolution_finder.verdict_engine import decide
+from resolution_finder.peer_market import find_polymarket_match
 from resolution_finder.storage import init_db, save_finding
 from resolution_finder.config import REQUEST_DELAY_SECONDS
 
@@ -45,6 +46,11 @@ def _scan_market(
     run_timestamp: str,
     verdict_engine: VerdictEngine,
 ) -> None:
+    peer_verdict = find_polymarket_match(market)
+    if peer_verdict is not None:
+        save_finding(db_path, market.id, run_timestamp, peer_verdict)
+        return
+
     queries = build_queries(market)
     candidate_refs = retrieve_evidence(market, queries)
 

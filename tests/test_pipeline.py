@@ -2,11 +2,24 @@
 import logging
 import os
 import tempfile
+import pytest
 from unittest.mock import patch
 from datetime import date, timedelta
 from resolution_finder.models import Market, ArticleRef, Verdict
 from resolution_finder.pipeline import run_pipeline
 from resolution_finder.storage import get_latest_findings
+
+
+@pytest.fixture(autouse=True)
+def no_live_peer_market_calls():
+    """The pipeline now consults Polymarket before the news pipeline. Without
+    this, every pipeline test would make a real network call to the live
+    Polymarket API — slow, flaky, and (verified) able to short-circuit the
+    pipeline with a real match and break assertions about the news path.
+    Tests that care about peer matching patch this target themselves.
+    """
+    with patch("resolution_finder.pipeline.find_polymarket_match", return_value=None):
+        yield
 
 
 def make_market(market_id="clarity-act-2026"):
@@ -127,6 +140,34 @@ def test_run_pipeline_defaults_to_the_rule_based_engine(mock_retrieve, mock_extr
 
     findings = get_latest_findings(db_path)
     assert findings[0]["outcome"] == "NO_EVIDENCE"
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.find_polymarket_match")
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_uses_peer_market_match_and_skips_rest_of_pipeline(
+    mock_retrieve, mock_extract, mock_rank, mock_sleep, mock_peer_match
+):
+    mock_peer_match.return_value = Verdict(
+        outcome="YES", confidence=0.85,
+        evidence_snippet="Resolved on a peer market",
+        source_url="https://polymarket.com/event/x",
+        source_type="peer_market",
+    )
+
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+
+    run_pipeline(FakeMarketProvider(), db_path)
+
+    findings = get_latest_findings(db_path)
+    assert findings[0]["outcome"] == "YES"
+    assert findings[0]["source_type"] == "peer_market"
+    mock_retrieve.assert_not_called()
     os.remove(db_path)
 
 
