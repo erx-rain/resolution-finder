@@ -3302,3 +3302,555 @@ market's own subject, and rejects hedged/hypothetical sentences
 ('if enacted'). Verified against the real article that caused the
 original false positive, not just synthetic test fixtures."
 ```
+
+---
+
+### Task 18: Peer-market cross-check via Polymarket
+
+> **Note (added after live investigation and a safety finding the user
+> weighed in on):** the user asked to search Polymarket/Kalshi for a
+> matching market and check if it's already closed, as corroborating
+> evidence. Live investigation found:
+> - **Polymarket** has a free, no-key, keyword-searchable API
+>   (`gamma-api.polymarket.com/public-search?q=...`), verified live, returning
+>   real events/markets with `closed`, `umaResolutionStatus`, `outcomes`, and
+>   `outcomePrices` fields. A genuinely resolved market reliably shows one
+>   outcome price at `"1"` when `umaResolutionStatus == "resolved"` (verified
+>   against 5 real high-volume resolved markets).
+> - **Kalshi** has NO free-text search endpoint — its public API is
+>   organized by `series_ticker`/category only (verified live: `/series`
+>   lists categories, `/markets` accepts no `q=`-style parameter). Matching
+>   a market by keyword would require bulk-fetching many series and doing
+>   local text matching, a meaningfully bigger undertaking. **Not built in
+>   this task** — Polymarket only.
+> - **Safety finding**: embedding similarity alone is not safe for this.
+>   Searching Polymarket for our real CLARITY Act market surfaced a
+>   similarly-worded but **completely different bill** — "Guidance Clarity
+>   Act of 2025 (S.81)" vs. our "Digital Asset Market Clarity Act (H.R.
+>   3633)" — which scored **0.71 cosine similarity**, well above any
+>   reasonable threshold. This is the same wrong-subject failure mode Task
+>   17 fixed in the verdict engine, now found in a new context before it
+>   shipped.
+>
+> The user's decision on how to proceed: **build the stricter version AND
+> require human confirmation** — not similarity score alone, and not
+> unverified matches surfaced without scrutiny either. This task therefore:
+> 1. Hard-rejects a candidate if it names a **different legislative bill
+>    number** than our market does (verified: this alone rejects the real
+>    "Guidance Clarity Act" false match, since our market names H.R. 3633
+>    and the false match names S.81 — disjoint bill-number sets).
+> 2. Hard-rejects a candidate if it names a **different capitalized
+>    entity/acronym** not among our market's own subject terms (same
+>    `extract_entities`-based approach as Task 17; verified this rejects
+>    all 5 real bad candidates found during live testing, including three
+>    completely unrelated athlete-transfer markets that surfaced for a
+>    "Vinicius Junior" search).
+> 3. Only THEN applies the standard similarity threshold as a final filter.
+> 4. Regardless of how confident a surviving match looks, the dashboard
+>    **always** labels it for mandatory human verification — never
+>    presented as confirmed evidence on its own, same spirit as the
+>    `official_social` label but for a different reason (cross-platform
+>    text matching, not an unverified account).
+>
+> **Binary (Yes/No) markets only** — mapping option lists across two
+> platforms' own outcome structures is a harder problem, deferred (stated
+> in the original design discussion, unaffected by the safety finding).
+
+**Files:**
+- Create: `resolution_finder/peer_market.py`
+- Create: `tests/test_peer_market.py`
+- Modify: `resolution_finder/pipeline.py` (check for a peer-market match before the regular evidence pipeline, binary markets only)
+- Modify: `resolution_finder/models.py` (source_type comment)
+- Modify: `resolution_finder/templates/index.html` (new label branch)
+- Modify: `tests/test_pipeline.py`, `tests/test_dashboard.py` (new tests)
+
+**Interfaces:**
+- Consumes: `Market`, `Verdict` (Task 1); `extract_entities` (Task 4); `_get_model` (Task 8, `resolution_finder/relevance_ranker.py`); `SIMILARITY_THRESHOLD` (Task 1 config).
+- Produces: `find_polymarket_match(market: Market) -> Optional[Verdict]`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/test_peer_market.py`:
+
+```python
+# tests/test_peer_market.py
+from unittest.mock import patch, MagicMock
+from datetime import date
+from resolution_finder.models import Market
+from resolution_finder.peer_market import (
+    find_polymarket_match,
+    _has_conflicting_bill_number,
+    _has_conflicting_entity,
+    _our_identifying_terms,
+)
+
+CLARITY_MARKET = Market(
+    id="clarity-act-2026",
+    title="Will the CLARITY act be signed into law in 2026?",
+    description=(
+        "This market resolves to \"Yes\" if the Digital Asset Market Clarity Act "
+        "of 2025 (H.R. 3633) is approved by both the U.S. House of Representatives "
+        "and the U.S. Senate, and is signed into law."
+    ),
+    options=[],
+    close_date=date(2026, 12, 31),
+)
+
+VINICIUS_MARKET = Market(
+    id="vinicius-transfer-2026",
+    title="Which team will Vinicius Junior join next?",
+    description="This market will settle based on the next team Vinicius Junior officially joins.",
+    options=["Real Madrid", "Arsenal"],
+    close_date=date(2026, 9, 1),
+)
+
+
+def test_has_conflicting_bill_number_detects_different_bill():
+    # Real false match found via live Polymarket search during planning.
+    assert _has_conflicting_bill_number(
+        CLARITY_MARKET.description,
+        "Will the Guidance Clarity Act of 2025 (S.81) be signed into law?",
+    ) is True
+
+
+def test_has_conflicting_bill_number_false_when_no_bill_number_in_either():
+    assert _has_conflicting_bill_number(
+        "no bill number here", "also no bill number here",
+    ) is False
+
+
+def test_has_conflicting_entity_detects_different_person():
+    # Real false match found via live Polymarket search during planning.
+    terms = _our_identifying_terms(VINICIUS_MARKET)
+    assert _has_conflicting_entity(terms, "Will Steve Kerr join the Atlanta Hawks in 2026?") is True
+
+
+def test_has_conflicting_entity_false_when_same_subject():
+    terms = _our_identifying_terms(CLARITY_MARKET)
+    assert _has_conflicting_entity(
+        terms, "Will the Digital Asset Market Clarity Act be signed into law?"
+    ) is False
+
+
+def test_multi_outcome_market_never_checked():
+    result = find_polymarket_match(VINICIUS_MARKET)
+    assert result is None
+
+
+@patch("resolution_finder.peer_market.requests.get")
+def test_find_polymarket_match_rejects_conflicting_bill_number(mock_get):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "events": [{
+            "slug": "guidance-clarity-act",
+            "markets": [{
+                "question": "Will the Guidance Clarity Act of 2025 (S.81) be signed into law?",
+                "description": "",
+                "closed": True,
+                "umaResolutionStatus": "resolved",
+                "outcomes": '["Yes", "No"]',
+                "outcomePrices": '["1", "0"]',
+            }],
+        }],
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+
+    result = find_polymarket_match(CLARITY_MARKET)
+    assert result is None
+
+
+@patch("resolution_finder.peer_market.util.cos_sim")
+@patch("resolution_finder.peer_market._get_model")
+@patch("resolution_finder.peer_market.requests.get")
+def test_find_polymarket_match_returns_verdict_for_genuine_match(mock_get, mock_get_model, mock_cos_sim):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "events": [{
+            "slug": "clarity-act-hr-3633",
+            "markets": [{
+                "question": "Will the Digital Asset Market Clarity Act (H.R. 3633) be signed into law in 2026?",
+                "description": "Resolves Yes if H.R. 3633 is signed into law.",
+                "closed": True,
+                "umaResolutionStatus": "resolved",
+                "outcomes": '["Yes", "No"]',
+                "outcomePrices": '["1", "0"]',
+            }],
+        }],
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.return_value = [[0.85]]
+
+    result = find_polymarket_match(CLARITY_MARKET)
+    assert result is not None
+    assert result.outcome == "YES"
+    assert result.source_type == "peer_market"
+    assert result.source_url == "https://polymarket.com/event/clarity-act-hr-3633"
+    assert "Digital Asset Market Clarity Act" in result.evidence_snippet
+
+
+@patch("resolution_finder.peer_market.requests.get")
+def test_find_polymarket_match_ignores_unresolved_markets(mock_get):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "events": [{
+            "slug": "clarity-act-hr-3633",
+            "markets": [{
+                "question": "Will the Digital Asset Market Clarity Act (H.R. 3633) be signed into law in 2026?",
+                "description": "",
+                "closed": False,
+                "umaResolutionStatus": "",
+                "outcomes": '["Yes", "No"]',
+                "outcomePrices": '["0.5", "0.5"]',
+            }],
+        }],
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+
+    result = find_polymarket_match(CLARITY_MARKET)
+    assert result is None
+
+
+@patch("resolution_finder.peer_market.requests.get")
+def test_find_polymarket_match_handles_search_failure_gracefully(mock_get):
+    import requests
+    mock_get.side_effect = requests.ConnectionError("failed")
+    result = find_polymarket_match(CLARITY_MARKET)
+    assert result is None
+```
+
+Add to `tests/test_pipeline.py`:
+
+```python
+@patch("resolution_finder.pipeline.find_polymarket_match")
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_uses_peer_market_match_and_skips_rest_of_pipeline(
+    mock_retrieve, mock_extract, mock_rank, mock_sleep, mock_peer_match
+):
+    mock_peer_match.return_value = Verdict(
+        outcome="YES", confidence=0.85,
+        evidence_snippet="Resolved on a peer market",
+        source_url="https://polymarket.com/event/x",
+        source_type="peer_market",
+    )
+
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+
+    run_pipeline(FakeMarketProvider(), db_path)
+
+    findings = get_latest_findings(db_path)
+    assert findings[0]["outcome"] == "YES"
+    assert findings[0]["source_type"] == "peer_market"
+    mock_retrieve.assert_not_called()
+    os.remove(db_path)
+```
+
+(This needs `Verdict` imported in `tests/test_pipeline.py` — add to the existing `from resolution_finder.models import ...` import line.)
+
+Add to `tests/test_dashboard.py`:
+
+```python
+def test_index_flags_peer_market_source_for_manual_verification():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    verdict = Verdict(outcome="YES", confidence=0.85,
+                       evidence_snippet="Resolved \"Yes\" on Polymarket for a similar question",
+                       source_url="https://polymarket.com/event/clarity-act",
+                       source_type="peer_market")
+    save_finding(db_path, "clarity-act-2026", "2026-08-16T00:00:00", verdict)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"verify this is genuinely the same event" in response.data
+    os.remove(db_path)
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/test_peer_market.py tests/test_pipeline.py tests/test_dashboard.py -v`
+Expected: FAIL — `resolution_finder.peer_market` doesn't exist yet.
+
+- [ ] **Step 3: Implement the peer-market module**
+
+```python
+# resolution_finder/peer_market.py
+import json
+import logging
+import re
+from typing import Optional
+from urllib.parse import quote_plus
+import requests
+from sentence_transformers import util
+from resolution_finder.models import Market, Verdict
+from resolution_finder.query_builder import extract_entities
+from resolution_finder.relevance_ranker import _get_model
+from resolution_finder.config import SIMILARITY_THRESHOLD
+
+logger = logging.getLogger(__name__)
+
+POLYMARKET_SEARCH = "https://gamma-api.polymarket.com/public-search?q={query}&limit_per_type=5"
+
+# Legislative bill numbers are the most reliable disambiguator between two
+# markets that sound alike but are about different things -- verified
+# necessary empirically: embedding similarity alone scored 0.71 between our
+# real CLARITY Act (H.R. 3633) market and an unrelated "Guidance Clarity
+# Act (S.81)" bill found via live Polymarket search.
+BILL_NUMBER_PATTERN = re.compile(
+    r"\b(?:H\.R\.|H\.Res\.|H\.Con\.Res\.|H\.J\.Res\.|S\.Res\.|S\.Con\.Res\.|S\.J\.Res\.|S\.)\s?\d+\b",
+    re.IGNORECASE,
+)
+ACRONYM_PATTERN = re.compile(r"\b[A-Z]{2,}\b")
+
+
+def _extract_bill_numbers(text: str) -> set[str]:
+    return {m.strip().upper().replace(" ", "") for m in BILL_NUMBER_PATTERN.findall(text)}
+
+
+def _has_conflicting_bill_number(our_text: str, peer_text: str) -> bool:
+    our_bills = _extract_bill_numbers(our_text)
+    peer_bills = _extract_bill_numbers(peer_text)
+    if not our_bills or not peer_bills:
+        return False
+    return our_bills.isdisjoint(peer_bills)
+
+
+def _our_identifying_terms(market: Market) -> list[str]:
+    combined = f"{market.title} {market.description}"
+    terms = list(extract_entities(combined))
+    for word in ACRONYM_PATTERN.findall(market.title):
+        if word not in terms:
+            terms.append(word)
+    return terms
+
+
+def _has_conflicting_entity(our_terms: list[str], peer_text: str) -> bool:
+    if not our_terms:
+        return False
+    our_lower = [t.lower() for t in our_terms]
+    peer_entities = extract_entities(peer_text) + ACRONYM_PATTERN.findall(peer_text)
+    for entity in peer_entities:
+        entity_lower = entity.lower()
+        if not any(entity_lower in s or s in entity_lower for s in our_lower):
+            return True
+    return False
+
+
+def _search_polymarket_events(query: str) -> list[dict]:
+    url = POLYMARKET_SEARCH.format(query=quote_plus(query))
+    try:
+        response = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        response.raise_for_status()
+    except requests.RequestException:
+        logger.warning("Polymarket search failed for query %r", query)
+        return []
+    return response.json().get("events", [])
+
+
+def _resolved_outcome(peer_market: dict) -> Optional[str]:
+    try:
+        outcomes = json.loads(peer_market.get("outcomes", "[]"))
+        prices = json.loads(peer_market.get("outcomePrices", "[]"))
+    except (ValueError, TypeError):
+        return None
+    if not outcomes or len(outcomes) != len(prices):
+        return None
+    best_idx = max(range(len(prices)), key=lambda i: float(prices[i]))
+    if float(prices[best_idx]) < 0.9:
+        return None
+    return outcomes[best_idx]
+
+
+def find_polymarket_match(market: Market) -> Optional[Verdict]:
+    """Best-effort: check whether a similar, already-resolved binary market
+    exists on Polymarket, and if so, surface its outcome as a proposed
+    verdict. Binary (Yes/No) markets only -- mapping option lists across two
+    platforms' own outcome structures is a harder problem, deferred.
+
+    Every match is still labeled for mandatory human verification on the
+    dashboard regardless of how confident it looks: text similarity across
+    platforms can be fooled by two different markets that happen to be
+    worded alike (verified empirically during planning), so this is
+    corroborating evidence, never treated as confirmed on its own. The two
+    conflict checks below exist specifically because similarity alone
+    already proved unsafe.
+    """
+    if market.options:
+        return None
+
+    events = _search_polymarket_events(market.title)
+    if not events:
+        return None
+
+    our_terms = _our_identifying_terms(market)
+    model = _get_model()
+    query_text = f"{market.title} {market.description}"
+    query_embedding = model.encode(query_text, convert_to_tensor=True)
+
+    best_match = None
+    best_similarity = 0.0
+
+    for event in events:
+        for peer_market in event.get("markets", []):
+            if not peer_market.get("closed"):
+                continue
+            if peer_market.get("umaResolutionStatus") != "resolved":
+                continue
+
+            peer_question = peer_market.get("question", "")
+            peer_description = peer_market.get("description", "")
+            peer_text = f"{peer_question} {peer_description}"
+            if not peer_text.strip():
+                continue
+
+            if _has_conflicting_bill_number(market.description, peer_text):
+                continue
+            if _has_conflicting_entity(our_terms, peer_text):
+                continue
+
+            peer_embedding = model.encode(peer_text, convert_to_tensor=True)
+            similarity = float(util.cos_sim(query_embedding, peer_embedding)[0][0])
+            if similarity >= SIMILARITY_THRESHOLD and similarity > best_similarity:
+                best_similarity = similarity
+                best_match = (event, peer_market, peer_question)
+
+    if best_match is None:
+        return None
+
+    event, peer_market, peer_question = best_match
+    outcome = _resolved_outcome(peer_market)
+    if outcome is None:
+        return None
+
+    outcome_lower = outcome.strip().lower()
+    if outcome_lower == "yes":
+        mapped_outcome = "YES"
+    elif outcome_lower == "no":
+        mapped_outcome = "NO"
+    else:
+        return None
+
+    slug = event.get("slug") or peer_market.get("slug", "")
+    url = f"https://polymarket.com/event/{slug}" if slug else None
+
+    return Verdict(
+        outcome=mapped_outcome,
+        confidence=min(best_similarity, 0.9),
+        evidence_snippet=f"Resolved \"{outcome}\" on Polymarket for a similar question: \"{peer_question}\"",
+        source_url=url,
+        source_type="peer_market",
+    )
+```
+
+- [ ] **Step 4: Wire the peer-market check into the pipeline**
+
+In `resolution_finder/pipeline.py`, add the import:
+
+```python
+from resolution_finder.peer_market import find_polymarket_match
+```
+
+At the top of `_scan_market`, before `queries = build_queries(market)`:
+
+```python
+def _scan_market(
+    market: Market,
+    db_path: str,
+    run_timestamp: str,
+    verdict_engine: VerdictEngine,
+) -> None:
+    peer_verdict = find_polymarket_match(market)
+    if peer_verdict is not None:
+        save_finding(db_path, market.id, run_timestamp, peer_verdict)
+        return
+
+    queries = build_queries(market)
+    ...  # rest of the function unchanged
+```
+
+- [ ] **Step 5: Add the dashboard label**
+
+In `resolution_finder/templates/index.html`, add a branch to the existing label logic:
+
+```html
+          {% elif f.source_type == "peer_market" %}
+            {% set label = "resolved on a similar prediction market — verify this is genuinely the same event" %}
+```
+
+(Add this as another `{% elif %}` alongside the existing `official_social` and `credible_backup_secondary` branches, before the final `{% else %}`.)
+
+- [ ] **Step 6: Update the ArticleRef/Verdict source_type comment**
+
+In `resolution_finder/models.py`:
+
+```python
+    source_type: str  # "primary", "credible_backup", "credible_backup_secondary", "official_social", "peer_market", or "general"
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
+
+Run: `pytest tests/test_peer_market.py tests/test_pipeline.py tests/test_dashboard.py -v`
+Expected: PASS.
+
+Run: `pytest -v`
+Expected: full suite passes.
+
+- [ ] **Step 8: Empirically re-verify against live Polymarket data**
+
+Run this to confirm the conflict checks still correctly reject the real bad matches found during planning, against the live API (not mocks):
+
+```python
+python -c "
+from resolution_finder.models import Market
+from resolution_finder.peer_market import find_polymarket_match
+from datetime import date
+
+clarity = Market(
+    id='clarity-act-2026',
+    title='Will the CLARITY act be signed into law in 2026?',
+    description=(
+        'This market resolves to \"Yes\" if the Digital Asset Market Clarity Act '
+        'of 2025 (H.R. 3633) is approved by both the U.S. House of Representatives '
+        'and the U.S. Senate, and is signed into law.'
+    ),
+    options=[],
+    close_date=date(2026, 12, 31),
+)
+result = find_polymarket_match(clarity)
+print('CLARITY result:', result)
+"
+```
+
+Expected: `None`, or a genuine match with `source_url` pointing to an actual H.R. 3633-related Polymarket event — NOT the "Guidance Clarity Act (S.81)" market found during planning. Report the actual output honestly either way; `None` is a correct, safe result if Polymarket has no genuinely matching resolved market for this specific bill right now.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add resolution_finder/peer_market.py resolution_finder/pipeline.py resolution_finder/models.py resolution_finder/templates/index.html tests/test_peer_market.py tests/test_pipeline.py tests/test_dashboard.py
+git commit -m "feat: add peer-market cross-check via Polymarket
+
+Searches Polymarket for a similar, already-resolved binary market as
+corroborating evidence. Embedding similarity alone was verified
+unsafe during planning (a same-shaped-different-bill match scored
+0.71 similarity), so this hard-rejects candidates naming a different
+bill number or a conflicting named entity before similarity is even
+considered, and every surviving match is still labeled on the
+dashboard for mandatory human verification. Kalshi has no free-text
+search API (verified live) and is not included. Multi-outcome markets
+are out of scope for this task."
+```
