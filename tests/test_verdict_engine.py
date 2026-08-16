@@ -172,3 +172,46 @@ def test_multi_outcome_market_applies_stated_option_default_after_deadline():
     )
     verdict = decide(past_deadline_market, [])
     assert verdict.outcome == "Real Madrid"
+
+
+def test_binary_market_ignores_keyword_match_about_unrelated_entity():
+    # Real false positive found via live data: an article about the CLARITY
+    # Act cites the GENIUS Act (an unrelated law) as a comparison, and that
+    # other law's "signed into law" sentence must not count as evidence for
+    # the CLARITY Act.
+    evidence = [make_ranked(
+        "The CLARITY Act remains stalled in the Senate. Agency guidance is "
+        "more easily reversed by the next administration than statute. The "
+        "GENIUS Act's experience is instructive: signed into law in July "
+        "2025, its agencies missed their one-year rulemaking deadline."
+    )]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_binary_market_ignores_hedged_keyword_match():
+    evidence = [make_ranked(
+        "The CLARITY Act, if enacted, would represent a significant shift "
+        "in digital asset regulation."
+    )]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_binary_market_still_resolves_yes_on_genuine_match():
+    evidence = [make_ranked(
+        "The CLARITY Act was signed into law by the President on Tuesday."
+    )]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "YES"
+    assert "CLARITY Act was signed into law" in verdict.evidence_snippet
+
+
+def test_binary_market_resolves_yes_on_keyword_match_still_passes_without_subject_mention():
+    # Existing test fixture (Task 9), re-asserted here: a sentence that names
+    # no other entity should still match even without repeating the market's
+    # own subject name — real articles use pronouns/short references after
+    # establishing context once.
+    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "YES"
