@@ -17,6 +17,28 @@ TIER2_OUTLETS = [
     "bbc.com",
     "afp.com",
     "npr.org",
+    "theguardian.com",
+    "aljazeera.com",
+    "cnn.com",
+    "nytimes.com",
+    "washingtonpost.com",
+    "politico.com",
+]
+
+# Broader coverage, looser editorial standards than TIER2_OUTLETS. Included
+# because this tool never auto-settles anything — a human always makes the
+# final call in the dashboard — so more evidence (clearly labeled) is better
+# than none. Forbes runs an open contributor platform where article quality
+# varies by author, not just by outlet; MSN and Yahoo are aggregators that
+# republish other outlets' wire content rather than doing original
+# reporting, so their own editorial accountability is looser even when the
+# underlying story is sound; Goal.com is a real, reputable outlet but only
+# within its football/soccer niche, not a general-purpose news wire.
+TIER2_SECONDARY_OUTLETS = [
+    "forbes.com",
+    "goal.com",
+    "msn.com",
+    "yahoo.com",
 ]
 
 # Official X/Twitter handles for named organizations. Used only to build a

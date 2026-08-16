@@ -63,6 +63,27 @@ def test_index_flags_official_social_source_for_manual_verification():
     os.remove(db_path)
 
 
+def test_index_flags_secondary_tier_source_as_lower_reliability():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    verdict = Verdict(outcome="Arsenal", confidence=0.6,
+                       evidence_snippet="Goal.com reports Vinicius to Arsenal",
+                       source_url="https://www.goal.com/en/news/x",
+                       source_type="credible_backup_secondary")
+    save_finding(db_path, "vinicius-transfer-2026", "2026-08-10T00:00:00", verdict)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"lower-reliability" in response.data
+    assert b'href="https://www.goal.com/en/news/x"' in response.data
+    os.remove(db_path)
+
+
 def test_index_does_not_render_non_http_source_url_as_link():
     fd, db_path = tempfile.mkstemp(suffix=".db")
     os.close(fd)

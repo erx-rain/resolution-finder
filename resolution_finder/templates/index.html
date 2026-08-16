@@ -17,7 +17,13 @@
       <td>{{ f.evidence_snippet or "-" }}</td>
       <td>
         {% if f.source_url %}
-          {% set label = "verify this is the real official account" if f.source_type == "official_social" else f.source_type %}
+          {% if f.source_type == "official_social" %}
+            {% set label = "verify this is the real official account" %}
+          {% elif f.source_type == "credible_backup_secondary" %}
+            {% set label = "⚠ lower-reliability source — verify" %}
+          {% else %}
+            {% set label = f.source_type %}
+          {% endif %}
           {% if f.source_url.startswith('http://') or f.source_url.startswith('https://') %}
             <a href="{{ f.source_url }}">{{ label }}</a>
           {% else %}

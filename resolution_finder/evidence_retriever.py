@@ -10,6 +10,7 @@ from resolution_finder.source_config import (
     resolve_social_handle,
     resolve_instagram_handle,
     TIER2_OUTLETS,
+    TIER2_SECONDARY_OUTLETS,
 )
 from resolution_finder.config import REQUEST_DELAY_SECONDS
 
@@ -23,6 +24,8 @@ SOCIAL_PLATFORM_HOSTS = {
     "x.com": ("x.com", "twitter.com"),
     "instagram.com": ("instagram.com",),
 }
+
+CREDIBLE_TIERS = ("credible_backup", "credible_backup_secondary")
 
 
 def _source_field(source, name: str):
@@ -91,8 +94,13 @@ def _domain_matches(host: Optional[str], domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
-def _is_whitelisted(host: Optional[str]) -> bool:
-    return any(_domain_matches(host, outlet) for outlet in TIER2_OUTLETS)
+def _outlet_tier(host: Optional[str]) -> Optional[str]:
+    """Which credibility tier `host` belongs to, or None if neither."""
+    if any(_domain_matches(host, outlet) for outlet in TIER2_OUTLETS):
+        return "credible_backup"
+    if any(_domain_matches(host, outlet) for outlet in TIER2_SECONDARY_OUTLETS):
+        return "credible_backup_secondary"
+    return None
 
 
 BING_NEWS_RSS = "https://www.bing.com/news/search?q={query}&format=RSS"
@@ -130,7 +138,7 @@ def search_bing_news_rss(query: str) -> list[ArticleRef]:
             )
             continue
         domain = _host_of(real_url)
-        source_type = "credible_backup" if _is_whitelisted(domain) else "general"
+        source_type = _outlet_tier(domain) or "general"
         results.append(ArticleRef(
             url=real_url,
             title=entry.title,
@@ -152,7 +160,7 @@ def search_google_news_rss(query: str, site: Optional[str] = None) -> list[Artic
                 "Google News RSS entry has no usable <source> domain; "
                 "cannot verify publisher for %r", getattr(entry, "title", "?")
             )
-        source_type = "credible_backup" if _is_whitelisted(domain) else "general"
+        source_type = _outlet_tier(domain) or "general"
         results.append(ArticleRef(
             url=entry.link,
             title=entry.title,
@@ -210,7 +218,7 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
                         source_type="primary",
                         source_domain=ref.source_domain,
                     ))
-                elif ref.source_type == "credible_backup":
+                elif ref.source_type in CREDIBLE_TIERS:
                     evidence.append(ref)
                 else:
                     logger.warning(
@@ -236,7 +244,7 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
 
     for query in queries:
         for ref in search_bing_news_rss(query):
-            if ref.source_type == "credible_backup":
+            if ref.source_type in CREDIBLE_TIERS:
                 evidence.append(ref)
         time.sleep(REQUEST_DELAY_SECONDS)
 

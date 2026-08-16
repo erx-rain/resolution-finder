@@ -16,7 +16,7 @@ class Market:
 class ArticleRef:
     url: str
     title: str
-    source_type: str  # "primary", "credible_backup", "official_social", or "general"
+    source_type: str  # "primary", "credible_backup", "credible_backup_secondary", "official_social", or "general"
     published_date: Optional[date] = None
     summary: Optional[str] = None  # search-result snippet text; used in place of a
                                     # fetched page for "official_social" refs, since

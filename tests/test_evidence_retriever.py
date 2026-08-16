@@ -247,6 +247,43 @@ def test_retrieve_evidence_surfaces_tier2_evidence(mock_parse, mock_sleep):
     assert backups[0].url == "https://www.bbc.com/sport/football/articles/abc123"
 
 
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_tags_secondary_tier_outlet(mock_parse):
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Forbes headline", "https://www.forbes.com/sites/x/article"),
+    ])
+    results = search_bing_news_rss("CLARITY act")
+    assert results[0].source_type == "credible_backup_secondary"
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_still_tags_primary_tier_outlet(mock_parse):
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Reuters headline", "https://www.reuters.com/article/x"),
+    ])
+    results = search_bing_news_rss("CLARITY act")
+    assert results[0].source_type == "credible_backup"
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_includes_secondary_tier_evidence(mock_parse, mock_sleep):
+    vinicius_market = Market(
+        id="vinicius-transfer-2026",
+        title="Which team will Vinicius Junior join next?",
+        description="No named source in this description.",
+        options=["Real Madrid", "Arsenal"],
+        close_date=date(2026, 9, 1),
+    )
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Goal.com headline", "https://www.goal.com/en/news/x"),
+    ])
+    evidence = retrieve_evidence(vinicius_market, ["Vinicius Junior transfer"])
+    secondary = [e for e in evidence if e.source_type == "credible_backup_secondary"]
+    assert len(secondary) == 1
+    assert secondary[0].url == "https://www.goal.com/en/news/x"
+
+
 @patch("resolution_finder.evidence_retriever.time.sleep")
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
 def test_retrieve_evidence_deduplicates_urls(mock_parse, mock_sleep):
