@@ -2,6 +2,7 @@
 import json
 import logging
 import re
+from datetime import date, datetime
 from typing import Optional
 from urllib.parse import quote_plus
 import requests
@@ -26,6 +27,33 @@ BILL_NUMBER_PATTERN = re.compile(
 )
 ACRONYM_PATTERN = re.compile(r"\b[A-Z]{2,}\b")
 
+# Two markets can name the same subject over different resolution windows --
+# "signed into law by Dec 31 2025" vs "...by Dec 31 2026" is the SAME bill but
+# a different question, and the earlier one resolving NO says nothing about
+# the later one. Verified live: our real clarity-act-2026 market matched a
+# Polymarket market on the identical bill (H.R.3633) whose deadline was a full
+# year earlier and which resolved NO for missing that earlier deadline.
+RESOLUTION_WINDOW_TOLERANCE_DAYS = 7
+
+# Numeric thresholds ("$200,000", "5%") are subject-identifying in exactly the
+# way bill numbers are, and neither of the other checks sees them. Verified
+# live: "Will Bitcoin reach $200,000 in 2026?" matched "Will Bitcoin reach
+# $80,000 by December 31, 2026?" at 0.65 similarity -- same subject, same
+# window, 2.5x different strike price, confidently wrong YES.
+MONEY_PATTERN = re.compile(
+    r"\$\s?(\d[\d,]*(?:\.\d+)?)\s?([KMB]|thousand|million|billion)?\b",
+    re.IGNORECASE,
+)
+PERCENT_PATTERN = re.compile(r"\b(\d+(?:\.\d+)?)\s?%")
+_MAGNITUDES = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9}
+
+# Below this length, the permissive substring match in _has_conflicting_entity
+# does more harm than good: a short term like "CLARITY" matches ANY peer
+# entity containing "clarity" (verified -- it let the real "Guidance Clarity
+# Act" false match through as a same-subject candidate). Short terms must
+# match a peer entity exactly instead of by substring.
+MIN_SUBSTRING_MATCH_LENGTH = 8
+
 
 def _extract_bill_numbers(text: str) -> set[str]:
     return {m.strip().upper().replace(" ", "") for m in BILL_NUMBER_PATTERN.findall(text)}
@@ -48,6 +76,24 @@ def _our_identifying_terms(market: Market) -> list[str]:
     return terms
 
 
+def _terms_match(our_term: str, peer_entity: str) -> bool:
+    """Whether one of our subject terms accounts for a peer entity.
+
+    Substring matching is only allowed for terms long enough to be
+    distinctive. A short term like "clarity" is a substring of both
+    "Digital Asset Market Clarity Act" and the unrelated "Guidance Clarity
+    Act", so allowing it to match by substring silently defeats the whole
+    check; short terms must match exactly instead.
+    """
+    if our_term == peer_entity:
+        return True
+    if len(our_term) >= MIN_SUBSTRING_MATCH_LENGTH and our_term in peer_entity:
+        return True
+    if len(peer_entity) >= MIN_SUBSTRING_MATCH_LENGTH and peer_entity in our_term:
+        return True
+    return False
+
+
 def _has_conflicting_entity(our_terms: list[str], peer_text: str) -> bool:
     if not our_terms:
         return False
@@ -55,9 +101,96 @@ def _has_conflicting_entity(our_terms: list[str], peer_text: str) -> bool:
     peer_entities = extract_entities(peer_text) + ACRONYM_PATTERN.findall(peer_text)
     for entity in peer_entities:
         entity_lower = entity.lower()
-        if not any(entity_lower in s or s in entity_lower for s in our_lower):
+        if not any(_terms_match(s, entity_lower) for s in our_lower):
             return True
     return False
+
+
+def _extract_numeric_thresholds(text: str) -> tuple[set[float], set[float]]:
+    """Dollar amounts and percentages named in `text`, normalized to plain
+    numbers ("$200K" -> 200000.0). Returned separately so a price is never
+    compared against a percentage.
+    """
+    money: set[float] = set()
+    for raw, suffix in MONEY_PATTERN.findall(text):
+        try:
+            value = float(raw.replace(",", ""))
+        except ValueError:
+            continue
+        if suffix:
+            value *= _MAGNITUDES.get(suffix.lower(), 1)
+        money.add(value)
+
+    percents: set[float] = set()
+    for raw in PERCENT_PATTERN.findall(text):
+        try:
+            percents.add(float(raw))
+        except ValueError:
+            continue
+    return money, percents
+
+
+def _values_conflict(ours: set[float], theirs: set[float], tolerance: float = 0.01) -> bool:
+    """True when both sides name values but none of them agree.
+
+    Mirrors the bill-number check's disjointness logic, with a small relative
+    tolerance so "$200,000" and "$200K" are the same number.
+    """
+    if not ours or not theirs:
+        return False
+    for our_value in ours:
+        for their_value in theirs:
+            largest = max(abs(our_value), abs(their_value), 1e-9)
+            if abs(our_value - their_value) / largest <= tolerance:
+                return False
+    return True
+
+
+def _has_conflicting_threshold(our_text: str, peer_text: str) -> bool:
+    """Hard-reject a peer market naming a different numeric threshold.
+
+    Verified live: "Will Bitcoin reach $200,000 in 2026?" matched "Will
+    Bitcoin reach $80,000 by December 31, 2026?" at 0.65 similarity. Same
+    asset, same year, 2.5x different strike price -- invisible to both the
+    bill-number and entity checks, and far above SIMILARITY_THRESHOLD.
+    """
+    our_money, our_percents = _extract_numeric_thresholds(our_text)
+    peer_money, peer_percents = _extract_numeric_thresholds(peer_text)
+    if _values_conflict(our_money, peer_money):
+        return True
+    return _values_conflict(our_percents, peer_percents)
+
+
+def _peer_end_date(peer_market: dict) -> Optional[date]:
+    """The peer market's resolution deadline, if the payload states one."""
+    for key in ("endDateIso", "endDate"):
+        raw = peer_market.get(key)
+        if not raw or not isinstance(raw, str):
+            continue
+        text = raw.strip().replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(text).date()
+        except ValueError:
+            try:
+                return datetime.strptime(text[:10], "%Y-%m-%d").date()
+            except ValueError:
+                continue
+    return None
+
+
+def _has_conflicting_resolution_window(our_close: date, peer_end: Optional[date]) -> bool:
+    """Hard-reject a peer market whose deadline lands meaningfully before ours.
+
+    Two markets can name the same subject over different windows: "signed
+    into law by Dec 31 2025" and "...by Dec 31 2026" are the same bill but
+    different questions, and the earlier one resolving NO says nothing about
+    the later one. Verified live -- this exact mismatch produced a confidently
+    wrong NO for our real clarity-act-2026 market. A small tolerance keeps
+    genuinely-the-same-event markets that differ by a day or two.
+    """
+    if peer_end is None or our_close is None:
+        return False
+    return (our_close - peer_end).days > RESOLUTION_WINDOW_TOLERANCE_DAYS
 
 
 def _search_polymarket_events(query: str) -> list[dict]:
@@ -107,9 +240,9 @@ def find_polymarket_match(market: Market) -> Optional[Verdict]:
         return None
 
     our_terms = _our_identifying_terms(market)
+    our_full_text = f"{market.title} {market.description}"
     model = _get_model()
-    query_text = f"{market.title} {market.description}"
-    query_embedding = model.encode(query_text, convert_to_tensor=True)
+    query_embedding = model.encode(our_full_text, convert_to_tensor=True)
 
     best_match = None
     best_similarity = 0.0
@@ -127,13 +260,26 @@ def find_polymarket_match(market: Market) -> Optional[Verdict]:
             if not peer_text.strip():
                 continue
 
+            # A peer market resolving meaningfully before our own close date
+            # is answering a different question about the same subject, so
+            # this is checked first -- it is the cheapest check and it caught
+            # a real wrong-answer match on our own production market.
+            if _has_conflicting_resolution_window(market.close_date, _peer_end_date(peer_market)):
+                continue
+
             # Bill numbers are checked against the FULL peer text (question +
             # description): a bill number anywhere is subject-identifying, so
             # widening the text here only ever adds rejection power. This is
             # the check that rejects the real "Guidance Clarity Act (S.81)"
             # false match -- verified against live Polymarket data, where it
-            # is the ONLY check that catches that one.
-            if _has_conflicting_bill_number(market.description, peer_text):
+            # is the ONLY check that catches that one. Our side scopes over
+            # title + description, matching _our_identifying_terms.
+            if _has_conflicting_bill_number(our_full_text, peer_text):
+                continue
+
+            # Numeric thresholds are subject-identifying the same way bill
+            # numbers are, and no other check sees them.
+            if _has_conflicting_threshold(our_full_text, peer_text):
                 continue
             # The entity check, by contrast, runs against the peer QUESTION
             # only. Polymarket descriptions are near-identical legal
