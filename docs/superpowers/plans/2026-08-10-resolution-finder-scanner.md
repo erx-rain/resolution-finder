@@ -2593,3 +2593,304 @@ a human always makes the final call — while keeping looser-standard
 sources (contributor platforms, aggregators) visibly distinguished
 from wire services rather than blended in as equally trusted."
 ```
+
+---
+
+### Task 16: Settings storage and dashboard page for the Currents API key + usage tracking
+
+> **Note (added after researching additional free news sources):** the user
+> wants to add Currents News API (`api.currentsapi.services`, verified via
+> its real OpenAPI spec) as another evidence source, and wants its API key
+> manageable from the dashboard UI rather than only via an environment
+> variable, plus a visible tracker of remaining daily quota. This task only
+> builds the settings storage and UI — it does NOT call the Currents API
+> yet, since that requires the user's real API key to test against live
+> data (a separate future task once the key is available). This task can be
+> fully built and tested now with a fake key string.
+>
+> Verified from the real Currents API OpenAPI spec (`https://currentsapi.services/json/swagger.json`):
+> the API key is sent via an `Authorization` HTTP header (not a URL query
+> parameter), and — per Currents' own rate-limit documentation — every
+> authenticated response includes `X-RateLimit-Remaining` and
+> `X-RateLimit-Limit` headers. This task's usage tracker is designed to
+> store whatever those headers report after each real call (a future task's
+> job), not to independently guess/count usage itself — the API already
+> tells us the true remaining count, so there's no need to duplicate that
+> bookkeeping.
+
+**Files:**
+- Modify: `resolution_finder/storage.py` (add a `settings` table and `get_setting`/`set_setting` functions)
+- Modify: `resolution_finder/dashboard.py` (add `/settings` GET and POST routes)
+- Create: `resolution_finder/templates/settings.html`
+- Modify: `resolution_finder/templates/index.html` (add a link to the settings page)
+- Modify: `tests/test_storage.py`, `tests/test_dashboard.py` (new tests)
+
+**Interfaces:**
+- Produces: `get_setting(db_path: str, key: str) -> Optional[str]`, `set_setting(db_path: str, key: str, value: str) -> None`. Settings keys used by this task: `"currents_api_key"`, `"currents_rate_limit_remaining"`, `"currents_rate_limit_limit"`, `"currents_rate_limit_updated_at"` — the last three are written by a future task (Task 17) after a real API call; this task only needs to read and display them if present.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/test_storage.py`:
+
+```python
+def test_set_and_get_setting():
+    db_path = make_temp_db()
+    set_setting(db_path, "currents_api_key", "abc123")
+    assert get_setting(db_path, "currents_api_key") == "abc123"
+    os.remove(db_path)
+
+
+def test_get_setting_returns_none_when_unset():
+    db_path = make_temp_db()
+    assert get_setting(db_path, "currents_api_key") is None
+    os.remove(db_path)
+
+
+def test_set_setting_overwrites_existing_value():
+    db_path = make_temp_db()
+    set_setting(db_path, "currents_api_key", "first")
+    set_setting(db_path, "currents_api_key", "second")
+    assert get_setting(db_path, "currents_api_key") == "second"
+    os.remove(db_path)
+```
+
+(Update the import line in `tests/test_storage.py` to include `get_setting, set_setting`.)
+
+Add to `tests/test_dashboard.py`:
+
+```python
+def test_settings_page_shows_masked_key_when_set():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    set_setting(db_path, "currents_api_key", "abcd1234567890")
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert b"abcd1234567890" not in response.data  # never show the full key
+    assert b"7890" in response.data  # last 4 chars, so the user can tell which key is saved
+    os.remove(db_path)
+
+
+def test_settings_page_shows_no_key_message_when_unset():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert b"No API key saved" in response.data
+    os.remove(db_path)
+
+
+def test_settings_page_saves_new_key():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.post("/settings", data={"currents_api_key": "newkey1234567890"})
+
+    assert response.status_code == 302
+    assert get_setting(db_path, "currents_api_key") == "newkey1234567890"
+    os.remove(db_path)
+
+
+def test_settings_page_shows_usage_when_available():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    set_setting(db_path, "currents_api_key", "abcd1234567890")
+    set_setting(db_path, "currents_rate_limit_remaining", "543")
+    set_setting(db_path, "currents_rate_limit_limit", "600")
+    set_setting(db_path, "currents_rate_limit_updated_at", "2026-08-16T12:00:00+00:00")
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert b"543" in response.data
+    assert b"600" in response.data
+
+
+def test_settings_page_shows_no_usage_data_message_when_unavailable():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    set_setting(db_path, "currents_api_key", "abcd1234567890")
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert b"No usage data yet" in response.data
+```
+
+(Update the import line in `tests/test_dashboard.py` to include `get_setting, set_setting`.)
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/test_storage.py tests/test_dashboard.py -v`
+Expected: FAIL — `get_setting`/`set_setting` don't exist yet, `/settings` route doesn't exist yet.
+
+- [ ] **Step 3: Add the settings table and functions**
+
+In `resolution_finder/storage.py`, add to `SCHEMA` (append, don't replace the existing `findings` table definition):
+
+```python
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    market_id TEXT NOT NULL,
+    run_timestamp TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    evidence_snippet TEXT,
+    source_url TEXT,
+    source_type TEXT,
+    review_status TEXT NOT NULL DEFAULT 'Pending'
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+```
+
+Add these functions (near the bottom of the file, `Optional` needs importing: `from typing import Optional`):
+
+```python
+def get_setting(db_path: str, key: str) -> Optional[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def set_setting(db_path: str, key: str, value: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+```
+
+- [ ] **Step 4: Add the settings page**
+
+In `resolution_finder/dashboard.py`, update the import line and add the route:
+
+```python
+from resolution_finder.storage import get_latest_findings, set_review_status, get_setting, set_setting
+```
+
+```python
+    @app.route("/settings", methods=["GET"])
+    def settings():
+        api_key = get_setting(db_path, "currents_api_key")
+        masked_key = f"••••{api_key[-4:]}" if api_key else None
+        remaining = get_setting(db_path, "currents_rate_limit_remaining")
+        limit = get_setting(db_path, "currents_rate_limit_limit")
+        updated_at = get_setting(db_path, "currents_rate_limit_updated_at")
+        return render_template(
+            "settings.html",
+            masked_key=masked_key,
+            remaining=remaining,
+            limit=limit,
+            updated_at=updated_at,
+        )
+
+    @app.route("/settings", methods=["POST"])
+    def save_settings():
+        new_key = request.form.get("currents_api_key", "").strip()
+        if new_key:
+            set_setting(db_path, "currents_api_key", new_key)
+        return redirect(url_for("settings"))
+```
+
+Add both routes inside `create_app`, alongside the existing `index`/`review` routes (same indentation level, same function).
+
+- [ ] **Step 5: Create the settings template**
+
+```html
+<!-- resolution_finder/templates/settings.html -->
+<!doctype html>
+<html>
+<head><title>Resolution Finder — Settings</title></head>
+<body>
+  <h1>Settings</h1>
+  <p><a href="{{ url_for('index') }}">&larr; Back to Review Queue</a></p>
+
+  <h2>Currents News API</h2>
+  {% if masked_key %}
+    <p>Current key: {{ masked_key }}</p>
+  {% else %}
+    <p>No API key saved.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('save_settings') }}">
+    <label for="currents_api_key">API key:</label>
+    <input type="password" id="currents_api_key" name="currents_api_key" autocomplete="off">
+    <button type="submit">Save</button>
+  </form>
+
+  <h3>Usage</h3>
+  {% if remaining and limit %}
+    <p>{{ remaining }} / {{ limit }} requests remaining today (as of {{ updated_at }}).</p>
+  {% else %}
+    <p>No usage data yet — save an API key and run a scan to populate this.</p>
+  {% endif %}
+</body>
+</html>
+```
+
+- [ ] **Step 6: Link to the settings page from the review queue**
+
+In `resolution_finder/templates/index.html`, add a link right after the `<h1>Review Queue</h1>` line:
+
+```html
+  <p><a href="{{ url_for('settings') }}">Settings</a></p>
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
+
+Run: `pytest tests/test_storage.py tests/test_dashboard.py -v`
+Expected: PASS.
+
+Run: `pytest -v`
+Expected: full suite passes.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add resolution_finder/storage.py resolution_finder/dashboard.py resolution_finder/templates/settings.html resolution_finder/templates/index.html tests/test_storage.py tests/test_dashboard.py
+git commit -m "feat: add settings page for Currents API key and usage tracking
+
+Adds a generic key-value settings table and a dashboard /settings
+page to manage the (not-yet-integrated) Currents News API key from
+the UI instead of only an environment variable, plus a usage display
+that a future task will populate from the API's own rate-limit
+response headers (X-RateLimit-Remaining / X-RateLimit-Limit) rather
+than tracking usage independently."
+```
