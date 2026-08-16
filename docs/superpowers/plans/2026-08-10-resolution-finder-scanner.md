@@ -2323,3 +2323,273 @@ against live data. Bing's RSS endpoint doesn't support site: scoping,
 so only the unscoped Tier 2 fallback moves to Bing; Tier 1 and the
 social searches stay on Google News RSS."
 ```
+
+---
+
+### Task 15: Two-tier credible-outlet whitelist
+
+> **Note (added after Task 14):** Task 14 proved the Tier 2 mechanism works
+> end-to-end, but a real dry run found 0 of 88 live Bing results for the
+> project's 3 test markets fell inside the 5-outlet `TIER2_OUTLETS`
+> whitelist (Reuters, AP, BBC, AFP, NPR) — Bing surfaced Guardian, Forbes,
+> MSN, Yahoo, and Goal.com heavily instead. Since this tool never
+> auto-settles anything — a human always makes the final call in the
+> dashboard — the user decided to trust more sources rather than keep the
+> whitelist narrow, on the condition that sources with looser editorial
+> standards are visibly flagged as lower-reliability rather than presented
+> with the same trust level as a wire service.
+>
+> This task splits `TIER2_OUTLETS` into two tiers: the existing high-trust
+> list (expanded with a few more established journalism organizations) and
+> a new `TIER2_SECONDARY_OUTLETS` list for broader-but-shakier sources
+> (Forbes: open contributor platform, quality varies by author; MSN/Yahoo:
+> aggregators that republish other outlets' content rather than doing
+> original reporting; Goal.com: a real outlet but only within its
+> football/soccer niche, not general-purpose news). Secondary-tier results
+> get a new `source_type: "credible_backup_secondary"` and a distinct
+> dashboard warning label, rather than being silently mixed in as
+> equally-trusted evidence.
+
+**Files:**
+- Modify: `resolution_finder/source_config.py` (expand `TIER2_OUTLETS`, add `TIER2_SECONDARY_OUTLETS`)
+- Modify: `resolution_finder/evidence_retriever.py` (replace `_is_whitelisted` with a tier-aware `_outlet_tier`, update both search functions and `retrieve_evidence`'s two credible-tier checks)
+- Modify: `resolution_finder/templates/index.html` (add the lower-reliability warning label)
+- Modify: `resolution_finder/models.py` (update `ArticleRef.source_type`'s comment to list the new value)
+- Modify: `tests/test_evidence_retriever.py`, `tests/test_dashboard.py` (new tests)
+
+**Interfaces:**
+- Consumes: `ArticleRef`, `_domain_matches` (already in evidence_retriever.py).
+- Produces: `_outlet_tier(host: Optional[str]) -> Optional[str]` returning `"credible_backup"`, `"credible_backup_secondary"`, or `None`. `search_bing_news_rss`/`search_google_news_rss`'s return type and `retrieve_evidence`'s signature are unchanged; they can now additionally produce/pass through `source_type="credible_backup_secondary"` refs.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/test_source_config.py` is not needed (the outlet lists are plain data, exercised through `evidence_retriever` tests below). Add to `tests/test_evidence_retriever.py`:
+
+```python
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_tags_secondary_tier_outlet(mock_parse):
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Forbes headline", "https://www.forbes.com/sites/x/article"),
+    ])
+    results = search_bing_news_rss("CLARITY act")
+    assert results[0].source_type == "credible_backup_secondary"
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_still_tags_primary_tier_outlet(mock_parse):
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Reuters headline", "https://www.reuters.com/article/x"),
+    ])
+    results = search_bing_news_rss("CLARITY act")
+    assert results[0].source_type == "credible_backup"
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_includes_secondary_tier_evidence(mock_parse, mock_sleep):
+    vinicius_market = Market(
+        id="vinicius-transfer-2026",
+        title="Which team will Vinicius Junior join next?",
+        description="No named source in this description.",
+        options=["Real Madrid", "Arsenal"],
+        close_date=date(2026, 9, 1),
+    )
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Goal.com headline", "https://www.goal.com/en/news/x"),
+    ])
+    evidence = retrieve_evidence(vinicius_market, ["Vinicius Junior transfer"])
+    secondary = [e for e in evidence if e.source_type == "credible_backup_secondary"]
+    assert len(secondary) == 1
+    assert secondary[0].url == "https://www.goal.com/en/news/x"
+```
+
+Add to `tests/test_dashboard.py`:
+
+```python
+def test_index_flags_secondary_tier_source_as_lower_reliability():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    verdict = Verdict(outcome="Arsenal", confidence=0.6,
+                       evidence_snippet="Goal.com reports Vinicius to Arsenal",
+                       source_url="https://www.goal.com/en/news/x",
+                       source_type="credible_backup_secondary")
+    save_finding(db_path, "vinicius-transfer-2026", "2026-08-10T00:00:00", verdict)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"lower-reliability" in response.data
+    assert b'href="https://www.goal.com/en/news/x"' in response.data
+    os.remove(db_path)
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/test_evidence_retriever.py tests/test_dashboard.py -v`
+Expected: FAIL — `credible_backup_secondary` never produced yet (existing tagging logic only knows `credible_backup`/`general`), and the dashboard never renders "lower-reliability".
+
+- [ ] **Step 3: Expand the outlet lists**
+
+In `resolution_finder/source_config.py`, replace `TIER2_OUTLETS` and add a new list after it:
+
+```python
+TIER2_OUTLETS = [
+    "reuters.com",
+    "apnews.com",
+    "bbc.com",
+    "afp.com",
+    "npr.org",
+    "theguardian.com",
+    "aljazeera.com",
+    "cnn.com",
+    "nytimes.com",
+    "washingtonpost.com",
+    "politico.com",
+]
+
+# Broader coverage, looser editorial standards than TIER2_OUTLETS. Included
+# because this tool never auto-settles anything — a human always makes the
+# final call in the dashboard — so more evidence (clearly labeled) is better
+# than none. Forbes runs an open contributor platform where article quality
+# varies by author, not just by outlet; MSN and Yahoo are aggregators that
+# republish other outlets' wire content rather than doing original
+# reporting, so their own editorial accountability is looser even when the
+# underlying story is sound; Goal.com is a real, reputable outlet but only
+# within its football/soccer niche, not a general-purpose news wire.
+TIER2_SECONDARY_OUTLETS = [
+    "forbes.com",
+    "goal.com",
+    "msn.com",
+    "yahoo.com",
+]
+```
+
+- [ ] **Step 4: Make the evidence retriever tier-aware**
+
+In `resolution_finder/evidence_retriever.py`, update the import line:
+
+```python
+from resolution_finder.source_config import (
+    resolve_named_source,
+    resolve_social_handle,
+    resolve_instagram_handle,
+    TIER2_OUTLETS,
+    TIER2_SECONDARY_OUTLETS,
+)
+```
+
+Replace `_is_whitelisted`:
+
+```python
+def _outlet_tier(host: Optional[str]) -> Optional[str]:
+    """Which credibility tier `host` belongs to, or None if neither."""
+    if any(_domain_matches(host, outlet) for outlet in TIER2_OUTLETS):
+        return "credible_backup"
+    if any(_domain_matches(host, outlet) for outlet in TIER2_SECONDARY_OUTLETS):
+        return "credible_backup_secondary"
+    return None
+```
+
+In both `search_bing_news_rss` and `search_google_news_rss`, replace:
+
+```python
+        source_type = "credible_backup" if _is_whitelisted(domain) else "general"
+```
+
+with:
+
+```python
+        source_type = _outlet_tier(domain) or "general"
+```
+
+In `retrieve_evidence`, add a module-level constant near the top (after `SOCIAL_PLATFORM_HOSTS` is fine):
+
+```python
+CREDIBLE_TIERS = ("credible_backup", "credible_backup_secondary")
+```
+
+Then update the two places that currently check `ref.source_type == "credible_backup"`:
+
+```python
+                elif ref.source_type in CREDIBLE_TIERS:
+                    evidence.append(ref)
+```
+
+and:
+
+```python
+    for query in queries:
+        for ref in search_bing_news_rss(query):
+            if ref.source_type in CREDIBLE_TIERS:
+                evidence.append(ref)
+        time.sleep(REQUEST_DELAY_SECONDS)
+```
+
+- [ ] **Step 5: Add the dashboard warning label**
+
+In `resolution_finder/templates/index.html`, replace the label block:
+
+```html
+      <td>
+        {% if f.source_url %}
+          {% if f.source_type == "official_social" %}
+            {% set label = "verify this is the real official account" %}
+          {% elif f.source_type == "credible_backup_secondary" %}
+            {% set label = "⚠ lower-reliability source — verify" %}
+          {% else %}
+            {% set label = f.source_type %}
+          {% endif %}
+          {% if f.source_url.startswith('http://') or f.source_url.startswith('https://') %}
+            <a href="{{ f.source_url }}">{{ label }}</a>
+          {% else %}
+            {{ label }}
+          {% endif %}
+        {% else %}-{% endif %}
+      </td>
+```
+
+- [ ] **Step 6: Update the ArticleRef comment**
+
+In `resolution_finder/models.py`, update the `source_type` field comment:
+
+```python
+    source_type: str  # "primary", "credible_backup", "credible_backup_secondary", "official_social", or "general"
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
+
+Run: `pytest tests/test_evidence_retriever.py tests/test_dashboard.py -v`
+Expected: PASS.
+
+Run: `pytest -v`
+Expected: full suite passes. Double-check none of the existing boundary tests in `test_evidence_retriever.py` (e.g. ones testing `notreuters.com`, `reuters.com.example.net`) accidentally now match a `TIER2_SECONDARY_OUTLETS` entry — they shouldn't, since none of the new outlet domains overlap with existing test fixtures, but verify rather than assume.
+
+- [ ] **Step 8: Re-run the real dry run and report the outcome**
+
+Run: `python run_scan.py` against the current `data/markets.json`, then inspect results the same way as before:
+
+```python
+python -c "
+from resolution_finder.storage import get_latest_findings
+for f in get_latest_findings('data/resolution_finder.db'):
+    print(f['market_id'], '->', f['outcome'], f'(confidence={f[\"confidence\"]:.2f}, source_type={f[\"source_type\"]})')
+"
+```
+
+Report whether any market now surfaces `credible_backup` or `credible_backup_secondary` evidence. As before, a `NO_EVIDENCE`/`UNCLEAR` result is only a problem if no real coverage exists for a market from ANY whitelisted outlet (primary or secondary) at all — report the raw numbers honestly either way.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add resolution_finder/source_config.py resolution_finder/evidence_retriever.py resolution_finder/templates/index.html resolution_finder/models.py tests/test_evidence_retriever.py tests/test_dashboard.py
+git commit -m "feat: add secondary-tier credible outlets with a dashboard reliability warning
+
+Widens outlet coverage since this tool never auto-settles anything —
+a human always makes the final call — while keeping looser-standard
+sources (contributor platforms, aggregators) visibly distinguished
+from wire services rather than blended in as equally trusted."
+```
