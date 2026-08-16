@@ -2894,3 +2894,411 @@ that a future task will populate from the API's own rate-limit
 response headers (X-RateLimit-Remaining / X-RateLimit-Limit) rather
 than tracking usage independently."
 ```
+
+---
+
+### Task 17: Context-aware keyword matching (fix false-positive verdicts)
+
+> **Note (added after a real false-positive verdict in production data):**
+> Task 15's real dry run produced `clarity-act-2026 -> YES` (confidence 0.72)
+> from a Yahoo article. The stored evidence snippet itself says the bill's
+> "fate uncertain," no floor vote scheduled — the opposite of YES. Fetching
+> the actual article and searching for the matched keyword found the real
+> cause: the article compares the CLARITY Act to a different law, and the
+> match came from **that other law's** sentence: *"The GENIUS Act's
+> experience is instructive: signed into law in July 2025..."* — a true
+> statement, but about an unrelated bill cited for comparison, not the
+> market's own subject.
+>
+> `_decide_binary`/`_decide_multi_outcome` currently check "does this
+> keyword appear anywhere in the whole article," with no check for *what
+> sentence* it appears in, whether that sentence is negated/hypothetical, or
+> whether it's even about the market's own subject. This task fixes all
+> three by moving the check to sentence granularity:
+>
+> 1. **Wrong-subject rejection** (the actual bug found): reject a keyword
+>    match if its sentence names a different capitalized entity/acronym than
+>    the market's own subject (extracted via the existing `extract_entities`
+>    from Task 4, plus a new short acronym scan on the title — verified this
+>    catches "CLARITY" from `"Will the CLARITY act..."` since Task 4's
+>    entity regex alone requires 2+ consecutive capitalized words and
+>    wouldn't catch a single acronym followed by a lowercase word).
+> 2. **Hedge/negation rejection**: reject a match if its sentence contains
+>    negation or hypothetical language ("if", "not", "unless", "uncertain",
+>    "pending", etc.) — this independently would have caught a related but
+>    different failure mode ("if enacted...").
+> 3. **Evidence snippet becomes the actual matching sentence** instead of an
+>    arbitrary first-280-characters slice, so the reviewer sees exactly what
+>    justified the verdict.
+>
+> Deliberately NOT requiring the subject terms to be *present* (only
+> checking that no *different* entity is present) — real articles use
+> pronouns and short references ("the bill," "it") after establishing
+> context once, and requiring every sentence to repeat the full subject name
+> would reject too many genuine matches. Verified this against the existing
+> test fixture (`"The bill was signed into law by the President today."`
+> mentions no other entity, so it still resolves YES) before finalizing this
+> design, not after.
+>
+> Multi-outcome markets get the hedge-word check too, but not the
+> wrong-subject check — the existing option-name-proximity requirement
+> already serves that role there (an option name like "Pope Leo XIV" is
+> itself a strong, specific subject signal).
+>
+> A stronger version of subject identification (a real keyphrase-extraction
+> model instead of the current regex heuristic) was discussed and deferred —
+> `extract_entities` is regex-based because spaCy is unusable in this
+> environment (see Task 4); a library like KeyBERT (built on the same
+> `sentence-transformers` stack already proven working here) could improve
+> this further, but is its own task, not bundled into this urgent fix.
+
+**Files:**
+- Modify: `resolution_finder/verdict_engine.py`
+- Modify: `tests/test_verdict_engine.py`
+
+**Interfaces:**
+- Consumes: `extract_entities` (Task 4, `resolution_finder/query_builder.py`).
+- Produces: `decide`'s signature and return type are unchanged — this only changes internal matching logic and what text ends up in `Verdict.evidence_snippet`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/test_verdict_engine.py` (these use the real article text that caused the production false positive):
+
+```python
+def test_binary_market_ignores_keyword_match_about_unrelated_entity():
+    # Real false positive found via live data: an article about the CLARITY
+    # Act cites the GENIUS Act (an unrelated law) as a comparison, and that
+    # other law's "signed into law" sentence must not count as evidence for
+    # the CLARITY Act.
+    evidence = [make_ranked(
+        "The CLARITY Act remains stalled in the Senate. Agency guidance is "
+        "more easily reversed by the next administration than statute. The "
+        "GENIUS Act's experience is instructive: signed into law in July "
+        "2025, its agencies missed their one-year rulemaking deadline."
+    )]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_binary_market_ignores_hedged_keyword_match():
+    evidence = [make_ranked(
+        "The CLARITY Act, if enacted, would represent a significant shift "
+        "in digital asset regulation."
+    )]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_binary_market_still_resolves_yes_on_genuine_match():
+    evidence = [make_ranked(
+        "The CLARITY Act was signed into law by the President on Tuesday."
+    )]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "YES"
+    assert "CLARITY Act was signed into law" in verdict.evidence_snippet
+
+
+def test_binary_market_resolves_yes_on_keyword_match_still_passes_without_subject_mention():
+    # Existing test fixture (Task 9), re-asserted here: a sentence that names
+    # no other entity should still match even without repeating the market's
+    # own subject name — real articles use pronouns/short references after
+    # establishing context once.
+    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "YES"
+```
+
+- [ ] **Step 2: Run tests to verify the new ones fail**
+
+Run: `pytest tests/test_verdict_engine.py -v`
+Expected: the 3 new-behavior tests FAIL (current code has no sentence/subject/hedge logic, so it would return YES for all of them, including the two that should NOT be YES). The last test (existing behavior preserved) should already PASS even before this change — confirms it's a regression guard, not a new requirement.
+
+- [ ] **Step 3: Implement sentence-level, subject-aware, hedge-aware matching**
+
+Replace the full contents of `resolution_finder/verdict_engine.py`:
+
+```python
+# resolution_finder/verdict_engine.py
+import re
+from datetime import date
+from typing import Optional
+from resolution_finder.models import Market, RankedArticle, Verdict
+from resolution_finder.query_builder import extract_entities
+
+# Generalized: captures a plain Yes/No default (CLARITY Act, Nobel Prize) OR a
+# specific named option default (Vinicius Junior -> "Real Madrid"). The
+# trigger phrases anchor on deadline-miss language so this doesn't match an
+# unrelated "resolves to X" sentence describing the normal win condition.
+DEFAULT_OUTCOME_PATTERN = re.compile(
+    r"(?:not met|has not|have not|not officially|not been)[^.]{0,150}?"
+    r"resolve[s]?\s+to\s+\"?([A-Za-z][A-Za-z0-9 .&'-]*?)\"?[.\n]",
+    re.IGNORECASE | re.DOTALL,
+)
+
+BINARY_YES_KEYWORDS = ["signed into law", "became law", "enacted", "approved by both"]
+ANNOUNCEMENT_KEYWORDS = ["awarded to", "wins", "winner is", "named recipient", "recipient is"]
+
+SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
+
+# Words/phrases that turn a sentence hypothetical or negated, e.g. "if
+# enacted" or "has not been signed" — a keyword match inside one of these
+# doesn't describe something that actually happened.
+NEGATION_HEDGE_WORDS = [
+    "not ", "n't ", "never ", "without ", "fails to", "failed to",
+    "yet to", "has yet", "remains uncertain", "uncertain", "unclear",
+    "unlikely", "pending", "awaiting", "no vote", "not scheduled",
+    "if ", "unless ", "would be", "could be", "might be",
+]
+
+# A bare acronym (e.g. "CLARITY") that Task 4's extract_entities won't catch
+# on its own, since that regex requires 2+ consecutive capitalized words and
+# a title like "Will the CLARITY act..." has a lowercase word right after it.
+ACRONYM_PATTERN = re.compile(r"\b[A-Z]{2,}\b")
+
+
+def _word_boundary(phrase: str) -> str:
+    r"""Regex source matching `phrase` only as whole words.
+
+    Keywords are matched on word boundaries rather than as bare substrings so
+    that e.g. "wins" does not fire on "Winston" — a real risk now that market
+    options include short common words like "Arsenal".
+
+    `\b` is only added on an edge that is actually a word character; a phrase
+    ending in punctuation (an option like "Acme Inc.") would otherwise produce
+    a pattern that can never match.
+    """
+    escaped = re.escape(phrase)
+    prefix = r"\b" if phrase[:1].isalnum() or phrase[:1] == "_" else ""
+    suffix = r"\b" if phrase[-1:].isalnum() or phrase[-1:] == "_" else ""
+    return prefix + escaped + suffix
+
+
+def _contains_keyword(text: str, keyword: str) -> bool:
+    return re.search(_word_boundary(keyword), text) is not None
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [s for s in SENTENCE_SPLIT_PATTERN.split(text) if s.strip()]
+
+
+def _sentence_has_hedge(sentence: str) -> bool:
+    lowered = sentence.lower()
+    return any(word in lowered for word in NEGATION_HEDGE_WORDS)
+
+
+def _subject_terms(market: Market) -> list[str]:
+    """Distinctive terms identifying this market's own subject, so a keyword
+    match about a different named entity mentioned elsewhere in the same
+    article (e.g. a comparable law cited for context) isn't mistaken for
+    evidence about this market."""
+    combined = f"{market.title} {market.description}"
+    terms = list(extract_entities(combined))
+    for word in ACRONYM_PATTERN.findall(market.title):
+        if word not in terms:
+            terms.append(word)
+    return terms
+
+
+def _sentence_mentions_other_entity(sentence: str, subject_terms: list[str]) -> bool:
+    """True if the sentence names a capitalized entity/acronym that isn't
+    (even partially) one of this market's own subject terms — a signal the
+    sentence is about something else. Empty subject_terms means we have no
+    way to tell our own subject apart, so never reject on this basis alone.
+    """
+    if not subject_terms:
+        return False
+    subject_lower = [t.lower() for t in subject_terms]
+    sentence_entities = extract_entities(sentence) + ACRONYM_PATTERN.findall(sentence)
+    for entity in sentence_entities:
+        entity_lower = entity.lower()
+        if not any(entity_lower in s or s in entity_lower for s in subject_lower):
+            return True
+    return False
+
+
+def _extract_default_outcome(description: str) -> Optional[str]:
+    match = DEFAULT_OUTCOME_PATTERN.search(description)
+    if not match:
+        return None
+    candidate = match.group(1).strip()
+    if candidate.lower() == "yes":
+        return "YES"
+    if candidate.lower() == "no":
+        return "NO"
+    return candidate
+
+
+def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+    subject_terms = _subject_terms(market)
+    for item in ranked_evidence:
+        for sentence in _split_sentences(item.text):
+            if _sentence_has_hedge(sentence):
+                continue
+            if _sentence_mentions_other_entity(sentence, subject_terms):
+                continue
+            if any(_contains_keyword(sentence.lower(), keyword) for keyword in BINARY_YES_KEYWORDS):
+                return Verdict(
+                    outcome="YES",
+                    confidence=item.similarity,
+                    evidence_snippet=sentence.strip()[:280],
+                    source_url=item.article.url,
+                    source_type=item.article.source_type,
+                )
+
+    default_outcome = _extract_default_outcome(market.description)
+    if default_outcome in ("YES", "NO") and date.today() > market.close_date:
+        return Verdict(
+            outcome=default_outcome,
+            confidence=0.5,
+            evidence_snippet="Deadline passed with no matching evidence; applying stated default.",
+            source_url=None,
+            source_type=None,
+        )
+
+    if ranked_evidence:
+        top = ranked_evidence[0]
+        return Verdict(
+            outcome="UNCLEAR",
+            confidence=top.similarity,
+            evidence_snippet=top.text[:280],
+            source_url=top.article.url,
+            source_type=top.article.source_type,
+        )
+
+    return Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                    source_url=None, source_type=None)
+
+
+def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+    for item in ranked_evidence:
+        for sentence in _split_sentences(item.text):
+            if _sentence_has_hedge(sentence):
+                continue
+            lowered = sentence.lower()
+            for option in market.options:
+                option_lower = option.strip().lower()
+                if not option_lower:
+                    continue
+                for keyword in ANNOUNCEMENT_KEYWORDS:
+                    option_re = _word_boundary(option_lower)
+                    keyword_re = _word_boundary(keyword)
+                    pattern = re.compile(
+                        rf"{option_re}.{{0,40}}{keyword_re}|"
+                        rf"{keyword_re}.{{0,40}}{option_re}"
+                    )
+                    if pattern.search(lowered):
+                        return Verdict(
+                            outcome=option,
+                            confidence=item.similarity,
+                            evidence_snippet=sentence.strip()[:280],
+                            source_url=item.article.url,
+                            source_type=item.article.source_type,
+                        )
+
+    default_outcome = _extract_default_outcome(market.description)
+    if default_outcome and date.today() > market.close_date:
+        if default_outcome == "NO":
+            return Verdict(
+                outcome="NO",
+                confidence=0.5,
+                evidence_snippet=(
+                    "Deadline passed with no matching evidence; applying "
+                    "stated default (no listed option resolves Yes)."
+                ),
+                source_url=None,
+                source_type=None,
+            )
+        matching_option = next(
+            (opt for opt in market.options if opt.lower() == default_outcome.lower()),
+            None,
+        )
+        if matching_option:
+            return Verdict(
+                outcome=matching_option,
+                confidence=0.5,
+                evidence_snippet="Deadline passed with no matching evidence; applying stated default option.",
+                source_url=None,
+                source_type=None,
+            )
+
+    if ranked_evidence:
+        top = ranked_evidence[0]
+        return Verdict(outcome="UNCLEAR", confidence=top.similarity,
+                        evidence_snippet=top.text[:280], source_url=top.article.url,
+                        source_type=top.article.source_type)
+
+    return Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                    source_url=None, source_type=None)
+
+
+def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+    if market.options:
+        return _decide_multi_outcome(market, ranked_evidence)
+    return _decide_binary(market, ranked_evidence)
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `pytest tests/test_verdict_engine.py -v`
+Expected: PASS (12 passed — the original 8 from Task 9 plus the 4 added here).
+
+Run: `pytest -v`
+Expected: full suite passes with no regressions.
+
+- [ ] **Step 5: Empirically re-verify against the real article**
+
+Run this to confirm the fix actually resolves the specific production false positive (not just the synthetic test fixtures):
+
+```python
+python -c "
+import requests, trafilatura
+from datetime import date, timedelta
+from resolution_finder.models import Market, ArticleRef, RankedArticle
+from resolution_finder.verdict_engine import decide
+
+url = 'https://www.yahoo.com/news/politics/articles/clarity-act-supporters-vs-opponents-131821823.html'
+resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+text = trafilatura.extract(resp.text)
+
+market = Market(
+    id='clarity-act-2026',
+    title='Will the CLARITY act be signed into law in 2026?',
+    description=(
+        'This market resolves to \"Yes\" if the Digital Asset Market Clarity Act '
+        'of 2025 (H.R. 3633) is approved by both the U.S. House of Representatives '
+        'and the U.S. Senate, and is signed into law no later than December 31, 2026, '
+        'at 11:59 PM ET. If these conditions are not met by the deadline, the market '
+        'resolves to \"No\".'
+    ),
+    options=[],
+    close_date=date.today() + timedelta(days=365),
+)
+ranked = [RankedArticle(
+    article=ArticleRef(url=url, title='t', source_type='credible_backup_secondary'),
+    text=text,
+    similarity=0.72,
+)]
+verdict = decide(market, ranked)
+print('outcome:', verdict.outcome)
+print('snippet:', verdict.evidence_snippet)
+"
+```
+
+Expected: `outcome` is `UNCLEAR` or `NO_EVIDENCE`, NOT `YES` — confirms the fix works against the real article that caused the original false positive, not just the hand-written test text.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add resolution_finder/verdict_engine.py tests/test_verdict_engine.py
+git commit -m "fix: reject keyword matches from unrelated entities or hedged sentences
+
+A real dry run produced a false-positive YES verdict for the CLARITY
+Act market: an article compared it to a different bill (the GENIUS
+Act), and that unrelated bill's 'signed into law' sentence matched
+the keyword check, which previously only checked 'does this phrase
+appear anywhere in the article.' Now checks at sentence granularity:
+rejects matches in sentences naming a different entity than the
+market's own subject, and rejects hedged/hypothetical sentences
+('if enacted'). Verified against the real article that caused the
+original false positive, not just synthetic test fixtures."
+```
