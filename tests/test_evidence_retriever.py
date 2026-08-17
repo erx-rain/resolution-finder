@@ -149,6 +149,21 @@ def test_search_google_news_rss_handles_entry_without_source(mock_parse):
     assert results[0].source_domain is None
 
 
+@patch("resolution_finder.evidence_retriever.MAX_RESULTS_PER_QUERY", 3)
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_google_news_rss_caps_results_per_query(mock_parse):
+    """A single query can return far more entries than are worth pursuing --
+    every one of them costs a real extraction attempt later in the pipeline,
+    and Tier 1 (Google) links are guaranteed to fail that extraction (verified
+    live: 336/336). Capping here bounds that wasted work regardless of how
+    many entries the feed itself returns."""
+    mock_parse.return_value = make_fake_feed([
+        make_entry(f"Headline {i}", "https://www.reuters.com", "Reuters") for i in range(10)
+    ])
+    results = search_google_news_rss("q")
+    assert len(results) == 3
+
+
 # --- search_bing_news_rss ----------------------------------------------------
 
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
@@ -162,6 +177,16 @@ def test_search_bing_news_rss_extracts_real_url_and_tags_whitelisted(mock_parse)
     assert results[0].source_type == "credible_backup"
     assert results[1].url == "https://randomblog.com/article/y"
     assert results[1].source_type == "general"
+
+
+@patch("resolution_finder.evidence_retriever.MAX_RESULTS_PER_QUERY", 3)
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_caps_results_per_query(mock_parse):
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry(f"Headline {i}", f"https://www.reuters.com/article/{i}") for i in range(10)
+    ])
+    results = search_bing_news_rss("q")
+    assert len(results) == 3
 
 
 @patch("resolution_finder.evidence_retriever.feedparser.parse")

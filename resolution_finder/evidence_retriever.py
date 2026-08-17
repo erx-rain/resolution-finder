@@ -12,7 +12,7 @@ from resolution_finder.source_config import (
     TIER2_OUTLETS,
     TIER2_SECONDARY_OUTLETS,
 )
-from resolution_finder.config import REQUEST_DELAY_SECONDS
+from resolution_finder.config import REQUEST_DELAY_SECONDS, MAX_RESULTS_PER_QUERY
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ def search_bing_news_rss(query: str) -> list[ArticleRef]:
     feed = feedparser.parse(url)
     _warn_if_feed_fetch_failed(feed, "Bing News", query)
     results = []
-    for entry in feed.entries:
+    for entry in feed.entries[:MAX_RESULTS_PER_QUERY]:
         real_url = _bing_target_url(entry.link)
         if not real_url:
             logger.warning(
@@ -171,7 +171,7 @@ def search_google_news_rss(query: str, site: Optional[str] = None) -> list[Artic
     feed = feedparser.parse(url)
     _warn_if_feed_fetch_failed(feed, "Google News", full_query)
     results = []
-    for entry in feed.entries:
+    for entry in feed.entries[:MAX_RESULTS_PER_QUERY]:
         domain = entry_source_domain(entry)
         if domain is None:
             logger.warning(

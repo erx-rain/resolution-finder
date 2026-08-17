@@ -21,3 +21,9 @@ PEER_MARKET_SIMILARITY_THRESHOLD = 0.75
 PEER_MARKET_ENABLED = False
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 REQUEST_DELAY_SECONDS = 1
+# A live dry run against just 3 markets took ~65 minutes, dominated by
+# hundreds of Tier 1 (Google News RSS) fetches that are guaranteed to fail
+# extraction (verified: 336/336 live) -- feedparser returns every match for a
+# query with no limit of its own. Capping results per query cuts that waste
+# without changing which markets/queries are searched.
+MAX_RESULTS_PER_QUERY = 5
