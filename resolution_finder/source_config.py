@@ -29,15 +29,22 @@ TIER2_OUTLETS = [
 # because this tool never auto-settles anything — a human always makes the
 # final call in the dashboard — so more evidence (clearly labeled) is better
 # than none. Forbes runs an open contributor platform where article quality
-# varies by author, not just by outlet; MSN and Yahoo are aggregators that
-# republish other outlets' wire content rather than doing original
-# reporting, so their own editorial accountability is looser even when the
+# varies by author, not just by outlet; Yahoo is an aggregator that
+# republishes other outlets' wire content rather than doing original
+# reporting, so its own editorial accountability is looser even when the
 # underlying story is sound; Goal.com is a real, reputable outlet but only
 # within its football/soccer niche, not a general-purpose news wire.
+#
+# msn.com was deliberately removed (not just never added): verified live
+# that its pages are a client-rendered app shell with no article text, no
+# JSON-LD, and no meta description in the static HTML at all -- 15/15 real
+# fetches failed extraction across two unrelated topics (Vinicius Jr.
+# transfer, Fed/SpaceX/NBA/OpenAI news). Since Bing surfaces MSN heavily,
+# keeping it here was actively crowding out other outlets under the
+# MAX_RESULTS_PER_QUERY cap for zero yield.
 TIER2_SECONDARY_OUTLETS = [
     "forbes.com",
     "goal.com",
-    "msn.com",
     "yahoo.com",
 ]
 

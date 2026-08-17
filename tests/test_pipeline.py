@@ -71,6 +71,33 @@ def test_run_pipeline_writes_a_finding_per_market(mock_retrieve, mock_extract, m
 @patch("resolution_finder.pipeline.rank_by_relevance")
 @patch("resolution_finder.pipeline.extract_article_text")
 @patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_skips_rate_limit_sleep_for_known_unresolvable_urls(
+    mock_retrieve, mock_extract, mock_rank, mock_sleep
+):
+    """A news.google.com wrapper URL never gets a real request (see
+    article_extractor.is_known_unresolvable_url), so there is nothing to
+    rate-limit -- sleeping after it anyway would just waste real time for no
+    protective benefit."""
+    mock_retrieve.return_value = [
+        ArticleRef(
+            url="https://news.google.com/rss/articles/CBMi0wFBVV95cUxP",
+            title="t", source_type="primary",
+        )
+    ]
+    mock_extract.return_value = None
+    mock_rank.return_value = []
+
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider(), db_path, peer_checker=NO_PEER_MATCH)
+
+    mock_sleep.assert_not_called()
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
 def test_run_pipeline_never_fetches_official_social_urls(mock_retrieve, mock_extract, mock_rank, mock_sleep):
     mock_retrieve.return_value = [
         ArticleRef(

@@ -7,7 +7,7 @@ from resolution_finder.market_provider import MarketProvider
 from resolution_finder.models import Market, RankedArticle, Verdict
 from resolution_finder.query_builder import build_queries
 from resolution_finder.evidence_retriever import retrieve_evidence
-from resolution_finder.article_extractor import extract_article_text
+from resolution_finder.article_extractor import extract_article_text, is_known_unresolvable_url
 from resolution_finder.relevance_ranker import rank_by_relevance
 from resolution_finder.verdict_engine import decide
 from resolution_finder.peer_market import find_polymarket_match
@@ -73,7 +73,10 @@ def _scan_market(
         text = extract_article_text(ref.url)
         if text:
             articles_with_text.append((ref, text))
-        time.sleep(REQUEST_DELAY_SECONDS)
+        # No request was made for a known-unresolvable host (see
+        # article_extractor.py) -- nothing to rate-limit, so skip the sleep.
+        if not is_known_unresolvable_url(ref.url):
+            time.sleep(REQUEST_DELAY_SECONDS)
 
     ranked = rank_by_relevance(market, articles_with_text)
     verdict = verdict_engine(market, ranked)

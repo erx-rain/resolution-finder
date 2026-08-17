@@ -1,7 +1,12 @@
 from unittest.mock import patch, MagicMock
 import pytest
 import requests
-from resolution_finder.article_extractor import extract_article_text, is_blocked_url
+from resolution_finder.article_extractor import (
+    extract_article_text,
+    is_blocked_url,
+    is_known_unresolvable_url,
+    BROWSER_HEADERS,
+)
 
 
 def make_response(html="<html>...</html>", final_url="https://example.com/article"):
@@ -53,6 +58,55 @@ def test_extract_article_text_fails_gracefully_on_google_news_wrapper(mock_get, 
 
     result = extract_article_text("https://news.google.com/rss/articles/CBMi0wFBVV95cUxPVzRseEx")
     assert result is None
+
+
+# --- known-unresolvable hosts: skip the fetch entirely -----------------------
+
+@pytest.mark.parametrize("url", [
+    "https://news.google.com/rss/articles/CBMi0wFBVV95cUxP",
+    "https://news.google.com/rss/search?q=x",
+])
+def test_is_known_unresolvable_url_covers_google_news(url):
+    assert is_known_unresolvable_url(url) is True
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.reuters.com/article/x",
+    "https://notnews.google.com/page",
+    "https://news.google.com.evil.net/page",
+    "https://www.msn.com/en-us/news/article",
+])
+def test_is_known_unresolvable_url_allows_everything_else(url):
+    assert is_known_unresolvable_url(url) is False
+
+
+@patch("resolution_finder.article_extractor.requests.get")
+def test_extract_article_text_never_fetches_known_unresolvable_hosts(mock_get):
+    """400+ live attempts, zero successes -- skip the request outright rather
+    than pay for a fetch guaranteed to fail (see UNRESOLVABLE_HOSTS)."""
+    result = extract_article_text("https://news.google.com/rss/articles/CBMi0wFBVV95cUxP")
+    assert result is None
+    mock_get.assert_not_called()
+
+
+# --- realistic browser headers ------------------------------------------------
+
+@patch("resolution_finder.article_extractor.trafilatura.extract")
+@patch("resolution_finder.article_extractor.requests.get")
+def test_extract_article_text_sends_realistic_browser_headers(mock_get, mock_extract):
+    """A bare User-Agent-only header fingerprints as a script and gets
+    403/405/406'd by some real outlets (news18.com, azcentral.com,
+    wionews.com, samaa.tv -- all verified live). The fuller header set must
+    actually be what's sent."""
+    mock_get.return_value = make_response()
+    mock_extract.return_value = "text"
+
+    extract_article_text("https://example.com/article")
+
+    sent_headers = mock_get.call_args.kwargs["headers"]
+    assert sent_headers == BROWSER_HEADERS
+    assert "Accept-Language" in sent_headers
+    assert sent_headers["User-Agent"] != "Mozilla/5.0"
 
 
 # --- blocked-host defence in depth -------------------------------------------
