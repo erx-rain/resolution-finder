@@ -14,5 +14,10 @@ SIMILARITY_THRESHOLD = 0.35
 # genuine match at this stage is safe by design: the market simply falls
 # through to the news pipeline instead of getting a wrong verdict.
 PEER_MARKET_SIMILARITY_THRESHOLD = 0.75
+# Off by default: the Polymarket cross-check (resolution_finder/peer_market.py)
+# is a real, tested, reviewed feature, but the user chose to hold it back from
+# live runs for now rather than remove it. Flip to True to re-enable; nothing
+# else needs to change.
+PEER_MARKET_ENABLED = False
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 REQUEST_DELAY_SECONDS = 1
