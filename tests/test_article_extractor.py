@@ -1,12 +1,32 @@
 from unittest.mock import patch, MagicMock
 import pytest
 import curl_cffi.requests as curl_requests
+from resolution_finder import article_extractor
 from resolution_finder.article_extractor import (
     extract_article_text,
     is_blocked_url,
     is_known_unresolvable_url,
+    is_allowed_by_robots_txt,
     IMPERSONATE,
 )
+
+
+@pytest.fixture(autouse=True)
+def _permissive_robots_cache():
+    """Every existing test's mocked `curl_requests.get` stands in for the
+    *content* fetch. Without this, extract_article_text's own robots.txt
+    check would consume that same mock first (see is_allowed_by_robots_txt),
+    silently breaking every call-count/side_effect assertion in this file.
+    Pre-seeding the cache as permissive for the hosts these tests actually
+    use keeps the robots.txt code path exercised (cache hit -> allowed)
+    without it touching the content-fetch mock. The dedicated robots.txt
+    tests below use their own, unseeded host so they can mock the real
+    fetch-and-parse behavior in isolation."""
+    article_extractor._robots_cache.clear()
+    for host in ("example.com", "redirector.example.com"):
+        article_extractor._robots_cache[host] = (None, True)
+    yield
+    article_extractor._robots_cache.clear()
 
 
 def make_response(html="<html>...</html>", final_url="https://example.com/article"):
@@ -205,3 +225,76 @@ def test_extract_article_text_discards_content_redirected_to_blocked_host(mock_g
 
     result = extract_article_text("https://redirector.example.com/go")
     assert result is None
+
+
+# --- robots.txt: a site's own stated automated-access policy ----------------
+
+def make_robots_response(body, status_code=200):
+    response = MagicMock()
+    response.status_code = status_code
+    response.text = body
+    return response
+
+
+@patch("resolution_finder.article_extractor.curl_requests.get")
+def test_is_allowed_by_robots_txt_respects_a_disallow_rule(mock_get):
+    mock_get.return_value = make_robots_response("User-agent: *\nDisallow: /private/\n")
+    assert is_allowed_by_robots_txt("https://robots-test-1.example/private/page") is False
+    assert is_allowed_by_robots_txt("https://robots-test-1.example/public/page") is True
+
+
+@patch("resolution_finder.article_extractor.curl_requests.get")
+def test_is_allowed_by_robots_txt_permits_a_wide_open_site(mock_get):
+    """Verified live against a real site (INEC Nigeria) before it was added
+    as a named source: Disallow only covering /wp-admin/ (standard WordPress
+    boilerplate) must not block real content pages."""
+    mock_get.return_value = make_robots_response(
+        "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n"
+    )
+    assert is_allowed_by_robots_txt("https://robots-test-2.example/election-results") is True
+
+
+@patch("resolution_finder.article_extractor.curl_requests.get")
+def test_is_allowed_by_robots_txt_defaults_to_allowed_when_genuinely_missing(mock_get):
+    """A real 404 is the standard convention for 'no stated restriction' --
+    must fail open. An actual block is still caught later by the real
+    fetch's own error handling."""
+    mock_get.return_value = make_robots_response("Not Found", status_code=404)
+    assert is_allowed_by_robots_txt("https://robots-test-3.example/page") is True
+
+
+@patch("resolution_finder.article_extractor.curl_requests.get")
+def test_is_allowed_by_robots_txt_fails_closed_on_network_error(mock_get):
+    """A network/SSL error is NOT the same as 'no robots.txt exists' -- we
+    don't know the site's actual policy, so we must not guess permissively.
+    Verified live: inecnigeria.org's robots.txt fetch fails with a real SSL
+    certificate error (their cert chain is broken, not a client quirk), and
+    treating that as 'allowed' would have been a real bug."""
+    mock_get.side_effect = curl_requests.exceptions.ConnectionError("failed")
+    assert is_allowed_by_robots_txt("https://robots-test-4.example/page") is False
+
+
+@patch("resolution_finder.article_extractor.curl_requests.get")
+def test_is_allowed_by_robots_txt_fails_closed_on_server_error(mock_get):
+    """A 5xx (or any non-200/404 status) means we couldn't actually read the
+    policy -- fail closed, same reasoning as a network error."""
+    mock_get.return_value = make_robots_response("Internal Server Error", status_code=500)
+    assert is_allowed_by_robots_txt("https://robots-test-4b.example/page") is False
+
+
+@patch("resolution_finder.article_extractor.curl_requests.get")
+def test_is_allowed_by_robots_txt_caches_per_host(mock_get):
+    mock_get.return_value = make_robots_response("User-agent: *\nDisallow:\n")
+    is_allowed_by_robots_txt("https://robots-test-5.example/a")
+    is_allowed_by_robots_txt("https://robots-test-5.example/b")
+    is_allowed_by_robots_txt("https://robots-test-5.example/c")
+    assert mock_get.call_count == 1
+
+
+@patch("resolution_finder.article_extractor.is_allowed_by_robots_txt")
+@patch("resolution_finder.article_extractor.curl_requests.get")
+def test_extract_article_text_refuses_when_robots_txt_disallows(mock_get, mock_robots):
+    mock_robots.return_value = False
+    result = extract_article_text("https://robots-test-6.example/blocked-page")
+    assert result is None
+    mock_get.assert_not_called()

@@ -205,15 +205,33 @@ def test_run_pipeline_uses_peer_market_match_and_skips_rest_of_pipeline(
     os.remove(db_path)
 
 
-def test_run_pipeline_defaults_peer_checker_to_find_polymarket_match():
-    """The default `peer_checker` parameter must actually be the real
-    `find_polymarket_match`, so behavior is unchanged for callers that don't
-    inject one -- this is what makes the injection additive, not a silent
-    behavior change.
+def test_run_pipeline_defaults_peer_checker_to_the_flag_respecting_wrapper():
+    """The default `peer_checker` must be `_default_peer_checker`, which
+    itself respects PEER_MARKET_ENABLED -- see the two tests below. This is
+    what makes PEER_MARKET_ENABLED an enforced property of run_pipeline
+    itself rather than a convention only one caller happens to honour.
     """
     import resolution_finder.pipeline as pipeline_module
-    from resolution_finder.peer_market import find_polymarket_match
-    assert pipeline_module.run_pipeline.__defaults__[1] is find_polymarket_match
+    assert pipeline_module.run_pipeline.__defaults__[1] is pipeline_module._default_peer_checker
+
+
+@patch("resolution_finder.pipeline.PEER_MARKET_ENABLED", False)
+@patch("resolution_finder.pipeline.find_polymarket_match")
+def test_default_peer_checker_skips_polymarket_when_disabled(mock_find_match):
+    from resolution_finder.pipeline import _default_peer_checker
+    result = _default_peer_checker(make_market())
+    assert result is None
+    mock_find_match.assert_not_called()
+
+
+@patch("resolution_finder.pipeline.PEER_MARKET_ENABLED", True)
+@patch("resolution_finder.pipeline.find_polymarket_match")
+def test_default_peer_checker_delegates_to_polymarket_when_enabled(mock_find_match):
+    from resolution_finder.pipeline import _default_peer_checker
+    mock_find_match.return_value = "sentinel-verdict"
+    result = _default_peer_checker(make_market())
+    assert result == "sentinel-verdict"
+    mock_find_match.assert_called_once()
 
 
 @patch("resolution_finder.pipeline.time.sleep")

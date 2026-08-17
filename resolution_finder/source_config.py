@@ -1,6 +1,19 @@
 from typing import Optional
 from resolution_finder.query_builder import extract_urls
 
+# Before adding a new entry here, verify LIVE (not just from the market's
+# description text) that the domain is actually reachable: check robots.txt
+# (resolution_finder.article_extractor.is_allowed_by_robots_txt) AND do a
+# real fetch. A robots.txt-permissive site can still be practically
+# unreachable -- e.g. inecnigeria.org (Nigeria's INEC, cited as the
+# resolution source for Osun State-style election markets) has a broken SSL
+# certificate as of 2026-08-17, confirmed with both curl_cffi and plain
+# requests (SSLCertVerificationError: unable to get local issuer
+# certificate) -- so it was deliberately NOT added here even though its
+# robots.txt is wide open. Do not work around a cert failure by disabling
+# verification; that's a real security anti-pattern, especially for a
+# government source where trust in the data is the entire point. Re-check
+# live before adding it if this comes up again.
 TIER1_DOMAINS = {
     "congress.gov": "congress.gov",
     "u.s. congress": "congress.gov",

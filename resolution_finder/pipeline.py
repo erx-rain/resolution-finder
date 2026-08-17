@@ -12,7 +12,7 @@ from resolution_finder.relevance_ranker import rank_by_relevance
 from resolution_finder.verdict_engine import decide
 from resolution_finder.peer_market import find_polymarket_match
 from resolution_finder.storage import init_db, save_finding
-from resolution_finder.config import REQUEST_DELAY_SECONDS
+from resolution_finder.config import REQUEST_DELAY_SECONDS, PEER_MARKET_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +20,26 @@ VerdictEngine = Callable[[Market, list[RankedArticle]], Verdict]
 PeerChecker = Callable[[Market], Optional[Verdict]]
 
 
+def _default_peer_checker(market: Market) -> Optional[Verdict]:
+    """The default `peer_checker`, which respects PEER_MARKET_ENABLED.
+
+    Reading the config flag here -- inside the shared mechanism -- rather
+    than only at whichever caller happens to exist today (previously just
+    run_scan.py) means EVERY caller of run_pipeline() honours the flag by
+    default, including any future one that doesn't know to check it itself.
+    A caller that explicitly passes its own `peer_checker=` still overrides
+    this entirely, same as before.
+    """
+    if not PEER_MARKET_ENABLED:
+        return None
+    return find_polymarket_match(market)
+
+
 def run_pipeline(
     market_provider: MarketProvider,
     db_path: str,
     verdict_engine: VerdictEngine = decide,
-    peer_checker: PeerChecker = find_polymarket_match,
+    peer_checker: PeerChecker = _default_peer_checker,
 ) -> None:
     """Scan every unresolved market and store a proposed verdict for review.
 
@@ -32,7 +47,8 @@ def run_pipeline(
     rule-based engine can be swapped for an AI-based one with no changes here
     or further upstream. `peer_checker` is injected the same way, so the
     Polymarket cross-check can be swapped out (or stubbed in tests) without
-    editing the pipeline.
+    editing the pipeline. The default already honours `PEER_MARKET_ENABLED`
+    (see `_default_peer_checker`).
     """
     init_db(db_path)
     run_timestamp = datetime.now(timezone.utc).isoformat()

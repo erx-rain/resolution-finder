@@ -146,7 +146,7 @@ def search_bing_news_rss(query: str) -> list[ArticleRef]:
     feed = feedparser.parse(url)
     _warn_if_feed_fetch_failed(feed, "Bing News", query)
     results = []
-    for entry in feed.entries[:MAX_RESULTS_PER_QUERY]:
+    for entry in feed.entries:
         real_url = _bing_target_url(entry.link)
         if not real_url:
             logger.warning(
@@ -162,6 +162,8 @@ def search_bing_news_rss(query: str) -> list[ArticleRef]:
             source_type=source_type,
             source_domain=domain,
         ))
+        if len(results) >= MAX_RESULTS_PER_QUERY:
+            break
     return results
 
 
@@ -171,7 +173,7 @@ def search_google_news_rss(query: str, site: Optional[str] = None) -> list[Artic
     feed = feedparser.parse(url)
     _warn_if_feed_fetch_failed(feed, "Google News", full_query)
     results = []
-    for entry in feed.entries[:MAX_RESULTS_PER_QUERY]:
+    for entry in feed.entries:
         domain = entry_source_domain(entry)
         if domain is None:
             logger.warning(
@@ -185,6 +187,8 @@ def search_google_news_rss(query: str, site: Optional[str] = None) -> list[Artic
             source_type=source_type,
             source_domain=domain,
         ))
+        if len(results) >= MAX_RESULTS_PER_QUERY:
+            break
     return results
 
 

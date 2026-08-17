@@ -2,6 +2,7 @@ import logging
 import time
 from typing import Optional
 from urllib.parse import urlparse
+from urllib.robotparser import RobotFileParser
 import curl_cffi.requests as curl_requests
 import trafilatura
 
@@ -44,7 +45,15 @@ IMPERSONATE = "chrome"
 # retried, and only up to MAX_FETCH_ATTEMPTS total -- a real, persistent
 # failure (a truly dead host, not a blip) still gives up promptly rather than
 # looping.
+#
+# curl_cffi.requests.exceptions.SSLError is a SUBCLASS of ConnectionError, so
+# it would otherwise be caught by the transient handler below and retried --
+# wrong for a permanently broken certificate chain (verified live:
+# inecnigeria.org's cert failure is deterministic, not a blip; a real cert
+# problem never fixes itself between retries). Checked before the transient
+# tuple so it takes priority.
 TRANSIENT_EXCEPTIONS = (curl_requests.exceptions.Timeout, curl_requests.exceptions.ConnectionError)
+NON_RETRYABLE_EXCEPTIONS = (curl_requests.exceptions.SSLError,)
 MAX_FETCH_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 1
 
@@ -75,6 +84,74 @@ def is_known_unresolvable_url(url: str) -> bool:
     return _host_matches(_host_of(url), UNRESOLVABLE_HOSTS)
 
 
+# robots.txt is the standard, honest way a site states its own
+# automated-access policy -- checking it programmatically replaces a human
+# spot-checking each new domain by hand (verified live for INEC Nigeria
+# before it was added as a named source: wide open except /wp-admin/).
+# Cached per host so a run touching the same domain repeatedly doesn't
+# re-fetch robots.txt every time.
+_robots_cache: dict[str, Optional[RobotFileParser]] = {}
+ROBOTS_USER_AGENT = "*"
+
+
+def _get_robot_parser(url: str):
+    """Fetch and cache this host's robots.txt.
+
+    Returns a (parser, is_genuinely_absent) pair. `is_genuinely_absent` is
+    True only for a real 404 -- the standard convention for "no stated
+    policy" -- and False for anything else (network error, SSL failure,
+    5xx, ...), where we don't actually know the site's policy and must not
+    guess permissively. Verified live: inecnigeria.org's robots.txt fetch
+    fails with a real SSL certificate error (their cert chain is broken, not
+    a client-side issue -- confirmed with both curl_cffi and plain
+    requests), which must NOT be treated the same as "no robots.txt exists".
+
+    Only a DEFINITIVE outcome (a real 404, or a parsed 200) is cached. A
+    fetch exception is fail-closed for THIS call but deliberately not
+    written to the cache, so a one-off network blip doesn't get treated as a
+    permanent, run-long denial for every later URL on that host -- the next
+    call for the same host gets a fresh attempt rather than reading a stale
+    failure back out of the cache forever.
+    """
+    host = _host_of(url)
+    if not host:
+        return None, True
+    if host in _robots_cache:
+        return _robots_cache[host]
+
+    parsed = urlparse(url)
+    robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+    try:
+        response = curl_requests.get(robots_url, timeout=5, impersonate=IMPERSONATE)
+    except curl_requests.exceptions.RequestException:
+        return None, False  # not cached -- see docstring
+
+    if response.status_code == 404:
+        result = (None, True)
+    elif response.status_code == 200:
+        parser = RobotFileParser()
+        parser.parse(response.text.splitlines())
+        result = (parser, False)
+    else:
+        result = (None, False)
+    _robots_cache[host] = result
+    return result
+
+
+def is_allowed_by_robots_txt(url: str) -> bool:
+    """Whether `url`'s own robots.txt permits fetching it.
+
+    A genuinely absent robots.txt (404) is treated as allowed -- the
+    standard crawler convention. Any other failure to determine the site's
+    policy (network error, SSL error, a non-200/404 status) fails CLOSED:
+    we don't know the policy, so we don't guess permissively.
+    """
+    parser, is_absent = _get_robot_parser(url)
+    if parser is None:
+        return is_absent
+    return parser.can_fetch(ROBOTS_USER_AGENT, url)
+
+
 def extract_article_text(url: str, timeout: int = 10) -> Optional[str]:
     if is_blocked_url(url):
         logger.warning("Refusing to fetch blocked host: %s", url)
@@ -84,12 +161,19 @@ def extract_article_text(url: str, timeout: int = 10) -> Optional[str]:
         logger.warning("Skipping known-unresolvable host, no fetch attempted: %s", url)
         return None
 
+    if not is_allowed_by_robots_txt(url):
+        logger.warning("Refusing to fetch, disallowed by robots.txt: %s", url)
+        return None
+
     response = None
     for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
         try:
             response = curl_requests.get(url, timeout=timeout, impersonate=IMPERSONATE)
             response.raise_for_status()
             break
+        except NON_RETRYABLE_EXCEPTIONS as exc:
+            logger.warning("Non-retryable fetch error, skipping %s: %s", url, exc)
+            return None
         except TRANSIENT_EXCEPTIONS as exc:
             if attempt == MAX_FETCH_ATTEMPTS:
                 logger.warning(
@@ -106,13 +190,26 @@ def extract_article_text(url: str, timeout: int = 10) -> Optional[str]:
             logger.warning("Article fetch failed, skipping %s: %s", url, exc)
             return None
 
-    # A redirect chain can land somewhere we are not allowed to read.
+    # A redirect chain can land somewhere we are not allowed to read, or
+    # somewhere whose robots.txt we haven't actually consulted -- the check
+    # above only covers the URL we started from.
     final_url = getattr(response, "url", None)
-    if isinstance(final_url, str) and is_blocked_url(final_url):
-        logger.warning("Discarding content: %s redirected to blocked host %s", url, final_url)
-        return None
+    if isinstance(final_url, str) and final_url != url:
+        if is_blocked_url(final_url):
+            logger.warning("Discarding content: %s redirected to blocked host %s", url, final_url)
+            return None
+        if not is_allowed_by_robots_txt(final_url):
+            logger.warning(
+                "Discarding content: %s redirected to %s, disallowed by robots.txt",
+                url, final_url,
+            )
+            return None
 
-    text = trafilatura.extract(response.text)
+    try:
+        text = trafilatura.extract(response.text)
+    except Exception as exc:  # noqa: BLE001 - a bad extraction must not abort the whole market
+        logger.warning("trafilatura failed to parse %s: %s", url, exc)
+        return None
     if not text or not text.strip():
         logger.warning("No extractable article text at %s", url)
         return None
