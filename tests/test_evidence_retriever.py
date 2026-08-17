@@ -1,4 +1,5 @@
 # tests/test_evidence_retriever.py
+import logging
 from unittest.mock import patch, MagicMock
 from datetime import date
 from urllib.parse import quote
@@ -34,9 +35,11 @@ WRAPPER_URL = (
 )
 
 
-def make_fake_feed(entries):
+def make_fake_feed(entries, bozo=False, status=200):
     feed = MagicMock()
     feed.entries = entries
+    feed.bozo = bozo
+    feed.status = status
     return feed
 
 
@@ -169,6 +172,41 @@ def test_search_bing_news_rss_skips_entries_without_resolvable_url(mock_parse):
     mock_parse.return_value = make_fake_feed([unresolvable])
     results = search_bing_news_rss("CLARITY act")
     assert results == []
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_warns_on_bozo_feed(mock_parse, caplog):
+    """feedparser never raises on HTTP errors/rate-limiting, so a blocked or
+    rate-limited fetch looks identical to "found nothing" unless bozo/status
+    are checked. Verifies the warning fires; return value is still whatever
+    entries were parsed (possibly none), never a raised exception.
+    """
+    mock_parse.return_value = make_fake_feed([], bozo=True, status=429)
+    with caplog.at_level(logging.WARNING, logger="resolution_finder.evidence_retriever"):
+        results = search_bing_news_rss("CLARITY act")
+    assert results == []
+    assert "Bing News" in caplog.text
+    assert "CLARITY act" in caplog.text
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_does_not_warn_on_healthy_feed(mock_parse, caplog):
+    mock_parse.return_value = make_fake_feed([
+        make_bing_entry("Reuters headline", "https://www.reuters.com/article/x"),
+    ])
+    with caplog.at_level(logging.WARNING, logger="resolution_finder.evidence_retriever"):
+        search_bing_news_rss("CLARITY act")
+    assert "fetch may have failed" not in caplog.text
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_google_news_rss_warns_on_bozo_feed(mock_parse, caplog):
+    mock_parse.return_value = make_fake_feed([], bozo=True, status=503)
+    with caplog.at_level(logging.WARNING, logger="resolution_finder.evidence_retriever"):
+        results = search_google_news_rss("CLARITY act")
+    assert results == []
+    assert "Google News" in caplog.text
+    assert "CLARITY act" in caplog.text
 
 
 # --- Tier 1 (domain-scoped) --------------------------------------------------

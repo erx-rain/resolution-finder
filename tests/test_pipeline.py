@@ -2,24 +2,21 @@
 import logging
 import os
 import tempfile
-import pytest
 from unittest.mock import patch
 from datetime import date, timedelta
 from resolution_finder.models import Market, ArticleRef, Verdict
 from resolution_finder.pipeline import run_pipeline
 from resolution_finder.storage import get_latest_findings
 
-
-@pytest.fixture(autouse=True)
-def no_live_peer_market_calls():
-    """The pipeline now consults Polymarket before the news pipeline. Without
-    this, every pipeline test would make a real network call to the live
-    Polymarket API — slow, flaky, and (verified) able to short-circuit the
-    pipeline with a real match and break assertions about the news path.
-    Tests that care about peer matching patch this target themselves.
-    """
-    with patch("resolution_finder.pipeline.find_polymarket_match", return_value=None):
-        yield
+# The pipeline consults Polymarket (via the injected `peer_checker`) before
+# the news pipeline. Without stubbing it out, every pipeline test would make
+# a real network call to the live Polymarket API -- slow, flaky, and able to
+# short-circuit the pipeline with a real match and break assertions about the
+# news path. `peer_checker` is injected the same way `verdict_engine` is
+# (see pipeline.py), so tests that don't care about peer matching just pass
+# this stub explicitly; the one test that does care about peer matching
+# passes its own peer_checker instead.
+NO_PEER_MATCH = lambda market: None
 
 
 def make_market(market_id="clarity-act-2026"):
@@ -62,7 +59,7 @@ def test_run_pipeline_writes_a_finding_per_market(mock_retrieve, mock_extract, m
     os.close(fd)
     os.remove(db_path)
 
-    run_pipeline(FakeMarketProvider(), db_path)
+    run_pipeline(FakeMarketProvider(), db_path, peer_checker=NO_PEER_MATCH)
 
     findings = get_latest_findings(db_path)
     assert len(findings) == 1
@@ -87,7 +84,7 @@ def test_run_pipeline_never_fetches_official_social_urls(mock_retrieve, mock_ext
 
     db_path = temp_db_path()
 
-    run_pipeline(FakeMarketProvider(), db_path)
+    run_pipeline(FakeMarketProvider(), db_path, peer_checker=NO_PEER_MATCH)
 
     mock_extract.assert_not_called()
     articles_passed = mock_rank.call_args[0][1]
@@ -118,7 +115,7 @@ def test_run_pipeline_uses_injected_verdict_engine(mock_retrieve, mock_extract, 
         )
 
     db_path = temp_db_path()
-    run_pipeline(FakeMarketProvider(), db_path, verdict_engine=fake_engine)
+    run_pipeline(FakeMarketProvider(), db_path, verdict_engine=fake_engine, peer_checker=NO_PEER_MATCH)
 
     assert [market_id for market_id, _ in calls] == ["clarity-act-2026"]
     findings = get_latest_findings(db_path)
@@ -136,39 +133,60 @@ def test_run_pipeline_defaults_to_the_rule_based_engine(mock_retrieve, mock_extr
     mock_rank.return_value = []
 
     db_path = temp_db_path()
-    run_pipeline(FakeMarketProvider(), db_path)
+    run_pipeline(FakeMarketProvider(), db_path, peer_checker=NO_PEER_MATCH)
 
     findings = get_latest_findings(db_path)
     assert findings[0]["outcome"] == "NO_EVIDENCE"
     os.remove(db_path)
 
 
-@patch("resolution_finder.pipeline.find_polymarket_match")
 @patch("resolution_finder.pipeline.time.sleep")
 @patch("resolution_finder.pipeline.rank_by_relevance")
 @patch("resolution_finder.pipeline.extract_article_text")
 @patch("resolution_finder.pipeline.retrieve_evidence")
 def test_run_pipeline_uses_peer_market_match_and_skips_rest_of_pipeline(
-    mock_retrieve, mock_extract, mock_rank, mock_sleep, mock_peer_match
+    mock_retrieve, mock_extract, mock_rank, mock_sleep
 ):
-    mock_peer_match.return_value = Verdict(
-        outcome="YES", confidence=0.85,
-        evidence_snippet="Resolved on a peer market",
-        source_url="https://polymarket.com/event/x",
-        source_type="peer_market",
-    )
+    """peer_checker is injected the same way verdict_engine is, so this test
+    passes its own stub rather than patching the module-level
+    find_polymarket_match -- proving the injection point actually works, not
+    just that the module default (find_polymarket_match) happens to still be
+    wired up.
+    """
+    peer_match_calls = []
+
+    def fake_peer_checker(market):
+        peer_match_calls.append(market.id)
+        return Verdict(
+            outcome="YES", confidence=0.85,
+            evidence_snippet="Resolved on a peer market",
+            source_url="https://polymarket.com/event/x",
+            source_type="peer_market",
+        )
 
     fd, db_path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     os.remove(db_path)
 
-    run_pipeline(FakeMarketProvider(), db_path)
+    run_pipeline(FakeMarketProvider(), db_path, peer_checker=fake_peer_checker)
 
     findings = get_latest_findings(db_path)
     assert findings[0]["outcome"] == "YES"
     assert findings[0]["source_type"] == "peer_market"
+    assert peer_match_calls == ["clarity-act-2026"]
     mock_retrieve.assert_not_called()
     os.remove(db_path)
+
+
+def test_run_pipeline_defaults_peer_checker_to_find_polymarket_match():
+    """The default `peer_checker` parameter must actually be the real
+    `find_polymarket_match`, so behavior is unchanged for callers that don't
+    inject one -- this is what makes the injection additive, not a silent
+    behavior change.
+    """
+    import resolution_finder.pipeline as pipeline_module
+    from resolution_finder.peer_market import find_polymarket_match
+    assert pipeline_module.run_pipeline.__defaults__[1] is find_polymarket_match
 
 
 @patch("resolution_finder.pipeline.time.sleep")
@@ -192,7 +210,7 @@ def test_run_pipeline_logs_and_skips_a_failing_market(mock_retrieve, mock_extrac
 
     db_path = temp_db_path()
     with caplog.at_level(logging.ERROR, logger="resolution_finder.pipeline"):
-        run_pipeline(provider, db_path)
+        run_pipeline(provider, db_path, peer_checker=NO_PEER_MATCH)
 
     findings = get_latest_findings(db_path)
     assert [f["market_id"] for f in findings] == ["clarity-act-2026"]

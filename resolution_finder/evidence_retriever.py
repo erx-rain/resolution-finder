@@ -118,6 +118,22 @@ def _bing_target_url(wrapper_url: str) -> Optional[str]:
     return values[0] if values else None
 
 
+def _warn_if_feed_fetch_failed(feed, source: str, query: str) -> None:
+    """feedparser never raises on HTTP errors or rate-limiting -- a blocked
+    or rate-limited fetch looks identical to "found nothing" unless the
+    caller checks `feed.bozo` (malformed/failed parse) and `feed.status`
+    (HTTP status, when available) itself. This only logs; it does not change
+    what gets returned, since a genuine zero-results feed is a valid outcome
+    too and callers must keep treating it that way.
+    """
+    status = getattr(feed, "status", None)
+    if feed.bozo or (status is not None and status >= 400):
+        logger.warning(
+            "%s RSS fetch may have failed for query %r (status=%s, bozo=%s)",
+            source, query, status, feed.bozo,
+        )
+
+
 def search_bing_news_rss(query: str) -> list[ArticleRef]:
     """General (unscoped) credible-outlet search, replacing Google News RSS
     for Tier 2. Bing's RSS endpoint doesn't honor `site:` scoping (verified
@@ -128,6 +144,7 @@ def search_bing_news_rss(query: str) -> list[ArticleRef]:
     """
     url = BING_NEWS_RSS.format(query=quote_plus(query))
     feed = feedparser.parse(url)
+    _warn_if_feed_fetch_failed(feed, "Bing News", query)
     results = []
     for entry in feed.entries:
         real_url = _bing_target_url(entry.link)
@@ -152,6 +169,7 @@ def search_google_news_rss(query: str, site: Optional[str] = None) -> list[Artic
     full_query = f"{query} site:{site}" if site else query
     url = GOOGLE_NEWS_RSS.format(query=quote_plus(full_query))
     feed = feedparser.parse(url)
+    _warn_if_feed_fetch_failed(feed, "Google News", full_query)
     results = []
     for entry in feed.entries:
         domain = entry_source_domain(entry)

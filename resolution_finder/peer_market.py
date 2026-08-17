@@ -10,7 +10,7 @@ from sentence_transformers import util
 from resolution_finder.models import Market, Verdict
 from resolution_finder.query_builder import extract_entities
 from resolution_finder.relevance_ranker import _get_model
-from resolution_finder.config import SIMILARITY_THRESHOLD
+from resolution_finder.config import PEER_MARKET_SIMILARITY_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,9 @@ def _has_conflicting_threshold(our_text: str, peer_text: str) -> bool:
     Verified live: "Will Bitcoin reach $200,000 in 2026?" matched "Will
     Bitcoin reach $80,000 by December 31, 2026?" at 0.65 similarity. Same
     asset, same year, 2.5x different strike price -- invisible to both the
-    bill-number and entity checks, and far above SIMILARITY_THRESHOLD.
+    bill-number and entity checks, and (at the time) above the shared
+    similarity threshold this check used to reuse before it got its own,
+    stricter PEER_MARKET_SIMILARITY_THRESHOLD.
     """
     our_money, our_percents = _extract_numeric_thresholds(our_text)
     peer_money, peer_percents = _extract_numeric_thresholds(peer_text)
@@ -213,26 +215,47 @@ def _has_conflicting_resolution_window(our_close: date, peer_end: Optional[date]
 
 
 def _search_polymarket_events(query: str) -> list[dict]:
+    """Best-effort: any network failure or malformed response degrades to no
+    candidates found, never an uncaught exception. A single bad response must
+    not propagate up through `_scan_market` and cause `run_pipeline` to skip
+    the whole market -- verified: a 200 response with a non-JSON body raises
+    `ValueError` from `response.json()`, and a JSON top-level list (instead of
+    the expected dict) raises `AttributeError` on `.get("events")`, both of
+    which must be caught here rather than left to propagate.
+    """
     url = POLYMARKET_SEARCH.format(query=quote_plus(query))
     try:
         response = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
         response.raise_for_status()
-    except requests.RequestException:
+        payload = response.json()
+    except (requests.RequestException, ValueError):
         logger.warning("Polymarket search failed for query %r", query)
         return []
-    return response.json().get("events", [])
+    if not isinstance(payload, dict):
+        logger.warning("Polymarket search returned unexpected payload shape for query %r", query)
+        return []
+    return payload.get("events", [])
 
 
 def _resolved_outcome(peer_market: dict) -> Optional[str]:
+    """Best-effort: a malformed `outcomePrices` string (e.g. `'["",""]'`)
+    must degrade to `None`, not raise. `float()` on the parsed prices is kept
+    inside the same guarded step as the `json.loads` calls above it, since
+    both can fail on data this function does not control.
+    """
     try:
         outcomes = json.loads(peer_market.get("outcomes", "[]"))
-        prices = json.loads(peer_market.get("outcomePrices", "[]"))
+        raw_prices = json.loads(peer_market.get("outcomePrices", "[]"))
     except (ValueError, TypeError):
         return None
-    if not outcomes or len(outcomes) != len(prices):
+    if not outcomes or len(outcomes) != len(raw_prices):
         return None
-    best_idx = max(range(len(prices)), key=lambda i: float(prices[i]))
-    if float(prices[best_idx]) < 0.9:
+    try:
+        prices = [float(p) for p in raw_prices]
+    except (ValueError, TypeError):
+        return None
+    best_idx = max(range(len(prices)), key=lambda i: prices[i])
+    if prices[best_idx] < 0.9:
         return None
     return outcomes[best_idx]
 
@@ -320,7 +343,7 @@ def find_polymarket_match(market: Market) -> Optional[Verdict]:
 
             peer_embedding = model.encode(peer_text, convert_to_tensor=True)
             similarity = float(util.cos_sim(query_embedding, peer_embedding)[0][0])
-            if similarity >= SIMILARITY_THRESHOLD and similarity > best_similarity:
+            if similarity >= PEER_MARKET_SIMILARITY_THRESHOLD and similarity > best_similarity:
                 best_similarity = similarity
                 best_match = (event, peer_market, peer_question)
 

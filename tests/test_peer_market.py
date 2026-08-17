@@ -11,6 +11,8 @@ from resolution_finder.peer_market import (
     _extract_numeric_thresholds,
     _our_identifying_terms,
     _peer_end_date,
+    _search_polymarket_events,
+    _resolved_outcome,
 )
 
 CLARITY_MARKET = Market(
@@ -456,3 +458,161 @@ def test_find_polymarket_match_handles_search_failure_gracefully(mock_get):
     mock_get.side_effect = requests.ConnectionError("failed")
     result = find_polymarket_match(CLARITY_MARKET)
     assert result is None
+
+
+# --- Malformed-response robustness (a 200 response is not a guarantee of a
+# well-formed body; none of this should ever raise, only degrade to no
+# candidates found / None) ----------------------------------------------------
+
+@patch("resolution_finder.peer_market.requests.get")
+def test_search_polymarket_events_handles_non_json_body(mock_get):
+    """A 200 response with a non-JSON body raises ValueError from
+    response.json(). Previously that call sat outside the try/except, so it
+    propagated uncaught through find_polymarket_match -> _scan_market ->
+    run_pipeline, causing the whole market to be skipped for the run."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.side_effect = ValueError("Expecting value: line 1 column 1 (char 0)")
+    mock_get.return_value = mock_response
+
+    assert _search_polymarket_events("query") == []
+
+
+@patch("resolution_finder.peer_market.requests.get")
+def test_search_polymarket_events_handles_top_level_list_payload(mock_get):
+    """A JSON top-level list (instead of the expected dict) raises
+    AttributeError on `.get("events")` if unguarded."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = [{"events": []}]
+    mock_get.return_value = mock_response
+
+    assert _search_polymarket_events("query") == []
+
+
+@patch("resolution_finder.peer_market.requests.get")
+def test_find_polymarket_match_handles_non_json_body_gracefully_end_to_end(mock_get):
+    """End-to-end: a malformed Polymarket response must not raise out of
+    find_polymarket_match, since an uncaught exception here makes
+    run_pipeline skip the whole market (see pipeline.py's per-market
+    exception handling)."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.side_effect = ValueError("not json")
+    mock_get.return_value = mock_response
+
+    assert find_polymarket_match(CLARITY_MARKET) is None
+
+
+def test_resolved_outcome_handles_malformed_outcome_prices():
+    """A bad outcomePrices string (e.g. blank entries) must not raise out of
+    float() -- previously the float() calls sat outside the try/except that
+    only wrapped the json.loads calls."""
+    peer_market = {"outcomes": '["Yes", "No"]', "outcomePrices": '["", ""]'}
+    assert _resolved_outcome(peer_market) is None
+
+
+def test_resolved_outcome_handles_non_numeric_outcome_prices():
+    peer_market = {"outcomes": '["Yes", "No"]', "outcomePrices": '["abc", "def"]'}
+    assert _resolved_outcome(peer_market) is None
+
+
+def test_resolved_outcome_still_works_for_well_formed_data():
+    peer_market = {"outcomes": '["Yes", "No"]', "outcomePrices": '["1", "0"]'}
+    assert _resolved_outcome(peer_market) == "Yes"
+
+
+# --- PEER_MARKET_SIMILARITY_THRESHOLD -----------------------------------------
+# The peer-market similarity gate previously reused the news-relevance
+# SIMILARITY_THRESHOLD (0.35), which does almost no safety work here: a real
+# wrong-bill false match (Guidance Clarity Act S.81 vs. our real H.R.3633
+# market) scored 0.71 cosine similarity, and a real bill-confirmed genuine
+# match was separately observed as low as 0.7116 -- both far above 0.35, and
+# close enough to each other that similarity alone cannot discriminate them
+# in that range. Genuine matches that survive the 4 hard-reject conflict
+# checks were observed at 0.83+. peer_market.py now uses a dedicated,
+# stricter PEER_MARKET_SIMILARITY_THRESHOLD (0.75) instead.
+
+def _genuine_candidate_response():
+    return {
+        "events": [{
+            "slug": "clarity-act-hr-3633",
+            "markets": [{
+                "question": "Will the Digital Asset Market Clarity Act (H.R. 3633) be signed into law in 2026?",
+                "description": "Resolves Yes if H.R. 3633 is signed into law.",
+                "closed": True,
+                "umaResolutionStatus": "resolved",
+                "outcomes": '["Yes", "No"]',
+                "outcomePrices": '["1", "0"]',
+            }],
+        }],
+    }
+
+
+@patch("resolution_finder.peer_market.util.cos_sim")
+@patch("resolution_finder.peer_market._get_model")
+@patch("resolution_finder.peer_market.requests.get")
+def test_peer_market_threshold_rejects_score_in_observed_false_match_range(
+    mock_get, mock_get_model, mock_cos_sim
+):
+    """A conflict-free (would-otherwise-pass) candidate scoring 0.72 -- inside
+    the observed false-match cluster (0.65-0.7116) -- must be rejected by the
+    stricter peer-market threshold, even though it clears the old shared
+    SIMILARITY_THRESHOLD (0.35) by a wide margin.
+    """
+    mock_response = MagicMock()
+    mock_response.json.return_value = _genuine_candidate_response()
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.return_value = [[0.72]]
+
+    assert find_polymarket_match(CLARITY_MARKET) is None
+
+
+@patch("resolution_finder.peer_market.util.cos_sim")
+@patch("resolution_finder.peer_market._get_model")
+@patch("resolution_finder.peer_market.requests.get")
+def test_peer_market_threshold_still_accepts_genuine_high_similarity_match(
+    mock_get, mock_get_model, mock_cos_sim
+):
+    """A genuine match at the observed genuine-match confidence level (0.83+)
+    must still be accepted by the stricter threshold."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = _genuine_candidate_response()
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.return_value = [[0.85]]
+
+    result = find_polymarket_match(CLARITY_MARKET)
+    assert result is not None
+    assert result.outcome == "YES"
+
+
+@patch("resolution_finder.peer_market.util.cos_sim")
+@patch("resolution_finder.peer_market._get_model")
+@patch("resolution_finder.peer_market.requests.get")
+def test_peer_market_threshold_boundary(mock_get, mock_get_model, mock_cos_sim):
+    """Exactly at PEER_MARKET_SIMILARITY_THRESHOLD (0.75) passes; just below
+    it does not."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = _genuine_candidate_response()
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+
+    mock_cos_sim.return_value = [[0.75]]
+    assert find_polymarket_match(CLARITY_MARKET) is not None
+
+    mock_cos_sim.return_value = [[0.749]]
+    assert find_polymarket_match(CLARITY_MARKET) is None
