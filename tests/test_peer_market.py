@@ -8,6 +8,7 @@ from resolution_finder.peer_market import (
     _has_conflicting_entity,
     _has_conflicting_resolution_window,
     _has_conflicting_threshold,
+    _extract_numeric_thresholds,
     _our_identifying_terms,
     _peer_end_date,
 )
@@ -227,6 +228,15 @@ def test_has_conflicting_resolution_window_rejects_earlier_deadline():
     assert _has_conflicting_resolution_window(date(2026, 12, 31), date(2025, 12, 31)) is True
 
 
+def test_has_conflicting_resolution_window_rejects_later_deadline():
+    # The other direction of the same real wrong-answer shape: our market
+    # asks "...by Jan 31 2025", the peer asks "...by Dec 31 2025" and
+    # resolved YES because the event happened in the intervening months. The
+    # true answer for our (earlier-closing) market is NO, but the peer's YES
+    # would have been proposed with high confidence.
+    assert _has_conflicting_resolution_window(date(2025, 1, 31), date(2025, 12, 31)) is True
+
+
 def test_has_conflicting_resolution_window_allows_small_date_differences():
     assert _has_conflicting_resolution_window(date(2026, 12, 31), date(2026, 12, 31)) is False
     assert _has_conflicting_resolution_window(date(2026, 12, 31), date(2026, 12, 29)) is False
@@ -254,6 +264,27 @@ def test_has_conflicting_threshold_false_when_no_numbers():
     assert _has_conflicting_threshold(
         "Will the CLARITY act be signed into law?", "Will the Clarity Act be signed into law?"
     ) is False
+
+
+def test_extract_numeric_thresholds_handles_bn_and_mm_suffixes():
+    # Previously the suffix alternation only recognized single-letter
+    # ([KMB]) or full-word suffixes, so "$5bn" failed to match AT ALL (the
+    # trailing \b anchor couldn't find a boundary between the digit and "b"),
+    # making the threshold invisible to _has_conflicting_threshold.
+    money, _ = _extract_numeric_thresholds("Will GDP exceed $5bn in 2026?")
+    assert money == {5_000_000_000.0}
+
+    money, _ = _extract_numeric_thresholds("Will GDP exceed $5 bn in 2026?")
+    assert money == {5_000_000_000.0}
+
+    money, _ = _extract_numeric_thresholds("Will revenue exceed $5mm in 2026?")
+    assert money == {5_000_000.0}
+
+
+def test_has_conflicting_threshold_detects_bn_suffix_mismatch():
+    assert _has_conflicting_threshold(
+        "Will GDP exceed $5bn in 2026?", "Will GDP exceed $2bn in 2026?"
+    ) is True
 
 
 def test_short_subject_term_does_not_substring_match_an_unrelated_bill():
@@ -312,6 +343,57 @@ def test_rejects_same_bill_resolving_before_our_deadline(mock_get, mock_get_mode
     mock_cos_sim.return_value = [[0.83]]  # the real observed score
 
     assert find_polymarket_match(CLARITY_MARKET) is None
+
+
+@patch("resolution_finder.peer_market.util.cos_sim")
+@patch("resolution_finder.peer_market._get_model")
+@patch("resolution_finder.peer_market.requests.get")
+def test_rejects_same_bill_resolving_after_our_deadline(mock_get, mock_get_model, mock_cos_sim):
+    """The other direction of the same real wrong-answer shape, end to end.
+
+    Live-verified against real Polymarket data: the GENIUS Act was actually
+    signed into law in July 2025. A market asking whether it was signed into
+    law by June 30, 2025 should resolve "No" -- but the real, resolved
+    Polymarket event "GENIUS Act signed into law in 2025?" (deadline Dec 31
+    2025) resolved "Yes", because the bill was signed in the intervening
+    months. Matching our earlier-closing market to that later-closing peer
+    would have proposed a confidently wrong YES.
+    """
+    our_market = Market(
+        id="genius-act-june-2025",
+        title="Will the GENIUS Act be signed into law by June 30, 2025?",
+        description=(
+            "This market resolves Yes if the GENIUS Act is signed into law "
+            "by June 30, 2025."
+        ),
+        options=[],
+        close_date=date(2025, 6, 30),
+    )
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "events": [{
+            "slug": "genius-act-signed-into-law-in-2025",
+            "markets": [{
+                "question": "GENIUS Act signed into law in 2025?",
+                "description": "",
+                "closed": True,
+                "umaResolutionStatus": "resolved",
+                "endDateIso": "2025-12-31",
+                "outcomes": '["Yes", "No"]',
+                "outcomePrices": '["1", "0"]',
+            }],
+        }],
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.return_value = [[0.828]]  # the real observed score
+
+    assert find_polymarket_match(our_market) is None
 
 
 @patch("resolution_finder.peer_market.util.cos_sim")

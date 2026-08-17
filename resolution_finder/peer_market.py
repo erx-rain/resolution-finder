@@ -29,10 +29,12 @@ ACRONYM_PATTERN = re.compile(r"\b[A-Z]{2,}\b")
 
 # Two markets can name the same subject over different resolution windows --
 # "signed into law by Dec 31 2025" vs "...by Dec 31 2026" is the SAME bill but
-# a different question, and the earlier one resolving NO says nothing about
-# the later one. Verified live: our real clarity-act-2026 market matched a
-# Polymarket market on the identical bill (H.R.3633) whose deadline was a full
-# year earlier and which resolved NO for missing that earlier deadline.
+# a different question, and neither direction of mismatch is safe: an earlier
+# peer deadline resolving NO says nothing about a later one, and a later peer
+# deadline resolving YES may reflect an event that only happened after our own
+# deadline had passed. Verified live: our real clarity-act-2026 market matched
+# a Polymarket market on the identical bill (H.R.3633) whose deadline was a
+# full year earlier and which resolved NO for missing that earlier deadline.
 RESOLUTION_WINDOW_TOLERANCE_DAYS = 7
 
 # Numeric thresholds ("$200,000", "5%") are subject-identifying in exactly the
@@ -41,11 +43,15 @@ RESOLUTION_WINDOW_TOLERANCE_DAYS = 7
 # $80,000 by December 31, 2026?" at 0.65 similarity -- same subject, same
 # window, 2.5x different strike price, confidently wrong YES.
 MONEY_PATTERN = re.compile(
-    r"\$\s?(\d[\d,]*(?:\.\d+)?)\s?([KMB]|thousand|million|billion)?\b",
+    r"\$\s?(\d[\d,]*(?:\.\d+)?)\s?(bn|mm|[KMB]|thousand|million|billion)?\b",
     re.IGNORECASE,
 )
 PERCENT_PATTERN = re.compile(r"\b(\d+(?:\.\d+)?)\s?%")
-_MAGNITUDES = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9}
+_MAGNITUDES = {
+    "k": 1e3, "thousand": 1e3,
+    "m": 1e6, "mm": 1e6, "million": 1e6,
+    "b": 1e9, "bn": 1e9, "billion": 1e9,
+}
 
 # Below this length, the permissive substring match in _has_conflicting_entity
 # does more harm than good: a short term like "CLARITY" matches ANY peer
@@ -179,18 +185,31 @@ def _peer_end_date(peer_market: dict) -> Optional[date]:
 
 
 def _has_conflicting_resolution_window(our_close: date, peer_end: Optional[date]) -> bool:
-    """Hard-reject a peer market whose deadline lands meaningfully before ours.
+    """Hard-reject a peer market whose deadline lands meaningfully apart from
+    ours, in EITHER direction.
 
-    Two markets can name the same subject over different windows: "signed
-    into law by Dec 31 2025" and "...by Dec 31 2026" are the same bill but
-    different questions, and the earlier one resolving NO says nothing about
-    the later one. Verified live -- this exact mismatch produced a confidently
-    wrong NO for our real clarity-act-2026 market. A small tolerance keeps
-    genuinely-the-same-event markets that differ by a day or two.
+    Two markets can name the same subject over different windows, and neither
+    direction of mismatch is safe. Both were reproduced live against the same
+    real Polymarket event:
+
+    * Peer deadline earlier than ours -- "signed into law by Dec 31 2025" vs
+      our "...by Dec 31 2026". The peer resolved NO for missing ITS earlier
+      deadline, which says nothing about ours; proposing NO for our
+      still-open market was simply wrong.
+    * Peer deadline later than ours -- our "...by Jan 31 2025" vs the peer's
+      "...by Dec 31 2025", which resolved YES because the bill was signed in
+      the intervening months. The true answer for our market is NO, but the
+      peer's YES was proposed with 0.74 confidence. This direction is the
+      realistically common one: a resolution finder's normal input is markets
+      whose deadline has often already passed.
+
+    A small symmetric tolerance keeps genuinely-the-same-event markets that
+    differ by a day or two; every genuine match observed live so far has a
+    window delta of exactly 0 days.
     """
     if peer_end is None or our_close is None:
         return False
-    return (our_close - peer_end).days > RESOLUTION_WINDOW_TOLERANCE_DAYS
+    return abs((our_close - peer_end).days) > RESOLUTION_WINDOW_TOLERANCE_DAYS
 
 
 def _search_polymarket_events(query: str) -> list[dict]:
@@ -260,10 +279,11 @@ def find_polymarket_match(market: Market) -> Optional[Verdict]:
             if not peer_text.strip():
                 continue
 
-            # A peer market resolving meaningfully before our own close date
-            # is answering a different question about the same subject, so
-            # this is checked first -- it is the cheapest check and it caught
-            # a real wrong-answer match on our own production market.
+            # A peer market whose deadline lands meaningfully before OR after
+            # our own close date is answering a different question about the
+            # same subject, so this is checked first -- it is the cheapest
+            # check and it caught a real wrong-answer match on our own
+            # production market.
             if _has_conflicting_resolution_window(market.close_date, _peer_end_date(peer_market)):
                 continue
 
