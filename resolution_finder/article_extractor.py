@@ -1,7 +1,8 @@
 import logging
+import time
 from typing import Optional
 from urllib.parse import urlparse
-import requests
+import curl_cffi.requests as curl_requests
 import trafilatura
 
 logger = logging.getLogger(__name__)
@@ -23,23 +24,29 @@ BLOCKED_HOSTS = ("x.com", "twitter.com", "instagram.com")
 # otherwise have been recovered.
 UNRESOLVABLE_HOSTS = ("news.google.com",)
 
-# A realistic browser header set, not just a User-Agent. Several real outlets
-# (news18.com, azcentral.com, wionews.com, samaa.tv -- all verified live)
-# return HTTP 403/405/406 specifically because a bare User-Agent-only request
-# fingerprints as a script, not a browser. This does NOT help the two
-# UNRESOLVABLE_HOSTS cases above -- those return 200 with no content to
-# unlock, headers or not.
-BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": (
-        "text/html,application/xhtml+xml,application/xml;q=0.9,"
-        "image/webp,*/*;q=0.8"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-}
+# Several real outlets (news18.com, azcentral.com, wionews.com -- all
+# verified live) return HTTP 403/405/406 from Akamai/WAF edge protection that
+# fingerprints the TLS handshake itself, not just HTTP headers -- a plain
+# `requests` call gets rejected no matter what headers ride on top of it,
+# because Python's TLS stack doesn't look like a real browser's. curl_cffi
+# impersonates an actual Chrome TLS + header fingerprint together, which is
+# what actually matters for consistency: verified live, all 3 sites recover
+# real extractable article text this way. This does NOT help the
+# UNRESOLVABLE_HOSTS case above -- those return 200 with no content to
+# unlock no matter how convincing the request is.
+IMPERSONATE = "chrome"
+
+# A DNS/connect/read timeout is frequently a one-off network blip (verified
+# live: an identical request that failed this way succeeded on immediate
+# retry, 3/3 times). An HTTP-level rejection (403, 406, ...) is not a blip --
+# it's the server's deterministic answer, and retrying it wastes time and
+# looks more automated, not less. So only these two exception types are
+# retried, and only up to MAX_FETCH_ATTEMPTS total -- a real, persistent
+# failure (a truly dead host, not a blip) still gives up promptly rather than
+# looping.
+TRANSIENT_EXCEPTIONS = (curl_requests.exceptions.Timeout, curl_requests.exceptions.ConnectionError)
+MAX_FETCH_ATTEMPTS = 3
+RETRY_DELAY_SECONDS = 1
 
 
 def _host_of(url: str) -> str:
@@ -77,12 +84,27 @@ def extract_article_text(url: str, timeout: int = 10) -> Optional[str]:
         logger.warning("Skipping known-unresolvable host, no fetch attempted: %s", url)
         return None
 
-    try:
-        response = requests.get(url, timeout=timeout, headers=BROWSER_HEADERS)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        logger.warning("Article fetch failed, skipping %s: %s", url, exc)
-        return None
+    response = None
+    for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
+        try:
+            response = curl_requests.get(url, timeout=timeout, impersonate=IMPERSONATE)
+            response.raise_for_status()
+            break
+        except TRANSIENT_EXCEPTIONS as exc:
+            if attempt == MAX_FETCH_ATTEMPTS:
+                logger.warning(
+                    "Article fetch failed after %d attempts, skipping %s: %s",
+                    attempt, url, exc,
+                )
+                return None
+            logger.warning(
+                "Transient fetch error (attempt %d/%d), retrying %s: %s",
+                attempt, MAX_FETCH_ATTEMPTS, url, exc,
+            )
+            time.sleep(RETRY_DELAY_SECONDS)
+        except curl_requests.exceptions.RequestException as exc:
+            logger.warning("Article fetch failed, skipping %s: %s", url, exc)
+            return None
 
     # A redirect chain can land somewhere we are not allowed to read.
     final_url = getattr(response, "url", None)
