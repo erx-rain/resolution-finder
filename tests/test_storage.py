@@ -79,3 +79,42 @@ def test_set_setting_overwrites_existing_value():
     set_setting(db_path, "currents_api_key", "second")
     assert get_setting(db_path, "currents_api_key") == "second"
     os.remove(db_path)
+
+
+def test_get_latest_findings_returns_one_row_per_option():
+    db_path = make_temp_db()
+    v_winner = Verdict(outcome="YES", confidence=0.8, evidence_snippet="won",
+                        source_url="https://reuters.com/x", source_type="credible_backup",
+                        option="Pope Leo XIV")
+    v_loser = Verdict(outcome="NO", confidence=0.8, evidence_snippet="lost",
+                       source_url="https://reuters.com/x", source_type="credible_backup",
+                       option="Donald Trump")
+    save_finding(db_path, "nobel-peace-2026", "2026-08-17T00:00:00", v_winner)
+    save_finding(db_path, "nobel-peace-2026", "2026-08-17T00:00:00", v_loser)
+
+    latest = get_latest_findings(db_path)
+    assert len(latest) == 2
+    assert {row["option"]: row["outcome"] for row in latest} == {
+        "Pope Leo XIV": "YES", "Donald Trump": "NO",
+    }
+    os.remove(db_path)
+
+
+def test_get_latest_findings_tracks_each_option_independently_across_runs():
+    db_path = make_temp_db()
+    v1 = Verdict(outcome="NO", confidence=0.6, evidence_snippet="eliminated",
+                 source_url="https://dexerto.com/x", source_type="credible_backup",
+                 option="Aurora Gaming")
+    save_finding(db_path, "international-2026-champion", "2026-08-17T00:00:00", v1)
+
+    v2 = Verdict(outcome="UNCLEAR", confidence=0.3, evidence_snippet="still undecided",
+                 source_url=None, source_type=None)
+    save_finding(db_path, "international-2026-champion", "2026-08-18T00:00:00", v2)
+
+    latest = get_latest_findings(db_path)
+    market_rows = [r for r in latest if r["market_id"] == "international-2026-champion"]
+    assert len(market_rows) == 2
+    assert {r["option"]: r["outcome"] for r in market_rows} == {
+        "Aurora Gaming": "NO", None: "UNCLEAR",
+    }
+    os.remove(db_path)

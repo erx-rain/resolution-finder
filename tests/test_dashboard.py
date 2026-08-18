@@ -203,3 +203,23 @@ def test_settings_page_shows_no_usage_data_message_when_unavailable():
 
     assert response.status_code == 200
     assert b"No usage data yet" in response.data
+
+
+def test_index_shows_option_for_multi_outcome_finding():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    verdict = Verdict(outcome="NO", confidence=0.6,
+                       evidence_snippet="Aurora Gaming was eliminated from The International 2026.",
+                       source_url="https://www.dexerto.com/dota2/x", source_type="credible_backup",
+                       option="Aurora Gaming")
+    save_finding(db_path, "international-2026-champion", "2026-08-17T00:00:00", verdict)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"Aurora Gaming" in response.data
+    os.remove(db_path)

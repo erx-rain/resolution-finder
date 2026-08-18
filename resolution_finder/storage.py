@@ -6,6 +6,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS findings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     market_id TEXT NOT NULL,
+    option TEXT,
     run_timestamp TEXT NOT NULL,
     outcome TEXT NOT NULL,
     confidence REAL NOT NULL,
@@ -37,11 +38,11 @@ def save_finding(db_path: str, market_id: str, run_timestamp: str, verdict: Verd
         cursor = conn.execute(
             """
             INSERT INTO findings
-                (market_id, run_timestamp, outcome, confidence, evidence_snippet,
+                (market_id, option, run_timestamp, outcome, confidence, evidence_snippet,
                  source_url, source_type, review_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending')
             """,
-            (market_id, run_timestamp, verdict.outcome, verdict.confidence,
+            (market_id, verdict.option, run_timestamp, verdict.outcome, verdict.confidence,
              verdict.evidence_snippet, verdict.source_url, verdict.source_type),
         )
         conn.commit()
@@ -54,6 +55,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
         "market_id": row["market_id"],
+        "option": row["option"],
         "run_timestamp": row["run_timestamp"],
         "outcome": row["outcome"],
         "confidence": row["confidence"],
@@ -72,11 +74,13 @@ def get_latest_findings(db_path: str) -> list[dict]:
             """
             SELECT f.* FROM findings f
             INNER JOIN (
-                SELECT market_id, MAX(run_timestamp) AS max_ts
-                FROM findings GROUP BY market_id
+                SELECT market_id, option, MAX(run_timestamp) AS max_ts
+                FROM findings GROUP BY market_id, option
             ) latest
-            ON f.market_id = latest.market_id AND f.run_timestamp = latest.max_ts
-            ORDER BY f.confidence DESC
+            ON f.market_id = latest.market_id
+               AND f.option IS latest.option
+               AND f.run_timestamp = latest.max_ts
+            ORDER BY f.market_id, f.option, f.confidence DESC
             """
         ).fetchall()
         return [_row_to_dict(r) for r in rows]

@@ -36,8 +36,13 @@ class RankedArticle:
 
 @dataclass
 class Verdict:
-    outcome: str  # "YES", "NO", an option name, "UNCLEAR", or "NO_EVIDENCE"
+    outcome: str  # "YES", "NO", "UNCLEAR", or "NO_EVIDENCE"
     confidence: float
     evidence_snippet: Optional[str]
     source_url: Optional[str]
     source_type: Optional[str]
+    option: Optional[str] = None  # for a multi-outcome market's per-option verdict,
+                                   # the option this verdict is about (e.g. "Aurora
+                                   # Gaming"); None for a binary market's verdict, or
+                                   # a multi-outcome market's whole-market UNCLEAR/
+                                   # NO_EVIDENCE status when no option is determined.

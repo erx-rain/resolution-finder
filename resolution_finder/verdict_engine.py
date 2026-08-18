@@ -6,17 +6,43 @@ from resolution_finder.models import Market, RankedArticle, Verdict
 from resolution_finder.query_builder import extract_entities
 
 # Generalized: captures a plain Yes/No default (CLARITY Act, Nobel Prize) OR a
-# specific named option default (Vinicius Junior -> "Real Madrid"). The
-# trigger phrases anchor on deadline-miss language so this doesn't match an
-# unrelated "resolves to X" sentence describing the normal win condition.
+# specific named option default (Vinicius Junior -> "Real Madrid") OR a named
+# outcome outside the option list (Osun -> "Other"). The trigger phrases
+# anchor on deadline-miss language so this doesn't match an unrelated
+# "resolves to X" sentence describing the normal win condition. "not known"
+# was added after a real market ("are not known definitively by [date] ...
+# resolve to 'Other'") didn't match any of the original trigger phrases.
 DEFAULT_OUTCOME_PATTERN = re.compile(
-    r"(?:not met|has not|have not|not officially|not been)[^.]{0,150}?"
+    r"(?:not met|has not|have not|not officially|not been|not known)[^.]{0,150}?"
     r"resolve[s]?\s+to\s+\"?([A-Za-z][A-Za-z0-9 .&'-]*?)\"?[.\n]",
     re.IGNORECASE | re.DOTALL,
 )
 
 BINARY_YES_KEYWORDS = ["signed into law", "became law", "enacted", "approved by both"]
-ANNOUNCEMENT_KEYWORDS = ["awarded to", "wins", "winner is", "named recipient", "recipient is"]
+
+# "winner of" and the contract-renewal/stay phrases were added after a real
+# dry run: BBC Pidgin's "INEC declare Ademola Adeleke winner of the ..."
+# matched none of the original phrases ("winner is" != "winner of"), and
+# NYTimes/The Athletic describing Vinicius Junior staying at Real Madrid as
+# "reached an agreement to renew his contract" isn't an "announcement"
+# phrase at all in the original list, which was written for prize/award
+# language only. NOTE: both real examples actually named the entity
+# partially ("at Madrid", "Govnor Adeleke") rather than by the full option
+# string ("Real Madrid", "Ademola Adeleke") -- that partial-name gap is NOT
+# fixed here (see Task 19's design note): a bare surname can be genuinely
+# ambiguous between two listed options (e.g. osun-state-governor-2026 has
+# both "Ademola Adeleke" and "Taofeek Adeleke"), so this only matches the
+# full option string, same as before.
+ANNOUNCEMENT_KEYWORDS = [
+    "awarded to", "wins", "winner is", "winner of", "named recipient", "recipient is",
+    "signed a new contract", "reached an agreement to renew", "contract extension",
+    "renewed his contract", "renewed her contract", "extended his contract", "extended her contract",
+]
+
+# A specific option confirmed to have LOST resolves that option alone to No,
+# independently of whether the overall market winner is known yet (e.g. a
+# team eliminated partway through a tournament that's still ongoing).
+ELIMINATION_KEYWORDS = ["eliminated", "eliminated from", "knocked out", "lost to", "out of the tournament"]
 
 # The `(?<![A-Z]\.)` lookbehind is load-bearing — do NOT "simplify" it away.
 # Without it, a period preceded by a single capital letter (the "S." in "U.S.",
@@ -161,7 +187,20 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                     source_url=None, source_type=None)
 
 
-def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+def _match_option_keyword(lowered_sentence: str, option_lower: str, keywords: list[str]) -> bool:
+    option_re = _word_boundary(option_lower)
+    for keyword in keywords:
+        keyword_re = _word_boundary(keyword)
+        pattern = re.compile(rf"{option_re}.{{0,40}}{keyword_re}|{keyword_re}.{{0,40}}{option_re}")
+        if pattern.search(lowered_sentence):
+            return True
+    return False
+
+
+def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) -> list[Verdict]:
+    winner: Optional[Verdict] = None
+    eliminated: dict[str, Verdict] = {}
+
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence):
@@ -171,59 +210,79 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 option_lower = option.strip().lower()
                 if not option_lower:
                     continue
-                for keyword in ANNOUNCEMENT_KEYWORDS:
-                    option_re = _word_boundary(option_lower)
-                    keyword_re = _word_boundary(keyword)
-                    pattern = re.compile(
-                        rf"{option_re}.{{0,40}}{keyword_re}|"
-                        rf"{keyword_re}.{{0,40}}{option_re}"
+
+                if winner is None and _match_option_keyword(lowered, option_lower, ANNOUNCEMENT_KEYWORDS):
+                    winner = Verdict(
+                        outcome="YES", option=option, confidence=item.similarity,
+                        evidence_snippet=sentence.strip()[:280],
+                        source_url=item.article.url, source_type=item.article.source_type,
                     )
-                    if pattern.search(lowered):
-                        return Verdict(
-                            outcome=option,
-                            confidence=item.similarity,
-                            evidence_snippet=sentence.strip()[:280],
-                            source_url=item.article.url,
-                            source_type=item.article.source_type,
-                        )
+
+                if option not in eliminated and _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS):
+                    eliminated[option] = Verdict(
+                        outcome="NO", option=option, confidence=item.similarity,
+                        evidence_snippet=sentence.strip()[:280],
+                        source_url=item.article.url, source_type=item.article.source_type,
+                    )
+
+    if winner is not None:
+        # Overall winner confirmed: every option gets an explicit verdict.
+        results = [winner]
+        for option in market.options:
+            if option == winner.option:
+                continue
+            if option in eliminated:
+                results.append(eliminated[option])
+            else:
+                results.append(Verdict(
+                    outcome="NO", option=option, confidence=winner.confidence,
+                    evidence_snippet=winner.evidence_snippet,
+                    source_url=winner.source_url, source_type=winner.source_type,
+                ))
+        return results
+
+    if eliminated:
+        # Partial resolution: only the options confirmed lost so far. The
+        # rest of the market stays unreported (still genuinely pending) --
+        # not spammed with an UNCLEAR row for every remaining option.
+        return list(eliminated.values())
 
     default_outcome = _extract_default_outcome(market.description)
     if default_outcome and date.today() > market.close_date:
-        if default_outcome == "NO":
-            return Verdict(
-                outcome="NO",
-                confidence=0.5,
-                evidence_snippet=(
-                    "Deadline passed with no matching evidence; applying "
-                    "stated default (no listed option resolves Yes)."
-                ),
-                source_url=None,
-                source_type=None,
-            )
-        matching_option = next(
-            (opt for opt in market.options if opt.lower() == default_outcome.lower()),
-            None,
+        matching_option = (
+            next((opt for opt in market.options if opt.lower() == default_outcome.lower()), None)
+            if default_outcome != "NO" else None
         )
+        snippet = "Deadline passed with no matching evidence; applying stated default."
         if matching_option:
-            return Verdict(
-                outcome=matching_option,
-                confidence=0.5,
-                evidence_snippet="Deadline passed with no matching evidence; applying stated default option.",
-                source_url=None,
-                source_type=None,
-            )
+            results = [Verdict(outcome="YES", option=matching_option, confidence=0.5,
+                                evidence_snippet=snippet, source_url=None, source_type=None)]
+            results += [
+                Verdict(outcome="NO", option=opt, confidence=0.5, evidence_snippet=snippet,
+                        source_url=None, source_type=None)
+                for opt in market.options if opt != matching_option
+            ]
+            return results
+        # Either an explicit "No" default, or a named default that matches
+        # none of the listed options (e.g. Osun's "Other") -- both mean the
+        # same thing for a per-option verdict: nothing on the list wins.
+        return [
+            Verdict(outcome="NO", option=opt, confidence=0.5, evidence_snippet=snippet,
+                    source_url=None, source_type=None)
+            for opt in market.options
+        ]
 
     if ranked_evidence:
         top = ranked_evidence[0]
-        return Verdict(outcome="UNCLEAR", confidence=top.similarity,
-                        evidence_snippet=top.text[:280], source_url=top.article.url,
-                        source_type=top.article.source_type)
+        return [Verdict(outcome="UNCLEAR", option=None, confidence=top.similarity,
+                         evidence_snippet=top.text[:280], source_url=top.article.url,
+                         source_type=top.article.source_type)]
 
-    return Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
-                    source_url=None, source_type=None)
+    return [Verdict(outcome="NO_EVIDENCE", option=None, confidence=0.0, evidence_snippet=None,
+                     source_url=None, source_type=None)]
 
 
-def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict | list[Verdict]:
     if market.options:
         return _decide_multi_outcome(market, ranked_evidence)
     return _decide_binary(market, ranked_evidence)

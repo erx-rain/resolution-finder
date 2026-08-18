@@ -95,5 +95,8 @@ def _scan_market(
             time.sleep(REQUEST_DELAY_SECONDS)
 
     ranked = rank_by_relevance(market, articles_with_text)
-    verdict = verdict_engine(market, ranked)
-    save_finding(db_path, market.id, run_timestamp, verdict)
+    verdicts = verdict_engine(market, ranked)
+    if not isinstance(verdicts, list):
+        verdicts = [verdicts]
+    for verdict in verdicts:
+        save_finding(db_path, market.id, run_timestamp, verdict)

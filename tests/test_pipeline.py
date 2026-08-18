@@ -238,6 +238,36 @@ def test_default_peer_checker_delegates_to_polymarket_when_enabled(mock_find_mat
 @patch("resolution_finder.pipeline.rank_by_relevance")
 @patch("resolution_finder.pipeline.extract_article_text")
 @patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_saves_every_verdict_when_engine_returns_a_list(
+    mock_retrieve, mock_extract, mock_rank, mock_sleep
+):
+    """A multi-outcome market's verdict_engine can return one Verdict per
+    option instead of a single Verdict -- the pipeline must persist all of
+    them, not just the first."""
+    mock_retrieve.return_value = []
+    mock_rank.return_value = []
+
+    def fake_engine(market, ranked):
+        return [
+            Verdict(outcome="YES", confidence=0.9, evidence_snippet="won",
+                    source_url="https://example.com/a", source_type="primary", option="Team A"),
+            Verdict(outcome="NO", confidence=0.9, evidence_snippet="won",
+                    source_url="https://example.com/a", source_type="primary", option="Team B"),
+        ]
+
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider(), db_path, verdict_engine=fake_engine, peer_checker=NO_PEER_MATCH)
+
+    findings = get_latest_findings(db_path)
+    assert len(findings) == 2
+    assert {f["option"]: f["outcome"] for f in findings} == {"Team A": "YES", "Team B": "NO"}
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
 def test_run_pipeline_logs_and_skips_a_failing_market(mock_retrieve, mock_extract, mock_rank, mock_sleep, caplog):
     """One market blowing up must not abort the whole run."""
     def retrieve(market, queries):
