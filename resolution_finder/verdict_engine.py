@@ -78,6 +78,101 @@ def _is_cumulative_date_threshold_market(market: Market) -> bool:
     combined = f"{market.title} {market.description}".lower()
     return any(phrase in combined for phrase in CUMULATIVE_DATE_TRIGGER_PHRASES)
 
+
+# Numeric-threshold binary markets ("Will Bitcoin be above $64,000?"),
+# added after live testing found BINARY_YES_KEYWORDS structurally cannot
+# resolve these -- it's entirely legislative vocabulary, and no keyword
+# list can cover every possible threshold number. This extracts and
+# compares real numbers instead. Self-contained here (not imported from
+# peer_market.py's near-identical MONEY_PATTERN/PERCENT_PATTERN) so this
+# file stays independently swappable per the project's "Verdict Engine
+# must be swappable" constraint.
+_THRESHOLD_NUMBER = r"\$?\s?(\d[\d,]*(?:\.\d+)?)\s?(bn|mm|thousand|million|billion|[kmb])?%?"
+_THRESHOLD_MAGNITUDES = {
+    "k": 1e3, "thousand": 1e3,
+    "m": 1e6, "mm": 1e6, "million": 1e6,
+    "b": 1e9, "bn": 1e9, "billion": 1e9,
+}
+
+# Only single-threshold direction, not "between X and Y" ranges -- see
+# Task 22 design note point 1. Order matters: tried in this sequence, so
+# a title using "at least" isn't accidentally caught by a looser pattern.
+_THRESHOLD_CONDITION_PATTERNS = [
+    ("up", re.compile(
+        rf"(?:at least|reach(?:es)?|hit|above|over|more than)\s+\(?(?:HIGH\)?\s*)?{_THRESHOLD_NUMBER}",
+        re.IGNORECASE,
+    )),
+    ("down", re.compile(rf"(?:below|under|less than)\s+{_THRESHOLD_NUMBER}", re.IGNORECASE)),
+]
+
+
+def _parse_threshold_number(raw: str, suffix: Optional[str]) -> float:
+    value = float(raw.replace(",", ""))
+    if suffix:
+        value *= _THRESHOLD_MAGNITUDES.get(suffix.lower(), 1)
+    return value
+
+
+def _extract_threshold_condition(market: Market) -> Optional[tuple[str, float]]:
+    """The market's own numeric threshold condition, parsed from its title/
+    description -- e.g. ("up", 64000.0) for "above $64,000". Returns None
+    for a market that isn't phrased as a numeric-threshold question at
+    all, which is the common case and must fall through to the existing
+    _decide_binary unchanged.
+    """
+    combined = f"{market.title} {market.description}"
+    for direction, pattern in _THRESHOLD_CONDITION_PATTERNS:
+        match = pattern.search(combined)
+        if match:
+            return direction, _parse_threshold_number(match.group(1), match.group(2))
+    return None
+
+
+def _extract_latest_number(sentence: str) -> Optional[float]:
+    """The most recently stated number in `sentence` -- real evidence often
+    states a prior value before the current one ("up from $61,000 to
+    $64,000"), and the current value is conventionally stated last. Known,
+    documented heuristic, not perfect for every phrasing (see Task 22
+    design note point 4)."""
+    matches = list(re.finditer(_THRESHOLD_NUMBER, sentence))
+    if not matches:
+        return None
+    raw, suffix = matches[-1].group(1), matches[-1].group(2)
+    return _parse_threshold_number(raw, suffix)
+
+
+def _decide_numeric_threshold(
+    market: Market, ranked_evidence: list[RankedArticle], direction: str, threshold: float
+) -> Verdict:
+    subject_terms = _subject_terms(market)
+    for item in ranked_evidence:
+        for sentence in _split_sentences(item.text):
+            if _sentence_has_hedge(sentence):
+                continue
+            if _sentence_mentions_other_entity(sentence, subject_terms):
+                continue
+            value = _extract_latest_number(sentence)
+            if value is None:
+                continue
+            met = value >= threshold if direction == "up" else value <= threshold
+            return Verdict(
+                outcome="YES" if met else "NO",
+                confidence=item.similarity,
+                evidence_snippet=sentence.strip()[:280],
+                source_url=item.article.url,
+                source_type=item.article.source_type,
+            )
+
+    if ranked_evidence:
+        top = ranked_evidence[0]
+        return Verdict(outcome="UNCLEAR", confidence=top.similarity,
+                        evidence_snippet=top.text[:280], source_url=top.article.url,
+                        source_type=top.article.source_type)
+
+    return Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                    source_url=None, source_type=None)
+
+
 # The `(?<![A-Z]\.)` lookbehind is load-bearing — do NOT "simplify" it away.
 # Without it, a period preceded by a single capital letter (the "S." in "U.S.",
 # the "R." in "H.R. 3633") counts as a sentence boundary, and the split lands
@@ -384,4 +479,8 @@ def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict | li
         if _is_cumulative_date_threshold_market(market):
             return _decide_date_thresholds(market, ranked_evidence)
         return _decide_multi_outcome(market, ranked_evidence)
+    threshold_condition = _extract_threshold_condition(market)
+    if threshold_condition is not None:
+        direction, value = threshold_condition
+        return _decide_numeric_threshold(market, ranked_evidence, direction, value)
     return _decide_binary(market, ranked_evidence)

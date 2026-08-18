@@ -442,3 +442,137 @@ def test_date_shaped_options_without_cumulative_language_are_not_cascaded():
     # than"/etc. language), so no per-option elapsed-NO fires here either.
     assert len(verdicts) == 1
     assert verdicts[0].option is None
+
+
+BITCOIN_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if the price of Bitcoin (BTC) is "
+    "above $64,000 on August 17, 2026, according to the Binance BTC/USDT "
+    "reference price. Otherwise, this market will resolve to \"No\"."
+)
+
+BITCOIN_MARKET = Market(
+    id="bitcoin-above-64k-on-august-17-2026",
+    title="Will the price of Bitcoin be above $64,000 on August 17?",
+    description=BITCOIN_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+ETHEREUM_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if the price of Ethereum (ETH) is "
+    "less than $1,400 on August 17, 2026. Otherwise, this market will "
+    "resolve to \"No\"."
+)
+
+ETHEREUM_MARKET = Market(
+    id="ethereum-below-1400-on-august-17-2026",
+    title="Will the price of Ethereum be less than $1,400 on August 17?",
+    description=ETHEREUM_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+GOLD_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if Gold (XAUUSD) reaches a high of "
+    "at least $4,400 in August 2026. Otherwise, this market will resolve to \"No\"."
+)
+
+GOLD_MARKET = Market(
+    id="gold-reach-4400-in-august-2026",
+    title="Will Gold (XAUUSD) hit $4,400 in August?",
+    description=GOLD_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+def test_numeric_threshold_market_resolves_yes_when_evidence_confirms_above_threshold():
+    evidence = [make_ranked(
+        "Bitcoin surged to $67,200 on Monday amid renewed institutional buying.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_numeric_threshold_market_resolves_no_when_evidence_contradicts_threshold():
+    evidence = [make_ranked(
+        "Bitcoin fell sharply to $58,400 on Monday as traders took profits.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome == "NO"
+
+
+def test_numeric_threshold_market_handles_below_direction():
+    evidence = [make_ranked(
+        "Ethereum dropped to $1,150 on Monday, extending its weekly decline.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(ETHEREUM_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_numeric_threshold_market_handles_reach_at_least_phrasing():
+    evidence = [make_ranked(
+        "Gold prices hit $4,512 an ounce on Friday, a fresh all-time high.",
+        url="https://www.cnbc.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(GOLD_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_numeric_threshold_market_stays_unclear_without_a_number_in_evidence():
+    evidence = [make_ranked(
+        "Bitcoin traders are watching the Fed decision closely this week.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_numeric_threshold_market_no_evidence_at_all():
+    verdict = decide(BITCOIN_MARKET, [])
+    assert verdict.outcome == "NO_EVIDENCE"
+
+
+def test_numeric_threshold_market_ignores_number_about_a_different_asset():
+    # Real risk this guards against: an article about Bitcoin also
+    # mentions Ethereum's price -- must not be mistaken for Bitcoin's.
+    evidence = [make_ranked(
+        "While Bitcoin held steady, Ethereum climbed to $67,000 in a rare "
+        "moment of ETH outperformance.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_numeric_threshold_market_ignores_hedged_number():
+    evidence = [make_ranked(
+        "Analysts say Bitcoin could reach $70,000 if the rally continues.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_numeric_threshold_extracts_the_most_recently_stated_number():
+    # "up from X to Y" states the current value last -- must use $64,500,
+    # not the earlier $61,000 mentioned in the same sentence.
+    evidence = [make_ranked(
+        "Bitcoin climbed from $61,000 to $64,500 over the trading session.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_non_numeric_binary_market_unaffected():
+    # Regression guard: CLARITY Act (legislative binary, no $ threshold in
+    # its own text) must be completely unaffected -- routed to the
+    # existing _decide_binary path, not misdetected as threshold-shaped.
+    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "YES"
+    assert "signed into law" in verdict.evidence_snippet
