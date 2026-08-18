@@ -1,9 +1,14 @@
 # resolution_finder/verdict_engine.py
+import logging
 import re
 from datetime import date, datetime
 from typing import Optional
+from sentence_transformers import util
 from resolution_finder.models import Market, RankedArticle, Verdict
 from resolution_finder.query_builder import extract_entities
+from resolution_finder.relevance_ranker import _get_model
+
+logger = logging.getLogger(__name__)
 
 # Generalized: captures a plain Yes/No default (CLARITY Act, Nobel Prize) OR a
 # specific named option default (Vinicius Junior -> "Real Madrid") OR a named
@@ -263,6 +268,69 @@ def _sentence_mentions_other_entity(sentence: str, subject_terms: list[str]) -> 
     return False
 
 
+# Calibrated empirically against real evidence sentences (Task 23 Step 3)
+# -- do not change these without re-running that calibration. Real run:
+# expected=True  positive_sim=0.750 negative_sim=0.750 margin=-0.000  (Sanofi/FDA)
+# expected=True  positive_sim=0.765 negative_sim=0.784 margin=-0.020  (World Cup record)
+# expected=False positive_sim=0.425 negative_sim=0.430 margin=-0.005  (Sanofi, "expected to review")
+# expected=False positive_sim=0.514 negative_sim=0.529 margin=-0.015  (World Cup, "could be broken")
+# The positive/negative templates share the market's own title as a long
+# common prefix, so the margin between them turns out to be a weak signal
+# in practice (near zero, sometimes slightly negative, even for genuinely
+# confirmed cases) -- the threshold on positive_sim alone is what actually
+# separates the True cases (0.750/0.765) from the False cases (0.425/0.514)
+# here. THRESHOLD is set just below the lowest True positive_sim, well
+# above the highest False positive_sim. MARGIN is set just below the
+# lowest True margin so it doesn't reject the real motivating cases, and
+# still exists as a guard against a sentence that scores high similarity
+# to BOTH templates (genuinely ambiguous), per design decision 3.
+#
+# NOTE (Task 23 self-review finding): an attempt to lower
+# SEMANTIC_CONFIRMATION_THRESHOLD to 0.65 -- to also cover an alternate
+# real phrasing of the World Cup case used in Step 5's re-verification
+# script ("The all-time tournament scoring record was broken on Tuesday
+# when the striker netted his 16th goal...", positive_sim=0.668) --
+# caused a regression: an existing safety-test sentence ("The CLARITY Act
+# remains stalled in the Senate.") scored positive_sim=0.656, margin
+# -0.014, close enough to slip past both a 0.65 threshold and the -0.03
+# margin gate and produce a false YES. That false-positive case's margin
+# (-0.014) is actually LESS negative (more "confident") than the genuine
+# World Cup Step 5 case's margin (-0.019), so margin cannot separate them
+# either. The two sit only ~0.012 apart in cosine similarity -- reportable
+# as a genuinely inseparable pair at this resolution, not a threshold that
+# was merely picked wrong. THRESHOLD was kept at 0.72 (the value that
+# produces zero regressions across the full test suite) rather than
+# narrowed to a razor-thin, overfit gap between one specific accept/reject
+# example pair. See task-23-report.md for the full writeup.
+SEMANTIC_CONFIRMATION_THRESHOLD = 0.72
+SEMANTIC_MARGIN = -0.03
+
+
+def _semantic_yes_signal(sentence: str, market: Market) -> Optional[float]:
+    """A confidence score if `sentence` semantically confirms `market`'s
+    subject has been resolved true, or None otherwise. Fallback net for
+    when BINARY_YES_KEYWORDS finds nothing -- reuses the same free local
+    embedding model already running for relevance ranking, not a new
+    dependency. The market's own title is embedded into BOTH templates so
+    the comparison reflects subject-plus-confirmation together, not
+    confirmation-tone alone (see Task 23 design note point 3)."""
+    model = _get_model()
+    positive_template = f"{market.title} This has been confirmed and has already happened."
+    negative_template = f"{market.title} This has not happened yet and remains unconfirmed or uncertain."
+    sentence_emb = model.encode(sentence, convert_to_tensor=True)
+    positive_emb = model.encode(positive_template, convert_to_tensor=True)
+    negative_emb = model.encode(negative_template, convert_to_tensor=True)
+    positive_sim = float(util.cos_sim(sentence_emb, positive_emb)[0][0])
+    negative_sim = float(util.cos_sim(sentence_emb, negative_emb)[0][0])
+    if positive_sim >= SEMANTIC_CONFIRMATION_THRESHOLD and (positive_sim - negative_sim) >= SEMANTIC_MARGIN:
+        logger.info(
+            "Semantic fallback fired for market %r: sentence=%r positive_sim=%.3f margin=%.3f",
+            market.id, sentence, positive_sim, positive_sim - negative_sim,
+        )
+        return positive_sim
+    return None
+
+
 def _extract_default_outcome(description: str) -> Optional[str]:
     match = DEFAULT_OUTCOME_PATTERN.search(description)
     if not match:
@@ -287,6 +355,24 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                 return Verdict(
                     outcome="YES",
                     confidence=item.similarity,
+                    evidence_snippet=sentence.strip()[:280],
+                    source_url=item.article.url,
+                    source_type=item.article.source_type,
+                )
+
+    # Semantic fallback: only reached when keyword matching found nothing
+    # at all above. Keyword matching stays primary/more precise.
+    for item in ranked_evidence:
+        for sentence in _split_sentences(item.text):
+            if _sentence_has_hedge(sentence):
+                continue
+            if _sentence_mentions_other_entity(sentence, subject_terms):
+                continue
+            semantic_score = _semantic_yes_signal(sentence, market)
+            if semantic_score is not None:
+                return Verdict(
+                    outcome="YES",
+                    confidence=min(item.similarity, semantic_score),
                     evidence_snippet=sentence.strip()[:280],
                     source_url=item.article.url,
                     source_type=item.article.source_type,

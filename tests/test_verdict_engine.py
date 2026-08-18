@@ -1,6 +1,6 @@
 # tests/test_verdict_engine.py
 from datetime import date, timedelta
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from resolution_finder.models import Market, ArticleRef, RankedArticle
 from resolution_finder.verdict_engine import decide
 
@@ -576,3 +576,121 @@ def test_non_numeric_binary_market_unaffected():
     verdict = decide(CLARITY_MARKET, evidence)
     assert verdict.outcome == "YES"
     assert "signed into law" in verdict.evidence_snippet
+
+
+SANOFI_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if the FDA approves Sanofi's "
+    "Subcutaneous Sarclisa by the specified date. Otherwise, this market "
+    "will resolve to \"No\"."
+)
+
+SANOFI_MARKET = Market(
+    id="fda-approves-sanofi-subcutaneous-sarclisa",
+    title="FDA approves Sanofi's Subcutaneous Sarclisa?",
+    description=SANOFI_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+@patch("resolution_finder.verdict_engine.util.cos_sim")
+@patch("resolution_finder.verdict_engine._get_model")
+def test_semantic_fallback_resolves_yes_above_threshold_and_margin(mock_get_model, mock_cos_sim):
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    # sentence-vs-positive-template, then sentence-vs-negative-template
+    mock_cos_sim.side_effect = [[[0.75]], [[0.30]]]
+
+    evidence = [make_ranked(
+        "Regulators granted approval for the subcutaneous formulation this week.",
+        url="https://example.com/x", source_type="credible_backup",
+    )]
+    verdict = decide(SANOFI_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+@patch("resolution_finder.verdict_engine.util.cos_sim")
+@patch("resolution_finder.verdict_engine._get_model")
+def test_semantic_fallback_stays_unclear_below_threshold(mock_get_model, mock_cos_sim):
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.side_effect = [[[0.40]], [[0.35]]]  # below whatever threshold gets calibrated
+
+    evidence = [make_ranked(
+        "The FDA is expected to review the application sometime next quarter.",
+        url="https://example.com/x", source_type="credible_backup",
+    )]
+    verdict = decide(SANOFI_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+@patch("resolution_finder.verdict_engine.util.cos_sim")
+@patch("resolution_finder.verdict_engine._get_model")
+def test_semantic_fallback_stays_unclear_when_margin_too_thin(mock_get_model, mock_cos_sim):
+    # High absolute similarity to BOTH templates (an ambiguous sentence)
+    # must not resolve YES just because it clears the absolute bar --
+    # the margin between positive and negative similarity matters too.
+    # Values chosen relative to the real calibrated constants (Task 23
+    # Step 3: SEMANTIC_CONFIRMATION_THRESHOLD=0.72, SEMANTIC_MARGIN=-0.03):
+    # positive_sim (0.75) clears the threshold on its own, but the negative
+    # template scores even higher (0.85), for a margin of -0.10, well
+    # below -0.03 -- must reject on margin even though the absolute bar
+    # for "positive" alone was cleared.
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.side_effect = [[[0.75]], [[0.85]]]
+
+    evidence = [make_ranked(
+        "The situation around the approval remains fluid.",
+        url="https://example.com/x", source_type="credible_backup",
+    )]
+    verdict = decide(SANOFI_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_semantic_fallback_never_runs_when_keyword_match_already_found():
+    # CLARITY Act already resolves via BINARY_YES_KEYWORDS -- the semantic
+    # path must not even be reached (proven by not mocking the model at
+    # all here; if the code tried to call the real model unexpectedly in
+    # a test environment without the mock, this test's own setup gives no
+    # semantic signal, so a false regression would surface as this test
+    # timing out or erroring on a real model load, not silently passing).
+    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome == "YES"
+    assert "signed into law" in verdict.evidence_snippet
+
+
+@patch("resolution_finder.verdict_engine.util.cos_sim")
+@patch("resolution_finder.verdict_engine._get_model")
+def test_semantic_fallback_still_respects_hedge_guard(mock_get_model, mock_cos_sim):
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.side_effect = [[[0.95]], [[0.10]]]  # would clearly pass if reached
+
+    evidence = [make_ranked(
+        "The FDA could approve the drug if trial data holds up, analysts say.",
+        url="https://example.com/x", source_type="credible_backup",
+    )]
+    verdict = decide(SANOFI_MARKET, evidence)
+    assert verdict.outcome != "YES"  # hedge ("could") must reject before semantic scoring runs
+
+
+@patch("resolution_finder.verdict_engine.util.cos_sim")
+@patch("resolution_finder.verdict_engine._get_model")
+def test_semantic_fallback_still_respects_wrong_subject_veto(mock_get_model, mock_cos_sim):
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.side_effect = [[[0.95]], [[0.10]]]  # would clearly pass if reached
+
+    evidence = [make_ranked(
+        "Regulators at the European Medicines Agency approved a different drug, Xarelto, this week.",
+        url="https://example.com/x", source_type="credible_backup",
+    )]
+    verdict = decide(SANOFI_MARKET, evidence)
+    assert verdict.outcome != "YES"  # wrong-subject veto must reject before semantic scoring runs
