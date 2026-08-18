@@ -55,10 +55,54 @@ TIER2_OUTLETS = [
 # transfer, Fed/SpaceX/NBA/OpenAI news). Since Bing surfaces MSN heavily,
 # keeping it here was actively crowding out other outlets under the
 # MAX_RESULTS_PER_QUERY cap for zero yield.
+#
+# Task 20 (2026-08-18): broadened this tier to more topic verticals --
+# data/markets.json now spans crypto, sports/esports, science, finance,
+# entertainment, and tech markets well beyond the original wire-service-news
+# scope this tier was tuned for. Every domain below was verified live
+# (robots.txt + a real article fetch through extract_article_text returning
+# real, non-empty prose) immediately before being added -- see
+# docs/superpowers/plans/2026-08-10-resolution-finder-scanner.md Task 20 for
+# the full per-domain verification record. Two candidates from that same
+# pass were deliberately NOT added:
+#   - marketwatch.com: robots.txt has a blanket "User-agent: *\nDisallow: /"
+#     -- only specifically named crawlers (googlebot, bingbot, ...) are
+#     permitted, and this project's generic fetcher is not one of them, so
+#     it fails the "not disallowed for generic bots" bar outright.
+#   - nature.com: passes robots.txt, but its actual news/journalism articles
+#     (the nature.com/articles/d41586-... URLs, which is what evidence
+#     searches for a science-market resolution would realistically surface)
+#     are paywalled -- extract_article_text returns only a short "Access
+#     options / Subscribe to this journal" boilerplate block, not real
+#     article text, on 2/2 different d41586 articles tried. (A minority of
+#     nature.com URLs -- open-access primary-research papers in Nature
+#     Portfolio journals like Scientific Reports/Nature Communications,
+#     e.g. /articles/s41598-... -- DO extract real full text; but that is
+#     not the representative article type this tool would encounter when
+#     looking for science-news coverage, so the domain was left out rather
+#     than added on the strength of an unrepresentative pass.)
+# Weather has no clear additional candidate: general wire services
+# (Reuters/AP/BBC, already in TIER2_OUTLETS) already cover major weather
+# events adequately, and dedicated weather sites are forecast tools, not
+# reporting outlets, so none was added for that vertical.
 TIER2_SECONDARY_OUTLETS = [
     "forbes.com",
     "goal.com",
     "yahoo.com",
+    "espn.com",
+    "skysports.com",
+    "dexerto.com",
+    "dotesports.com",
+    "coindesk.com",
+    "cointelegraph.com",
+    "scientificamerican.com",
+    "cnbc.com",
+    "variety.com",
+    "hollywoodreporter.com",
+    "techcrunch.com",
+    "theverge.com",
+    "arstechnica.com",
+    "axios.com",
 ]
 
 # Official X/Twitter handles for named organizations. Used only to build a
