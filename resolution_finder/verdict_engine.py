@@ -1,6 +1,6 @@
 # resolution_finder/verdict_engine.py
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 from resolution_finder.models import Market, RankedArticle, Verdict
 from resolution_finder.query_builder import extract_entities
@@ -43,6 +43,40 @@ ANNOUNCEMENT_KEYWORDS = [
 # independently of whether the overall market winner is known yet (e.g. a
 # team eliminated partway through a tournament that's still ongoing).
 ELIMINATION_KEYWORDS = ["eliminated", "eliminated from", "knocked out", "lost to", "out of the tournament"]
+
+# Trigger phrases confirming a multi-outcome market's date-shaped options
+# are CUMULATIVE thresholds ("by August 1" also satisfies "by September 1")
+# rather than independent exact-date guesses. Same small-phrase-list style
+# as DEFAULT_OUTCOME_PATTERN's trigger list above.
+CUMULATIVE_DATE_TRIGGER_PHRASES = [
+    "by ", "no later than", "before ", "on or before", "prior to",
+]
+
+# Formats real option strings are expected to use. Every option in a
+# market must parse fully (the whole string, not a substring) against one
+# of these for the market to be treated as date-threshold-shaped -- a
+# named option that merely starts with a month name (e.g. "August
+# Wilson") must fail every one of these and fall through safely.
+_OPTION_DATE_FORMATS = ["%B %d, %Y", "%b %d, %Y", "%Y-%m-%d", "%m/%d/%Y"]
+
+
+def _parse_option_as_date(option: str) -> Optional[date]:
+    stripped = option.strip()
+    for fmt in _OPTION_DATE_FORMATS:
+        try:
+            return datetime.strptime(stripped, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _is_cumulative_date_threshold_market(market: Market) -> bool:
+    if not market.options:
+        return False
+    if any(_parse_option_as_date(opt) is None for opt in market.options):
+        return False
+    combined = f"{market.title} {market.description}".lower()
+    return any(phrase in combined for phrase in CUMULATIVE_DATE_TRIGGER_PHRASES)
 
 # The `(?<![A-Z]\.)` lookbehind is load-bearing — do NOT "simplify" it away.
 # Without it, a period preceded by a single capital letter (the "S." in "U.S.",
@@ -282,7 +316,72 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                      source_url=None, source_type=None)]
 
 
+def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]) -> list[Verdict]:
+    """Cumulative date-threshold options only (see Task 21 design note).
+
+    Only the elapsed-deadline half is implemented here: an option whose
+    own date has passed, with no evidence resolving it via the existing
+    keyword-matching path, resolves NO; one whose date hasn't arrived yet
+    stays UNCLEAR. Evidence-confirmed cross-option YES cascading is
+    deliberately NOT implemented here -- see the Task 21 design note for
+    why, and Task 19's `_decide_multi_outcome` for the winner/elimination
+    matching this still uses first, per option, before falling back to the
+    date-elapsed default below.
+    """
+    # Reuse the exact same evidence-based matching Task 19 already has,
+    # so real evidence always wins over a date-elapsed guess (Task 21
+    # precision point 2). This mirrors _decide_multi_outcome's own
+    # winner/elimination scan but keyed per date-option instead of
+    # collecting a single market-wide winner.
+    evidence_verdicts: dict[str, Verdict] = {}
+    for item in ranked_evidence:
+        for sentence in _split_sentences(item.text):
+            if _sentence_has_hedge(sentence):
+                continue
+            lowered = sentence.lower()
+            for option in market.options:
+                if option in evidence_verdicts:
+                    continue
+                option_lower = option.strip().lower()
+                outcome = None
+                if _match_option_keyword(lowered, option_lower, ANNOUNCEMENT_KEYWORDS):
+                    outcome = "YES"
+                elif _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS):
+                    outcome = "NO"
+                if outcome:
+                    evidence_verdicts[option] = Verdict(
+                        outcome=outcome, option=option, confidence=item.similarity,
+                        evidence_snippet=sentence.strip()[:280],
+                        source_url=item.article.url, source_type=item.article.source_type,
+                    )
+
+    today = date.today()
+    results: list[Verdict] = []
+    for option in market.options:
+        if option in evidence_verdicts:
+            results.append(evidence_verdicts[option])
+            continue
+        option_date = _parse_option_as_date(option)
+        if today > option_date:
+            results.append(Verdict(
+                outcome="NO", option=option, confidence=0.5,
+                evidence_snippet=(
+                    f"Deadline ({option}) passed with no matching evidence; "
+                    "this date's threshold was not met."
+                ),
+                source_url=None, source_type=None,
+            ))
+        else:
+            results.append(Verdict(
+                outcome="UNCLEAR", option=option, confidence=0.0,
+                evidence_snippet=None, source_url=None, source_type=None,
+            ))
+    return results
+
+
 def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict | list[Verdict]:
     if market.options:
+        if _is_cumulative_date_threshold_market(market):
+            return _decide_date_thresholds(market, ranked_evidence)
         return _decide_multi_outcome(market, ranked_evidence)
     return _decide_binary(market, ranked_evidence)

@@ -1,5 +1,6 @@
 # tests/test_verdict_engine.py
 from datetime import date, timedelta
+from unittest.mock import patch
 from resolution_finder.models import Market, ArticleRef, RankedArticle
 from resolution_finder.verdict_engine import decide
 
@@ -328,3 +329,116 @@ def test_multi_outcome_market_named_default_outside_option_list_resolves_all_no(
     verdicts = decide(past_deadline_market, [])
     assert {v.option for v in verdicts} == set(OSUN_MARKET.options)
     assert all(v.outcome == "NO" for v in verdicts)
+
+
+DATE_THRESHOLD_DESCRIPTION = (
+    "This market will resolve to \"Yes\" for the earliest listed date by "
+    "which the event has occurred, and \"Yes\" for every later listed date "
+    "as well. If the event has not occurred by a given date, that date's "
+    "option resolves to \"No\" once that date has passed."
+)
+
+DATE_THRESHOLD_MARKET = Market(
+    id="date-threshold-test",
+    title="Will the event happen, by which date?",
+    description=DATE_THRESHOLD_DESCRIPTION,
+    options=["August 1, 2026", "September 1, 2026", "October 1, 2026"],
+    close_date=date(2026, 10, 1),
+)
+
+
+def test_date_threshold_option_resolves_no_once_its_own_date_has_passed():
+    # Freeze "today" at a point after the August option's date but before
+    # the September/October ones, with no evidence found for any option.
+    past_date_market = Market(
+        id="date-threshold-test", title=DATE_THRESHOLD_MARKET.title,
+        description=DATE_THRESHOLD_DESCRIPTION,
+        options=["August 1, 2026", "September 1, 2026", "October 1, 2026"],
+        close_date=date(2026, 10, 1),
+    )
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = date(2026, 8, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        verdicts = decide(past_date_market, [])
+    by_option = {v.option: v.outcome for v in verdicts}
+    assert by_option["August 1, 2026"] == "NO"
+
+
+def test_date_threshold_option_stays_unclear_before_its_own_date():
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = date(2026, 8, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        verdicts = decide(DATE_THRESHOLD_MARKET, [])
+    by_option = {v.option: v.outcome for v in verdicts}
+    assert by_option["September 1, 2026"] == "UNCLEAR"
+    assert by_option["October 1, 2026"] == "UNCLEAR"
+
+
+def test_date_threshold_option_stays_unclear_on_its_own_date_not_after():
+    # Boundary check: the date's own day still counts as open.
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = date(2026, 8, 1)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        verdicts = decide(DATE_THRESHOLD_MARKET, [])
+    by_option = {v.option: v.outcome for v in verdicts}
+    assert by_option["August 1, 2026"] == "UNCLEAR"
+
+
+def test_date_threshold_evidence_takes_priority_over_elapsed_default():
+    evidence = [make_ranked(
+        "The event was declared winner of the process on August 1, 2026.",
+        url="https://www.bbc.com/x", source_type="credible_backup",
+    )]
+    # Reuse an ANNOUNCEMENT_KEYWORDS phrase ("winner of") near the option
+    # text itself so the existing evidence-matching path (not the new
+    # date-elapsed path) is what actually resolves this option.
+    date_option_market = Market(
+        id="date-threshold-test", title=DATE_THRESHOLD_MARKET.title,
+        description=DATE_THRESHOLD_DESCRIPTION,
+        options=["August 1, 2026"], close_date=date(2026, 10, 1),
+    )
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = date(2026, 9, 1)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        verdicts = decide(date_option_market, evidence)
+    assert verdicts[0].source_url == "https://www.bbc.com/x"
+
+
+def test_named_entity_option_that_looks_like_a_date_word_is_not_misdetected():
+    # A candidate literally named "August Wilson" must not be treated as a
+    # date-threshold option just because it starts with a month name.
+    named_market = Market(
+        id="named-entity-test", title="Who will win the award?",
+        description="This market resolves based on the award winner.",
+        options=["August Wilson", "Toni Morrison"],
+        close_date=date.today() + timedelta(days=365),
+    )
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = date.today()
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        verdicts = decide(named_market, [])
+    # Falls through to the existing named-entity path: no evidence, no
+    # default -> single whole-market UNCLEAR/NO_EVIDENCE, NOT a per-option
+    # NO from a misfired date parse.
+    assert len(verdicts) == 1
+    assert verdicts[0].option is None
+
+
+def test_date_shaped_options_without_cumulative_language_are_not_cascaded():
+    # Options are dates, but the description asks "on which date" (a single
+    # exact-date question), not "by which date" (cumulative) -- must NOT
+    # get the cascade treatment.
+    exact_date_market = Market(
+        id="exact-date-test", title="On which date will the event happen?",
+        description="This market resolves to the single date on which the event occurs.",
+        options=["August 1, 2026", "September 1, 2026"],
+        close_date=date(2026, 10, 1),
+    )
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = date(2026, 8, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        verdicts = decide(exact_date_market, [])
+    # Falls through to the existing named-entity path (no "by"/"no later
+    # than"/etc. language), so no per-option elapsed-NO fires here either.
+    assert len(verdicts) == 1
+    assert verdicts[0].option is None
