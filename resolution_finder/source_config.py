@@ -102,6 +102,26 @@ TIER2_OUTLETS = [
 #     46 chars (effectively empty) -- not added.
 #   - msn.com: already excluded above (Task 20) for the same reason found
 #     again live here -- not re-added.
+#
+# 2026-08-22 (sports/politics vertical, following the zero-retrieval
+# investigation for two politics markets): live Bing results across 7
+# real sports/politics markets in the test set surfaced several real,
+# recurring outlets never whitelisted. Verified live (robots.txt + a real
+# extract_article_text fetch) before adding, same as above -- all 7
+# passed cleanly:
+#   - gosugamers.net, win.gg (esports/Dota2 news, same class as the
+#     existing dotesports.com): 10787 / 9920 chars extracted.
+#   - shacknews.com (gaming/esports news): 2416 chars extracted.
+#   - beinsports.com (major international sports broadcaster, soccer/
+#     World Cup coverage -- same niche-but-reputable tier as goal.com):
+#     2717 chars extracted.
+#   - nypost.com (same editorial tier as forbes.com/yahoo.com already
+#     here): 5409 chars extracted.
+#   - foxbusiness.com (same tier as cnbc.com already here): 4518 chars
+#     extracted.
+#   - punchng.com (established Nigerian daily, complements existing
+#     Osun-election-era African political coverage): 4203 chars
+#     extracted.
 TIER2_SECONDARY_OUTLETS = [
     "forbes.com",
     "goal.com",
@@ -123,6 +143,13 @@ TIER2_SECONDARY_OUTLETS = [
     "jpost.com",
     "timesofisrael.com",
     "ktar.com",
+    "gosugamers.net",
+    "win.gg",
+    "shacknews.com",
+    "beinsports.com",
+    "nypost.com",
+    "foxbusiness.com",
+    "punchng.com",
 ]
 
 # Official X/Twitter handles for named organizations. Used only to build a
