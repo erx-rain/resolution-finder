@@ -235,15 +235,22 @@ def test_search_google_news_rss_warns_on_bozo_feed(mock_parse, caplog):
 
 
 # --- Tier 1 (domain-scoped) --------------------------------------------------
+#
+# Tier 1 used to run its own site:-scoped Google News RSS search, but every
+# result from that was an unfetchable news.google.com wrapper link (Task 14
+# report concern #3, confirmed live 2026-08-18 on a real market: 7/7
+# extraction failures). Tier 1's domain-match promotion now reuses the same
+# unscoped Bing results the Tier 2 loop already fetches per query (Bing
+# doesn't honor a site: operator anyway), so these tests mock Bing-shaped
+# feeds via make_bing_entry, same as the Tier 2 tests below.
 
 @patch("resolution_finder.evidence_retriever.time.sleep")
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
 def test_retrieve_evidence_uses_tier1_domain_scoped_search(mock_parse, mock_sleep):
     mock_parse.return_value = make_fake_feed([
-        make_entry(
+        make_bing_entry(
             "Actions - H.R.3633 - Digital Asset Market Clarity Act",
-            "https://www.congress.gov",
-            "congress.gov",
+            "https://www.congress.gov/bill/3633/actions",
         ),
     ])
     evidence = retrieve_evidence(CLARITY_MARKET, ["CLARITY act"])
@@ -251,19 +258,21 @@ def test_retrieve_evidence_uses_tier1_domain_scoped_search(mock_parse, mock_slee
     primary = [e for e in evidence if e.source_type == "primary"]
     assert len(primary) == 1
     # Assert on the identity of the tagged item, not merely that *something*
-    # was tagged primary — that weak assertion is what let the bug ship.
+    # was tagged primary — that weak assertion is what let the original bug ship.
     assert primary[0].source_domain == "www.congress.gov"
     assert primary[0].title == "Actions - H.R.3633 - Digital Asset Market Clarity Act"
-    assert primary[0].url.startswith("https://news.google.com/rss/articles/")
+    # Real, directly fetchable URL -- not a news.google.com wrapper -- is the
+    # whole point of this fix.
+    assert primary[0].url == "https://www.congress.gov/bill/3633/actions"
 
 
 @patch("resolution_finder.evidence_retriever.time.sleep")
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
 def test_tier1_does_not_tag_offdomain_results_as_primary(mock_parse, mock_sleep):
-    """site: is a request, not a guarantee — an unrelated publisher leaking into
-    a domain-scoped search must never be labelled the highest-confidence tier."""
+    """A domain check is a request, not a guarantee — an unrelated publisher
+    leaking into the results must never be labelled the highest-confidence tier."""
     mock_parse.return_value = make_fake_feed([
-        make_entry("Crypto blog take on the CLARITY act", "https://randomblog.com", "Random Blog"),
+        make_bing_entry("Crypto blog take on the CLARITY act", "https://randomblog.com/x"),
     ])
     evidence = retrieve_evidence(CLARITY_MARKET, ["CLARITY act"])
     assert not any(e.source_type == "primary" for e in evidence)
@@ -274,7 +283,7 @@ def test_tier1_does_not_tag_offdomain_results_as_primary(mock_parse, mock_sleep)
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
 def test_tier1_leak_from_credible_outlet_is_downgraded_not_dropped(mock_parse, mock_sleep):
     mock_parse.return_value = make_fake_feed([
-        make_entry("Reuters on the CLARITY act", "https://www.reuters.com", "Reuters"),
+        make_bing_entry("Reuters on the CLARITY act", "https://www.reuters.com/x"),
     ])
     evidence = retrieve_evidence(CLARITY_MARKET, ["CLARITY act"])
     assert [e.source_type for e in evidence] == ["credible_backup"]
@@ -364,8 +373,10 @@ def test_retrieve_evidence_deduplicates_urls(mock_parse, mock_sleep):
 @patch("resolution_finder.evidence_retriever.time.sleep")
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
 def test_retrieve_evidence_includes_social_search_for_known_organization(mock_parse, mock_sleep):
+    # Tier 1's separate feedparser.parse call is gone (see the Tier 1 block
+    # above) -- its domain-match promotion now reuses the Tier 2 Bing call
+    # at the end of this list instead of issuing its own.
     mock_parse.side_effect = [
-        make_fake_feed([]),  # Tier 1 domain-scoped search (nobelprize.org)
         make_fake_feed([make_entry(
             "The Nobel Prize (@NobelPrize) / Posts - x.com",
             "https://x.com", "x.com",
@@ -386,7 +397,6 @@ def test_retrieve_evidence_includes_social_search_for_known_organization(mock_pa
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
 def test_social_search_accepts_twitter_com_as_the_same_platform(mock_parse, mock_sleep):
     mock_parse.side_effect = [
-        make_fake_feed([]),
         make_fake_feed([make_entry("@NobelPrize post", "https://twitter.com", "twitter.com")]),
         make_fake_feed([]),
         make_fake_feed([]),
@@ -402,7 +412,6 @@ def test_social_search_discards_ordinary_news_that_leaks_into_scoped_search(mock
     official_social, telling the reviewer to "verify the official account" for
     something that was never a social post."""
     mock_parse.side_effect = [
-        make_fake_feed([]),  # Tier 1
         make_fake_feed([make_entry(
             "Nobel Peace Prize 2026 speculation mounts",
             "https://www.newsweek.com", "Newsweek",
@@ -420,7 +429,6 @@ def test_social_search_discards_ordinary_news_that_leaks_into_scoped_search(mock
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
 def test_retrieve_evidence_includes_instagram_search_for_known_organization(mock_parse, mock_sleep):
     mock_parse.side_effect = [
-        make_fake_feed([]),  # Tier 1 domain-scoped search (nobelprize.org)
         make_fake_feed([]),  # X social search
         make_fake_feed([make_entry(
             "nobelprize_org: The 2026 laureate is...",
@@ -440,7 +448,6 @@ def test_retrieve_evidence_includes_instagram_search_for_known_organization(mock
 @patch("resolution_finder.evidence_retriever.feedparser.parse")
 def test_instagram_search_discards_non_instagram_results(mock_parse, mock_sleep):
     mock_parse.side_effect = [
-        make_fake_feed([]),
         make_fake_feed([]),
         make_fake_feed([make_entry("Nobel news", "https://www.cnn.com", "CNN")]),
         make_fake_feed([]),

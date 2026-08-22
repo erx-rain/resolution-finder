@@ -226,28 +226,25 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
 
     if named_source and named_source.startswith("http"):
         evidence.append(ArticleRef(url=named_source, title="Named resolution source", source_type="primary"))
-    elif named_source:
-        for query in queries:
-            for ref in search_google_news_rss(query, site=named_source):
-                # Only tag "primary" when the result really came from the named
-                # source's domain. A domain-scoped search is a request, not a
-                # guarantee, and "primary" is the highest-confidence tier — a
-                # mislabel here is worse than dropping the result.
-                if _domain_matches(ref.source_domain, named_source):
-                    evidence.append(ArticleRef(
-                        url=ref.url,
-                        title=ref.title,
-                        source_type="primary",
-                        source_domain=ref.source_domain,
-                    ))
-                elif ref.source_type in CREDIBLE_TIERS:
-                    evidence.append(ref)
-                else:
-                    logger.warning(
-                        "Dropping site:%s result from unverified domain %r: %r",
-                        named_source, ref.source_domain, ref.title
-                    )
-            time.sleep(REQUEST_DELAY_SECONDS)
+    # A non-URL named_source (e.g. "congress.gov") used to get its own
+    # site:-scoped Google News RSS search here. That was structurally dead
+    # on arrival: EVERY Google News RSS entry.link is an opaque JS-redirect
+    # wrapper (see UNRESOLVABLE_HOSTS in article_extractor.py), so every
+    # "primary"-tagged ref this produced could never be fetched -- confirmed
+    # live (Task 14 report: 158/158 and 153/153 extraction failures on
+    # exactly this path; reconfirmed 2026-08-18 on
+    # congress-passes-iran-war-powers-resolution: 7/7 failures, all
+    # news.google.com wrapper links). Task 14 already established the fix
+    # pattern for this exact failure mode for Tier 2 (Bing's wrapper links
+    # resolve to real URLs, Google's don't) but explicitly deferred applying
+    # it to Tier 1 as "worth its own task". Bing's endpoint doesn't honor a
+    # site: operator in the query text (verified empirically, see
+    # search_bing_news_rss's docstring), so there is no scoped-query
+    # equivalent to request -- instead, the domain-match promotion below
+    # reuses the SAME unscoped Bing results the Tier 2 loop already fetches
+    # per query, promoting a named_source match to "primary" with its real,
+    # fetchable URL, rather than issuing a second, separately-wasted Bing
+    # call per query for a scoping operator Bing ignores anyway.
 
     # Best-effort only: this searches Google News RSS scoped to x.com for a
     # known official handle, but never fetches the actual X page. News RSS is
@@ -266,7 +263,19 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
 
     for query in queries:
         for ref in search_bing_news_rss(query):
-            if ref.source_type in CREDIBLE_TIERS:
+            # Only tag "primary" when the result really came from the named
+            # source's domain -- a mislabel here is worse than dropping the
+            # result, since "primary" is the highest-confidence tier. See
+            # the comment above the removed site:-scoped Google block for
+            # why this promotion moved here instead.
+            if named_source and _domain_matches(ref.source_domain, named_source):
+                evidence.append(ArticleRef(
+                    url=ref.url,
+                    title=ref.title,
+                    source_type="primary",
+                    source_domain=ref.source_domain,
+                ))
+            elif ref.source_type in CREDIBLE_TIERS:
                 evidence.append(ref)
         time.sleep(REQUEST_DELAY_SECONDS)
 

@@ -85,6 +85,23 @@ TIER2_OUTLETS = [
 # (Reuters/AP/BBC, already in TIER2_OUTLETS) already cover major weather
 # events adequately, and dedicated weather sites are forecast tools, not
 # reporting outlets, so none was added for that vertical.
+#
+# 2026-08-18 (politics vertical, following the Iran war powers resolution
+# extraction-failure investigation): after fixing Tier 1's Google-wrapper
+# bug, retrieve_evidence's real Bing results for that market were still all
+# being dropped as "general" -- none of jpost.com/timesofisrael.com/
+# msn.com/columbian.com/i24news.tv were whitelisted. Verified live
+# (robots.txt + a real extract_article_text fetch) before adding:
+#   - jpost.com: real article, 3407 chars extracted -- added.
+#   - timesofisrael.com: real article, 3900 chars extracted -- added.
+#   - ktar.com (Phoenix AP-affiliate wire coverage, also surfaced by this
+#     same live query): real article, 6285 chars extracted -- added.
+#   - columbian.com: robots.txt allows it, but the real fetch returned
+#     HTTP 403 (bot-blocked) -- not added.
+#   - i24news.tv: robots.txt allows it, but the real fetch extracted only
+#     46 chars (effectively empty) -- not added.
+#   - msn.com: already excluded above (Task 20) for the same reason found
+#     again live here -- not re-added.
 TIER2_SECONDARY_OUTLETS = [
     "forbes.com",
     "goal.com",
@@ -103,6 +120,9 @@ TIER2_SECONDARY_OUTLETS = [
     "theverge.com",
     "arstechnica.com",
     "axios.com",
+    "jpost.com",
+    "timesofisrael.com",
+    "ktar.com",
 ]
 
 # Official X/Twitter handles for named organizations. Used only to build a
