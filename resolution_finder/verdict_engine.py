@@ -23,7 +23,24 @@ DEFAULT_OUTCOME_PATTERN = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-BINARY_YES_KEYWORDS = ["signed into law", "became law", "enacted", "approved by both"]
+# Originally entirely bill-SIGNING vocabulary. Broadened 2026-08-18 (real
+# gap confirmed live, first time real evidence reached the verdict engine
+# for congress-passes-iran-war-powers-resolution): a market whose Yes
+# condition is vote PASSAGE by both chambers (a war powers resolution,
+# unlike an ordinary bill, is never signed into law at all) had no matching
+# vocabulary even with genuinely confirming evidence in hand. Kept general
+# (any bill/resolution/measure, not "Iran" or "war powers" specific) per the
+# project's standing rule against overfitting a fix to one event. Distinct
+# from "advanced"/"procedural vote"/"moved forward" language, which is NOT
+# included here -- those describe a step toward passage, not passage itself,
+# and the real evidence that motivated this change was itself an example of
+# exactly that weaker, non-confirming phrasing (correctly still NOT a match).
+BINARY_YES_KEYWORDS = [
+    "signed into law", "became law", "enacted", "approved by both",
+    "passed the senate", "senate passed", "passed the house", "house passed",
+    "cleared the senate", "cleared the house", "passed both chambers",
+    "cleared both chambers", "confirmed by the senate",
+]
 
 # "winner of" and the contract-renewal/stay phrases were added after a real
 # dry run: BBC Pidgin's "INEC declare Ademola Adeleke winner of the ..."
@@ -202,10 +219,53 @@ NEGATION_HEDGE_WORDS = [
     "if ", "unless ", "would be", "could be", "might be",
 ]
 
+# Generic quantifier+"other" hedges of SPECIFICITY -- e.g. "numerous other
+# records have been broken" -- distinct from NEGATION_HEDGE_WORDS (hedges
+# on certainty) and _sentence_mentions_other_entity (hedges on subject
+# identity, by naming a different capitalized entity). This is a third
+# failure mode: a sentence that stays on the market's own topic (no other
+# named entity to catch) but never actually confirms the SPECIFIC claim in
+# question, only gestures at other/unspecified instances of it. Confirmed
+# live bug (2026-08-18 retest): the semantic fallback resolved a World Cup
+# "most goals by a single player" market YES on "Since then, numerous other
+# records have been broken by both individual players and national squads."
+# -- topically on-subject, ground truth NO. Kept domain-general (not
+# hardcoded to "records") since the semantic fallback runs across many
+# market domains (legislative, sports, drug approvals, etc.).
+VAGUE_REFERENCE_HEDGE_WORDS = [
+    "other records", "numerous other", "various other", "several other",
+    "many other", "other such",
+]
+
+
+def _sentence_is_vague_reference(sentence: str) -> bool:
+    lowered = sentence.lower()
+    return any(phrase in lowered for phrase in VAGUE_REFERENCE_HEDGE_WORDS)
+
+
 # A bare acronym (e.g. "CLARITY") that Task 4's extract_entities won't catch
 # on its own, since that regex requires 2+ consecutive capitalized words and
 # a title like "Will the CLARITY act..." has a lowercase word right after it.
 ACRONYM_PATTERN = re.compile(r"\b[A-Z]{2,}\b")
+
+# ENTITY_PATTERN requires a capitalized word to start an entity match, so a
+# sentence-initial "The"/"A"/"An" -- capitalized only because it's the first
+# word of the sentence, not because it's part of a proper noun -- gets swept
+# into the match (e.g. "The Senate passed..." extracts as "The Senate").
+# Real bug found live (2026-08-19): a market's subject term for this same
+# institution comes from mid-sentence text in the market's own description
+# ("...the U.S. Senate pass..."), so it never carries a "The" prefix -- "the
+# senate" and "u.s. senate" are then neither a substring of the other, and
+# the wrong-subject veto incorrectly rejects a genuinely on-topic sentence.
+# Stripping the leading article before comparison is domain-general (not
+# specific to any institution/event) and safe-direction: it can only make
+# the veto fire less, never introduce a new false "same entity" match, since
+# it never merges two otherwise-distinct entity strings together.
+_LEADING_DETERMINER_PATTERN = re.compile(r"^(?:the|a|an)\s+", re.IGNORECASE)
+
+
+def _normalize_entity(entity: str) -> str:
+    return _LEADING_DETERMINER_PATTERN.sub("", entity).strip().lower()
 
 
 def _word_boundary(phrase: str) -> str:
@@ -259,10 +319,12 @@ def _sentence_mentions_other_entity(sentence: str, subject_terms: list[str]) -> 
     """
     if not subject_terms:
         return False
-    subject_lower = [t.lower() for t in subject_terms]
+    subject_lower = [_normalize_entity(t) for t in subject_terms]
     sentence_entities = extract_entities(sentence) + ACRONYM_PATTERN.findall(sentence)
     for entity in sentence_entities:
-        entity_lower = entity.lower()
+        entity_lower = _normalize_entity(entity)
+        if not entity_lower:
+            continue
         if not any(entity_lower in s or s in entity_lower for s in subject_lower):
             return True
     return False
@@ -367,6 +429,8 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
             if _sentence_has_hedge(sentence):
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms):
+                continue
+            if _sentence_is_vague_reference(sentence):
                 continue
             semantic_score = _semantic_yes_signal(sentence, market)
             if semantic_score is not None:

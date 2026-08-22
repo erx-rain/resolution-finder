@@ -53,6 +53,21 @@ VINICIUS_MARKET = Market(
     close_date=date.today() + timedelta(days=365),
 )
 
+WAR_POWERS_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if both the U.S. House of "
+    "Representatives and the U.S. Senate pass the same war powers "
+    "resolution by June 30, 2026. Otherwise, this market will resolve "
+    "to \"No\"."
+)
+
+WAR_POWERS_MARKET = Market(
+    id="congress-passes-iran-war-powers-resolution-by-june-30",
+    title="Congress passes Iran war powers resolution by June 30?",
+    description=WAR_POWERS_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
 
 def make_ranked(text, url="https://congress.gov/bill/3633", source_type="primary", similarity=0.8):
     return RankedArticle(
@@ -147,6 +162,43 @@ def test_binary_market_ignores_unrelated_entity_across_an_abbreviation():
         "The GENIUS Act was passed by the U.S. Senate and signed into law in July 2025."
     )]
     verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_binary_market_resolves_yes_on_senate_passage_for_a_resolution_market():
+    # Real gap found live 2026-08-18: BINARY_YES_KEYWORDS was entirely
+    # bill-SIGNING vocabulary ("signed into law", "enacted"), which
+    # structurally cannot confirm a market like this one, whose Yes
+    # condition is vote PASSAGE by both chambers -- a war powers resolution
+    # is never signed into law at all.
+    evidence = [make_ranked("The Senate passed the war powers resolution in a 51-47 vote on Thursday.")]
+    verdict = decide(WAR_POWERS_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_binary_market_resolves_yes_on_house_passage_for_a_resolution_market():
+    evidence = [make_ranked("The House passed the resolution by a vote of 221-206 on Wednesday.")]
+    verdict = decide(WAR_POWERS_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_binary_market_resolves_yes_on_both_chambers_passage_phrasing():
+    evidence = [make_ranked("The measure cleared both chambers after months of negotiation.")]
+    verdict = decide(WAR_POWERS_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_binary_market_does_not_treat_procedural_advancement_as_final_passage():
+    # The real live evidence found for this exact market: a procedural vote
+    # to ADVANCE a resolution is not the same as the resolution PASSING --
+    # the new vocabulary must not be so broad that it blurs this distinction.
+    evidence = [make_ranked(
+        "The Senate advanced a war-powers resolution on Tuesday that would "
+        "end the Iran war unless Trump obtains Congress' authorization, a "
+        "rare rebuke 80 days after strikes began. The vote on a procedural "
+        "measure passed 51-47."
+    )]
+    verdict = decide(WAR_POWERS_MARKET, evidence)
     assert verdict.outcome != "YES"
 
 
@@ -694,3 +746,44 @@ def test_semantic_fallback_still_respects_wrong_subject_veto(mock_get_model, moc
     )]
     verdict = decide(SANOFI_MARKET, evidence)
     assert verdict.outcome != "YES"  # wrong-subject veto must reject before semantic scoring runs
+
+
+WORLD_CUP_DESCRIPTION = (
+    "This market resolves \"Yes\" if the record for most goals scored by a "
+    "single player at a single World Cup (currently 13 goals) is broken -- "
+    "i.e. a player scores 14 or more goals at the 2026 World Cup. Otherwise, "
+    "this market resolves \"No\"."
+)
+
+WORLD_CUP_MARKET = Market(
+    id="world-cup-most-goals-record-broken-20260608192914170",
+    title="World Cup: Most Player Goals Record Broken?",
+    description=WORLD_CUP_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+@patch("resolution_finder.verdict_engine.util.cos_sim")
+@patch("resolution_finder.verdict_engine._get_model")
+def test_semantic_fallback_rejects_vague_other_records_reference(mock_get_model, mock_cos_sim):
+    # Real live bug (2026-08-18 retest, see progress.md): the semantic
+    # fallback resolved this market YES on this exact sentence, but ground
+    # truth is NO -- the sentence never confirms the SPECIFIC record (most
+    # goals by a single player) was broken, it just gestures vaguely at
+    # "other records" in general. mock_cos_sim would clearly pass the
+    # threshold/margin gate if the guard didn't reject the sentence first,
+    # so the guard's rejection is what this test is actually proving.
+    mock_model = MagicMock()
+    mock_model.encode.return_value = "embedding"
+    mock_get_model.return_value = mock_model
+    mock_cos_sim.side_effect = [[[0.95]], [[0.10]]]
+
+    evidence = [make_ranked(
+        "Since then, numerous other records have been broken by both "
+        "individual players and national squads.",
+        url="https://example.com/worldcup", source_type="credible_backup",
+    )]
+    verdict = decide(WORLD_CUP_MARKET, evidence)
+    assert verdict.outcome != "YES"
+    mock_get_model.assert_not_called()
