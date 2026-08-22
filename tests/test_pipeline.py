@@ -4,7 +4,7 @@ import os
 import tempfile
 from unittest.mock import patch
 from datetime import date, timedelta
-from resolution_finder.models import Market, ArticleRef, Verdict
+from resolution_finder.models import Market, ArticleRef, Verdict, RankedArticle
 from resolution_finder.pipeline import run_pipeline
 from resolution_finder.storage import get_latest_findings
 
@@ -45,15 +45,19 @@ def temp_db_path():
 
 
 @patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.best_below_threshold")
 @patch("resolution_finder.pipeline.rank_by_relevance")
 @patch("resolution_finder.pipeline.extract_article_text")
 @patch("resolution_finder.pipeline.retrieve_evidence")
-def test_run_pipeline_writes_a_finding_per_market(mock_retrieve, mock_extract, mock_rank, mock_sleep):
+def test_run_pipeline_writes_a_finding_per_market(
+    mock_retrieve, mock_extract, mock_rank, mock_best, mock_sleep
+):
     mock_retrieve.return_value = [
         ArticleRef(url="https://congress.gov/bill/3633", title="t", source_type="primary")
     ]
     mock_extract.return_value = "The bill was signed into law today."
     mock_rank.return_value = []
+    mock_best.return_value = None
 
     fd, db_path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -95,10 +99,13 @@ def test_run_pipeline_skips_rate_limit_sleep_for_known_unresolvable_urls(
 
 
 @patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.best_below_threshold")
 @patch("resolution_finder.pipeline.rank_by_relevance")
 @patch("resolution_finder.pipeline.extract_article_text")
 @patch("resolution_finder.pipeline.retrieve_evidence")
-def test_run_pipeline_never_fetches_official_social_urls(mock_retrieve, mock_extract, mock_rank, mock_sleep):
+def test_run_pipeline_never_fetches_official_social_urls(
+    mock_retrieve, mock_extract, mock_rank, mock_best, mock_sleep
+):
     mock_retrieve.return_value = [
         ArticleRef(
             url="https://x.com/NobelPrize/status/123",
@@ -108,6 +115,7 @@ def test_run_pipeline_never_fetches_official_social_urls(mock_retrieve, mock_ext
         )
     ]
     mock_rank.return_value = []
+    mock_best.return_value = None
 
     db_path = temp_db_path()
 
@@ -261,6 +269,38 @@ def test_run_pipeline_saves_every_verdict_when_engine_returns_a_list(
     findings = get_latest_findings(db_path)
     assert len(findings) == 2
     assert {f["option"]: f["outcome"] for f in findings} == {"Team A": "YES", "Team B": "NO"}
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.best_below_threshold")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_promotes_best_below_threshold_article_when_no_evidence_ranked(
+    mock_retrieve, mock_extract, mock_rank, mock_best, mock_sleep
+):
+    """A real article was found and its text extracted, but it scored below
+    SIMILARITY_THRESHOLD and rank_by_relevance dropped it -- decide() then
+    gets an empty list and would normally produce NO_EVIDENCE. The pipeline
+    must surface that closest article as UNCLEAR instead of losing it
+    entirely (2026-08-18 finding: world-cup-highest-scoring-match had real,
+    extracted evidence silently discarded this way)."""
+    ref = ArticleRef(url="https://sports.example.com/x", title="t", source_type="credible_backup_secondary")
+    mock_retrieve.return_value = [ref]
+    mock_extract.return_value = "A relevant but below-threshold sentence."
+    mock_rank.return_value = []
+    mock_best.return_value = RankedArticle(
+        article=ref, text="A relevant but below-threshold sentence.", similarity=0.22,
+    )
+
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider(), db_path, peer_checker=NO_PEER_MATCH)
+
+    findings = get_latest_findings(db_path)
+    assert findings[0]["outcome"] == "UNCLEAR"
+    assert findings[0]["evidence_snippet"] == "A relevant but below-threshold sentence."
+    assert findings[0]["source_url"] == "https://sports.example.com/x"
     os.remove(db_path)
 
 

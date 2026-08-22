@@ -8,7 +8,7 @@ from resolution_finder.models import Market, RankedArticle, Verdict
 from resolution_finder.query_builder import build_queries
 from resolution_finder.evidence_retriever import retrieve_evidence
 from resolution_finder.article_extractor import extract_article_text, is_known_unresolvable_url
-from resolution_finder.relevance_ranker import rank_by_relevance
+from resolution_finder.relevance_ranker import rank_by_relevance, best_below_threshold
 from resolution_finder.verdict_engine import decide
 from resolution_finder.peer_market import find_polymarket_match
 from resolution_finder.storage import init_db, save_finding
@@ -18,6 +18,36 @@ logger = logging.getLogger(__name__)
 
 VerdictEngine = Callable[[Market, list[RankedArticle]], Verdict]
 PeerChecker = Callable[[Market], Optional[Verdict]]
+
+
+def _promote_best_below_threshold(
+    verdicts: list[Verdict], market: Market, articles_with_text: list
+) -> list[Verdict]:
+    """When every proposed verdict is NO_EVIDENCE but real article text was
+    fetched (it just fell below relevance_ranker.SIMILARITY_THRESHOLD),
+    surface the single closest article as UNCLEAR instead of silently
+    discarding it -- so a human reviewer sees the closest real evidence
+    found rather than nothing. This does NOT feed the article back into
+    verdict_engine's keyword/semantic matching (rank_by_relevance's real
+    threshold gate, called above, is unchanged), so it can't introduce a
+    new false-positive surface the way lowering SIMILARITY_THRESHOLD itself
+    would -- see the 2026-08-18 world-cup-highest-scoring-match finding in
+    the ledger, where real relevant evidence was silently dropped.
+    """
+    if not articles_with_text or not all(v.outcome == "NO_EVIDENCE" for v in verdicts):
+        return verdicts
+    best = best_below_threshold(market, articles_with_text)
+    if best is None:
+        return verdicts
+    return [
+        Verdict(
+            outcome="UNCLEAR", confidence=best.similarity,
+            evidence_snippet=best.text[:280],
+            source_url=best.article.url, source_type=best.article.source_type,
+            option=v.option,
+        )
+        for v in verdicts
+    ]
 
 
 def _default_peer_checker(market: Market) -> Optional[Verdict]:
@@ -98,5 +128,6 @@ def _scan_market(
     verdicts = verdict_engine(market, ranked)
     if not isinstance(verdicts, list):
         verdicts = [verdicts]
+    verdicts = _promote_best_below_threshold(verdicts, market, articles_with_text)
     for verdict in verdicts:
         save_finding(db_path, market.id, run_timestamp, verdict)
