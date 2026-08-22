@@ -537,6 +537,33 @@ GOLD_MARKET = Market(
     close_date=date.today() + timedelta(days=30),
 )
 
+BOX_OFFICE_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if \"The Odyssey\" grosses at "
+    "least $21,000,000 in its fifth weekend of release. Otherwise, this "
+    "market will resolve to \"No\"."
+)
+
+BOX_OFFICE_MARKET = Market(
+    id="the-odyssey-5th-weekend-box-office",
+    title="Will \"The Odyssey\" 5th Weekend Box Office be at least $21,000,000?",
+    description=BOX_OFFICE_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+SALES_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if the game sells at least "
+    "1,000,000 copies by year end. Otherwise, this market will resolve to \"No\"."
+)
+
+SALES_MARKET = Market(
+    id="game-reach-1m-sales",
+    title="Will the game reach 1,000,000 copies sold?",
+    description=SALES_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
 
 def test_numeric_threshold_market_resolves_yes_when_evidence_confirms_above_threshold():
     evidence = [make_ranked(
@@ -617,6 +644,67 @@ def test_numeric_threshold_extracts_the_most_recently_stated_number():
         url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
     )]
     verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_threshold_number_does_not_consume_next_word_as_magnitude_suffix():
+    # Real bug found live (2026-08-22) while testing the bare-year fix
+    # above: the single-letter "k"/"m"/"b" magnitude alternative has no
+    # word-boundary guard, so a number followed by a space and an
+    # unrelated word starting with one of those letters gets that word's
+    # first letter spuriously read as a magnitude suffix. Without the
+    # fix, "$50 before" misparses as $50 * 1e9 (the "b" from "before"),
+    # wrongly clearing the $64,000 threshold; correctly read as plain 50,
+    # it stays far below it.
+    evidence = [make_ranked(
+        "Bitcoin trading volume dipped slightly, with the price at $50 "
+        "before the announcement.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome == "NO"
+
+
+def test_numeric_threshold_ignores_bare_year_in_unrelated_sentence():
+    # Real bug found live (2026-08-22): a box-office market's ranked
+    # evidence was unrelated homepage boilerplate mentioning a bare year
+    # ("...making his first return since 2023's Plane"), and the year 2023
+    # was wrongly picked up as the dollar figure -- 2023 < $21,000,000, so
+    # the market resolved NO despite there being no real box-office number
+    # in the sentence at all. Must fall through to UNCLEAR instead of
+    # guessing from an unrelated year.
+    evidence = [make_ranked(
+        "The movie originally premiered back in 2023 before expanding "
+        "wide this year.",
+        url="https://www.the-numbers.com/", source_type="primary",
+    )]
+    verdict = decide(BOX_OFFICE_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_numeric_threshold_still_extracts_bare_non_dollar_count():
+    # Distinguishing a bare YEAR from a bare legitimate count matters: a
+    # non-dollar numeric-threshold market (sales/vote-count/etc.) has a
+    # real threshold figure with no "$" sign or magnitude suffix at all,
+    # and must not be rejected just because it lacks one.
+    evidence = [make_ranked(
+        "The game sold 1,200,000 copies in its first week, publishers said.",
+        url="https://www.gamesindustry.biz/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(SALES_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_numeric_threshold_prefers_real_count_over_a_trailing_year():
+    # Both a real count and a year can appear in the same sentence -- the
+    # year must be skipped even when it comes LAST (the position
+    # _extract_latest_number normally trusts most), falling back to the
+    # genuine count earlier in the sentence instead.
+    evidence = [make_ranked(
+        "The game sold 1,200,000 copies since its 2023 launch.",
+        url="https://www.gamesindustry.biz/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(SALES_MARKET, evidence)
     assert verdict.outcome == "YES"
 
 

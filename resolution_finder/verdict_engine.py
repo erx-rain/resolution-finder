@@ -109,7 +109,18 @@ def _is_cumulative_date_threshold_market(market: Market) -> bool:
 # peer_market.py's near-identical MONEY_PATTERN/PERCENT_PATTERN) so this
 # file stays independently swappable per the project's "Verdict Engine
 # must be swappable" constraint.
-_THRESHOLD_NUMBER = r"\$?\s?(\d[\d,]*(?:\.\d+)?)\s?(bn|mm|thousand|million|billion|[kmb])?%?"
+#
+# The `(?![a-zA-Z])` after the single-letter `[kmb]` alternative is
+# load-bearing -- do NOT remove it. Without it, a number followed by a
+# space and an unrelated word starting with k/m/b (e.g. "2023 before",
+# "5 minutes", "10 kids") has that word's first letter spuriously
+# consumed as a magnitude suffix -- "2023 before" parses as 2023 *
+# 1_000_000_000 (misread as billion). Found live (2026-08-22) while
+# testing the bare-year fix below; the multi-letter alternatives
+# (bn/mm/thousand/million/billion) don't need the same guard since a
+# real following word essentially never starts with one of those exact
+# letter sequences.
+_THRESHOLD_NUMBER = r"\$?\s?(\d[\d,]*(?:\.\d+)?)\s?(bn|mm|thousand|million|billion|[kmb](?![a-zA-Z]))?%?"
 _THRESHOLD_MAGNITUDES = {
     "k": 1e3, "thousand": 1e3,
     "m": 1e6, "mm": 1e6, "million": 1e6,
@@ -150,17 +161,47 @@ def _extract_threshold_condition(market: Market) -> Optional[tuple[str, float]]:
     return None
 
 
+# A bare 4-digit number in a plausible calendar-year range. Deliberately
+# NOT a blanket "must have $/suffix/%" requirement -- this module also
+# needs to support non-dollar numeric-threshold markets (sales counts,
+# vote tallies, "reach 1 million users", etc.), where the real threshold
+# figure legitimately has no currency symbol or magnitude suffix at all.
+# The actual, observed ambiguity is narrower: a bare number that looks
+# like a YEAR, sitting in unrelated prose alongside real evidence, gets
+# mistaken for the threshold value. A real sales/vote count essentially
+# never falls in this exact 4-digit 1900-2099 shape with no other signal.
+_BARE_YEAR_PATTERN = re.compile(r"^(?:19|20)\d{2}$")
+
+
+def _looks_like_bare_year(raw: str, suffix: Optional[str]) -> bool:
+    return suffix is None and bool(_BARE_YEAR_PATTERN.match(raw.replace(",", "")))
+
+
 def _extract_latest_number(sentence: str) -> Optional[float]:
     """The most recently stated number in `sentence` -- real evidence often
     states a prior value before the current one ("up from $61,000 to
     $64,000"), and the current value is conventionally stated last. Known,
     documented heuristic, not perfect for every phrasing (see Task 22
-    design note point 4)."""
-    matches = list(re.finditer(_THRESHOLD_NUMBER, sentence))
-    if not matches:
-        return None
-    raw, suffix = matches[-1].group(1), matches[-1].group(2)
-    return _parse_threshold_number(raw, suffix)
+    design note point 4).
+
+    Skips a bare, unadorned number that looks like a calendar year (no "$"
+    prefix, no "k"/"m"/"b"/"thousand"/"million"/"billion" suffix, no "%"
+    suffix, and shaped like a year) and keeps looking earlier in the
+    sentence instead -- real bug found live (2026-08-22): a box-office
+    market's ranked evidence was unrelated homepage boilerplate mentioning
+    "...making his first return since 2023's Plane", and the bare year
+    2023 was picked up as if it were the dollar figure, wrongly resolving
+    NO against the market's real $21M threshold. Any OTHER bare number
+    (a plain count, not year-shaped) is still accepted as before, so a
+    non-dollar threshold market ("reach 1 million users", "get 50,000
+    sales") keeps working.
+    """
+    for match in reversed(list(re.finditer(_THRESHOLD_NUMBER, sentence))):
+        raw, suffix = match.group(1), match.group(2)
+        if _looks_like_bare_year(raw, suffix):
+            continue
+        return _parse_threshold_number(raw, suffix)
+    return None
 
 
 def _decide_numeric_threshold(
