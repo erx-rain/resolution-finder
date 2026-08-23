@@ -66,6 +66,41 @@ ANNOUNCEMENT_KEYWORDS = [
 # team eliminated partway through a tournament that's still ongoing).
 ELIMINATION_KEYWORDS = ["eliminated", "eliminated from", "knocked out", "lost to", "out of the tournament"]
 
+# Directional head-to-head phrases ("Lakers defeated the Rockets", "Lakers'
+# victory over the Rockets") -- unlike ANNOUNCEMENT_KEYWORDS/
+# ELIMINATION_KEYWORDS (checked via _match_option_keyword's simple
+# keyword-near-option proximity, which is fine for one-sided phrases like
+# "winner of X"), these phrases put BOTH team names within the same
+# proximity window as the verb, so proximity alone can't tell winner from
+# loser -- only word ORDER relative to the verb/phrase does. Real bug
+# found live (2026-08-23): a real market's top evidence was "The Lakers'
+# ... victory over the Houston Rockets" -- both team names sat within the
+# existing 40-char window, so naively adding "victory over" to
+# ANNOUNCEMENT_KEYWORDS would have let list ORDER (not the actual winner)
+# decide, e.g. wrongly crowning Rockets if market.options happened to list
+# it first. _match_head_to_head_winner below is directional: it only
+# matches a (candidate_winner, candidate_loser) PAIR in that specific
+# order, tried for every ordered pair of the market's own options.
+HEAD_TO_HEAD_WIN_VERBS = [
+    "defeated", "defeats", "beat", "beats", "topped", "downed", "routed", "outlasted",
+]
+# Noun-phrase form ("[team]'s victory over [team]") rather than a
+# transitive verb between two names -- matched the same directional way.
+HEAD_TO_HEAD_WIN_NOUN_PHRASES = ["victory over", "win over", "triumph over"]
+
+
+def _match_head_to_head_winner(lowered_sentence: str, winner_option_lower: str, loser_option_lower: str) -> bool:
+    """True if `lowered_sentence` states, in that specific direction, that
+    `winner_option_lower` beat `loser_option_lower` -- not just that both
+    names and a win-shaped word appear somewhere nearby."""
+    winner_re = _word_boundary(winner_option_lower)
+    loser_re = _word_boundary(loser_option_lower)
+    for phrase in HEAD_TO_HEAD_WIN_VERBS + HEAD_TO_HEAD_WIN_NOUN_PHRASES:
+        phrase_re = _word_boundary(phrase)
+        if re.search(rf"{winner_re}.{{0,40}}{phrase_re}.{{0,40}}{loser_re}", lowered_sentence):
+            return True
+    return False
+
 # Trigger phrases confirming a multi-outcome market's date-shaped options
 # are CUMULATIVE thresholds ("by August 1" also satisfies "by September 1")
 # rather than independent exact-date guesses. Same small-phrase-list style
@@ -555,6 +590,21 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                         evidence_snippet=sentence.strip()[:280],
                         source_url=item.article.url, source_type=item.article.source_type,
                     )
+
+                if winner is None:
+                    for other_option in market.options:
+                        if other_option == option:
+                            continue
+                        other_option_lower = other_option.strip().lower()
+                        if not other_option_lower:
+                            continue
+                        if _match_head_to_head_winner(lowered, option_lower, other_option_lower):
+                            winner = Verdict(
+                                outcome="YES", option=option, confidence=item.similarity,
+                                evidence_snippet=sentence.strip()[:280],
+                                source_url=item.article.url, source_type=item.article.source_type,
+                            )
+                            break
 
                 if option not in eliminated and _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS):
                     eliminated[option] = Verdict(

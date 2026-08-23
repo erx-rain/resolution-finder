@@ -244,6 +244,31 @@ OSUN_MARKET = Market(
     close_date=date.today() + timedelta(days=365),
 )
 
+LAKERS_ROCKETS_DESCRIPTION = (
+    "This market will resolve to \"Lakers\" if the Los Angeles Lakers win "
+    "the 2026 NBA Playoffs First Round series between the Los Angeles "
+    "Lakers and Houston Rockets. This market will resolve to \"Rockets\" "
+    "if the Houston Rockets win."
+)
+
+LAKERS_ROCKETS_MARKET = Market(
+    id="nba-playoffs-who-will-win-series-lakers-vs-rockets",
+    title="NBA Playoffs: Who Will Win Series? - Lakers vs. Rockets",
+    description=LAKERS_ROCKETS_DESCRIPTION,
+    options=["Lakers", "Rockets"],
+    close_date=date.today() + timedelta(days=30),
+)
+
+# Same market, options listed in the OPPOSITE order -- the head-to-head
+# winner must come from the phrase's own direction, not list position.
+LAKERS_ROCKETS_MARKET_REVERSED_OPTIONS = Market(
+    id="nba-playoffs-who-will-win-series-lakers-vs-rockets-reversed",
+    title=LAKERS_ROCKETS_MARKET.title,
+    description=LAKERS_ROCKETS_DESCRIPTION,
+    options=["Rockets", "Lakers"],
+    close_date=date.today() + timedelta(days=30),
+)
+
 
 def test_multi_outcome_market_full_sweep_on_confirmed_winner():
     # Requirement: once an overall winner is confirmed, every option gets an
@@ -344,6 +369,49 @@ def test_multi_outcome_market_resolves_yes_on_winner_of_phrase():
     assert {v.option: v.outcome for v in verdicts} == {
         "Ademola Adeleke": "YES", "Taofeek Adeleke": "NO",
     }
+
+
+def test_multi_outcome_market_resolves_yes_on_head_to_head_victory_phrase():
+    # Real gap found live (2026-08-23): a real NBA playoff market's top
+    # evidence was "The Los Angeles Lakers' first-round playoff victory
+    # over the Houston Rockets..." -- neither ANNOUNCEMENT_KEYWORDS
+    # ("wins", "winner of", ...) nor ELIMINATION_KEYWORDS covers "victory
+    # over" phrasing, so this landed on UNCLEAR despite clearly confirming
+    # the winner.
+    evidence = [make_ranked(
+        "The Los Angeles Lakers' first-round playoff victory over the "
+        "Houston Rockets may have accomplished more than advancing the "
+        "franchise to the Western Conference semifinals.",
+        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
+
+
+def test_multi_outcome_head_to_head_winner_is_order_independent():
+    # The exact same evidence must still correctly crown Lakers even when
+    # market.options lists Rockets first -- proves the fix reads direction
+    # from the phrase itself ("winner_option ... verb ... loser_option"),
+    # not from list position. This is the specific failure mode a naive
+    # ANNOUNCEMENT_KEYWORDS addition would have had: both team names sit
+    # within the same 40-char proximity window as "victory over".
+    evidence = [make_ranked(
+        "The Los Angeles Lakers' first-round playoff victory over the "
+        "Houston Rockets may have accomplished more than advancing the "
+        "franchise to the Western Conference semifinals.",
+        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET_REVERSED_OPTIONS, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
+
+
+def test_multi_outcome_market_resolves_yes_on_head_to_head_defeated_verb():
+    evidence = [make_ranked(
+        "The Lakers defeated the Rockets in six games to advance.",
+        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
 
 def test_multi_outcome_market_option_independently_resolves_no_on_elimination():
