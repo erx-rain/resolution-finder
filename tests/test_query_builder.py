@@ -106,6 +106,16 @@ def test_extract_entities_trims_trailing_word_glued_across_sentence_boundary():
     assert "PM ET" not in entities
 
 
+def test_extract_entities_drops_match_ending_on_a_bare_connector():
+    # Real bug found live (2026-08-23, will-spcx-reach-145... market): the
+    # raw match "Pyth. The" (from "...as shown on Pyth. The resolution
+    # source...") ends on a bare "The" with nothing after it -- a real
+    # entity can START with "The" but can never legitimately END there.
+    text = "Historical price data as shown on Pyth. The resolution source for this market is Pyth."
+    entities = extract_entities(text)
+    assert not any(e.endswith(" The") or e == "The" for e in entities)
+
+
 def test_extract_entities_trims_leading_question_word_from_title():
     # Same bug class, title side: "Will the CLARITY act..." raw-matched
     # "Will the CLARITY" -- "Will" is a question word, never part of a

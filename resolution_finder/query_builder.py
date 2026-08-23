@@ -41,6 +41,15 @@ _LEADING_STOPWORDS = {
     "is", "are", "was", "were",
 }
 
+# Trailing position adds ENTITY_PATTERN's own connector words (of/the/for/
+# and) on top of _LEADING_STOPWORDS. Those are safe to keep at the START
+# of a match (a real entity can legitimately begin "The International"),
+# but a match can never legitimately END on a bare connector -- by
+# construction every raw match ends on a capitalized word, so a trailing
+# "The"/"Of"/etc. only ever appears when the chain accidentally continued
+# past a sentence boundary into unrelated glue text.
+_TRAILING_STOPWORDS = _LEADING_STOPWORDS | {"of", "the", "for", "and"}
+
 
 def extract_entities(text: str) -> list[str]:
     """Heuristic proper-noun extraction, used only to enrich search queries
@@ -67,7 +76,7 @@ def extract_entities(text: str) -> list[str]:
         words = match.group().strip().split()
         while words and words[0].lower() in _LEADING_STOPWORDS:
             words.pop(0)
-        while words and words[-1].rstrip(".").lower() in _LEADING_STOPWORDS:
+        while words and words[-1].rstrip(".").lower() in _TRAILING_STOPWORDS:
             words.pop()
         if len(words) < 2:
             continue
