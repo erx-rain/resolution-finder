@@ -147,15 +147,33 @@ def _parse_threshold_number(raw: str, suffix: Optional[str]) -> float:
 
 
 def _extract_threshold_condition(market: Market) -> Optional[tuple[str, float]]:
-    """The market's own numeric threshold condition, parsed from its title/
-    description -- e.g. ("up", 64000.0) for "above $64,000". Returns None
-    for a market that isn't phrased as a numeric-threshold question at
-    all, which is the common case and must fall through to the existing
-    _decide_binary unchanged.
+    """The market's own numeric threshold condition, parsed from its TITLE
+    only (not its description) -- e.g. ("up", 64000.0) for "above
+    $64,000". Returns None for a market that isn't phrased as a
+    numeric-threshold question at all, which is the common case and must
+    fall through to the existing _decide_binary unchanged.
+
+    Deliberately title-only, not title+description: every real numeric-
+    threshold market states its own core Yes/No condition directly in the
+    title (true of every fixture in this test suite), while a market's
+    DESCRIPTION often contains extended exception/edge-case language that
+    can incidentally contain a threshold-shaped phrase without the market
+    actually being a numeric-threshold comparison. Real bug found live
+    (2026-08-23): a 5-category typhoon-intensity classification market
+    (options=[], title asking specifically about the "Very Strong
+    Typhoon" category, no threshold phrasing in the title at all) had an
+    unrelated exception clause in its description -- "...classifies the
+    system as a tropical depression (below 34 kt)... the crossing does
+    not count and the market resolves to 'No Qualifying Landfall'" --
+    describing a DIFFERENT outcome branch, not the market's actual
+    question. Searching the full description matched "below 34" and
+    wrongly routed the whole market into the numeric-threshold decision
+    path, comparing an unrelated number from real evidence (a
+    building-damage count, "14,000") against a threshold of 34 and
+    confidently resolving NO.
     """
-    combined = f"{market.title} {market.description}"
     for direction, pattern in _THRESHOLD_CONDITION_PATTERNS:
-        match = pattern.search(combined)
+        match = pattern.search(market.title)
         if match:
             return direction, _parse_threshold_number(match.group(1), match.group(2))
     return None

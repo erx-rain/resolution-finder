@@ -564,6 +564,44 @@ SALES_MARKET = Market(
     close_date=date.today() + timedelta(days=30),
 )
 
+# Real bug found live (2026-08-23): a genuine 5-category classification
+# market (options=[], asking specifically about ONE category) with no
+# threshold phrasing in its own title, but whose description -- explaining
+# an unrelated exception branch -- happens to contain a "below N" phrase.
+TYPHOON_DESCRIPTION = (
+    "This market resolves to the intensity category corresponding to the "
+    "maximum sustained wind speed shown in the applicable JMA advisory. "
+    "The outcome categories are: \"Tropical Storm\" (34-47 kt), \"Typhoon\" "
+    "(64-84 kt), \"Very Strong Typhoon\" (85-104 kt), and \"Violent "
+    "Typhoon\" (105+ kt). If the applicable advisory classifies the "
+    "system as a tropical depression (below 34 kt), the crossing does "
+    "not count and the market resolves to \"No Qualifying Landfall\"."
+)
+
+TYPHOON_MARKET = Market(
+    id="will-typhoon-dolphin-be-a-very-strong-typhoon-at-japan-landfall",
+    title="Will Typhoon Dolphin be a \"Very Strong Typhoon\" at Japan landfall?",
+    description=TYPHOON_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+def test_threshold_condition_ignores_unrelated_number_in_description():
+    # The bare "below 34 kt" in the description describes a DIFFERENT
+    # outcome branch (an exception clause), not the market's own Yes/No
+    # condition -- must not hijack the market into the numeric-threshold
+    # path. Real evidence here (a building-damage count, unrelated to
+    # wind speed) confirmed the live bug: comparing 14,000 against a
+    # bogus threshold of 34 wrongly resolved NO with high confidence.
+    evidence = [make_ranked(
+        "Typhoon Dolphin has hit Japan's southern island of Okinawa, "
+        "injuring five people and cutting power to 14,000 buildings.",
+        url="https://www.aljazeera.com/x", source_type="credible_backup",
+    )]
+    verdict = decide(TYPHOON_MARKET, evidence)
+    assert verdict.outcome != "NO"
+
 
 def test_numeric_threshold_market_resolves_yes_when_evidence_confirms_above_threshold():
     evidence = [make_ranked(
