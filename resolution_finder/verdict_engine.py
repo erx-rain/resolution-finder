@@ -424,6 +424,53 @@ def _sentence_mentions_other_entity(sentence: str, subject_terms: list[str]) -> 
     return False
 
 
+# Same-entity-name-different-calendar-instance problem: for a RECURRING
+# event (the same two teams playing every season, an annual award, etc.),
+# _sentence_mentions_other_entity can't help -- the named entities (team
+# names) are IDENTICAL across different years, only the year itself
+# distinguishes which instance a sentence is about. Real bug found live
+# (2026-08-23): a market about the 2026 Lakers-Rockets playoff series
+# wrongly resolved YES on real historical evidence about their 2009
+# series ("The Lakers defeated the Rockets ... during the 2009 Western
+# Conference Semifinals") -- same team names, completely different year,
+# and nothing in the pipeline checked.
+#
+# Deliberately scoped narrow: only applied in _decide_multi_outcome, and
+# only as a gate on a sentence that ALREADY matched a winner/elimination
+# phrase -- NOT a blanket "reject any sentence with a non-matching year"
+# filter. That broader version was tried first and rejected: ordinary
+# prose legitimately mentions incidental years for context ("the game has
+# sold 1.2M copies since its 2023 launch") without being about a
+# different event instance, and blanket-rejecting on any year mismatch
+# would have broken real numeric-threshold evidence that already worked.
+_YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _market_expected_year(market: Market) -> Optional[int]:
+    """The single calendar year this market's own event is understood to
+    be about, read from its title/description if stated explicitly (e.g.
+    "2026 NBA Playoffs First Round", "The International 2026") --  falls
+    back to the market's close_date year if no year is stated anywhere.
+    """
+    combined = f"{market.title} {market.description}"
+    match = _YEAR_PATTERN.search(combined)
+    if match:
+        return int(match.group())
+    return market.close_date.year if market.close_date else None
+
+
+def _sentence_mentions_conflicting_year(sentence: str, expected_year: Optional[int]) -> bool:
+    """True if `sentence` states at least one year and NONE of them match
+    `expected_year` -- a signal this specific sentence narrates a
+    different calendar instance of a recurring event. A sentence with no
+    year at all is not rejected on this basis (same fail-safe-only-on-a-
+    -positive-signal principle as _sentence_mentions_other_entity)."""
+    if expected_year is None:
+        return False
+    years = {int(y) for y in _YEAR_PATTERN.findall(sentence)}
+    return bool(years) and expected_year not in years
+
+
 # Calibrated empirically against real evidence sentences (Task 23 Step 3)
 # -- do not change these without re-running that calibration. Real run:
 # expected=True  positive_sim=0.750 negative_sim=0.750 margin=-0.000  (Sanofi/FDA)
@@ -573,25 +620,33 @@ def _match_option_keyword(lowered_sentence: str, option_lower: str, keywords: li
 def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) -> list[Verdict]:
     winner: Optional[Verdict] = None
     eliminated: dict[str, Verdict] = {}
+    expected_year = _market_expected_year(market)
 
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence):
                 continue
             lowered = sentence.lower()
+            # Gate winner/elimination matches on this sentence not stating
+            # a conflicting year -- checked once a phrase has matched, not
+            # as a blanket pre-filter (see _sentence_mentions_conflicting_year
+            # docstring for why: incidental years in ordinary prose must
+            # not cause a false rejection).
+            year_conflict = _sentence_mentions_conflicting_year(sentence, expected_year)
             for option in market.options:
                 option_lower = option.strip().lower()
                 if not option_lower:
                     continue
 
-                if winner is None and _match_option_keyword(lowered, option_lower, ANNOUNCEMENT_KEYWORDS):
+                if (winner is None and not year_conflict
+                        and _match_option_keyword(lowered, option_lower, ANNOUNCEMENT_KEYWORDS)):
                     winner = Verdict(
                         outcome="YES", option=option, confidence=item.similarity,
                         evidence_snippet=sentence.strip()[:280],
                         source_url=item.article.url, source_type=item.article.source_type,
                     )
 
-                if winner is None:
+                if winner is None and not year_conflict:
                     for other_option in market.options:
                         if other_option == option:
                             continue
@@ -606,7 +661,8 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                             )
                             break
 
-                if option not in eliminated and _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS):
+                if (option not in eliminated and not year_conflict
+                        and _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS)):
                     eliminated[option] = Verdict(
                         outcome="NO", option=option, confidence=item.similarity,
                         evidence_snippet=sentence.strip()[:280],

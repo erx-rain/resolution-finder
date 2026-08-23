@@ -414,6 +414,48 @@ def test_multi_outcome_market_resolves_yes_on_head_to_head_defeated_verb():
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
 
+def test_multi_outcome_market_ignores_head_to_head_result_from_a_different_year():
+    # Real bug found live (2026-08-23): a market about the 2026 Lakers-
+    # Rockets series wrongly resolved YES on real historical evidence
+    # about their 2009 series -- same team names (a recurring matchup),
+    # completely different year, and the wrong-subject veto can't help
+    # since the named entities are identical either way.
+    evidence = [make_ranked(
+        "The Lakers defeated the Rockets in seven games during the 2009 "
+        "Western Conference Semifinals, advancing to face the Nuggets.",
+        url="https://example.com/old-article", source_type="credible_backup",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert all(v.outcome != "YES" for v in verdicts)
+
+
+def test_multi_outcome_market_still_resolves_yes_when_evidence_has_no_year():
+    # Safety check: the real, actual evidence that motivated the
+    # head-to-head fix (no year mentioned at all) must still work --
+    # the new year-conflict guard must not be a blanket "any year
+    # anywhere" filter, only a check on sentences that already matched.
+    evidence = [make_ranked(
+        "The Los Angeles Lakers' first-round playoff victory over the "
+        "Houston Rockets may have accomplished more than advancing the "
+        "franchise to the Western Conference semifinals.",
+        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
+
+
+def test_multi_outcome_market_still_resolves_yes_when_evidence_states_matching_year():
+    # The matching year (2026, same as the market's own) must not be
+    # treated as a conflict just because the check fires.
+    evidence = [make_ranked(
+        "The Lakers defeated the Rockets in the 2026 Western Conference "
+        "First Round series.",
+        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
+
+
 def test_multi_outcome_market_option_independently_resolves_no_on_elimination():
     # Real scenario: The International 2026 -- Aurora Gaming eliminated,
     # tournament champion still undecided. Must resolve just that option,
