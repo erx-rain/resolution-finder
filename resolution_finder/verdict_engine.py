@@ -233,11 +233,12 @@ def _decide_numeric_threshold(
     market: Market, ranked_evidence: list[RankedArticle], direction: str, threshold: float
 ) -> Verdict:
     subject_terms = _subject_terms(market)
+    distinctive_terms = _distinctive_subject_terms(market)
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence):
                 continue
-            if _sentence_mentions_other_entity(sentence, subject_terms):
+            if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
             value = _extract_latest_number(sentence)
             if value is None:
@@ -400,23 +401,88 @@ def _subject_terms(market: Market) -> list[str]:
     return terms
 
 
-def _sentence_mentions_other_entity(sentence: str, subject_terms: list[str]) -> bool:
+# Connector words the entity regex itself treats as glue (see
+# query_builder.ENTITY_PATTERN) -- stripped back out here so they never
+# count as the "shared word" that proves two entity phrases are the same
+# subject.
+_ENTITY_CONNECTOR_WORDS = {"of", "the", "for", "and"}
+
+
+def _distinctive_subject_terms(market: Market) -> list[str]:
+    """Narrower than _subject_terms: entities/acronyms drawn from the
+    market's TITLE only, not its description.
+
+    Used only to decide whether a sentence that also names some OTHER
+    entity is nonetheless clearly still about this market. The full
+    description is too generic for that job -- e.g. nearly every US
+    legislation market's description separately mentions "the U.S.
+    Senate" as part of standard passage-requirement boilerplate, so its
+    presence in a sentence proves nothing about which specific bill that
+    sentence is about. The title, by contrast, IS the thing that makes
+    this market distinguishable from every other market in the same
+    domain, so a real overlap with it is a real signal.
+    """
+    terms = list(extract_entities(market.title))
+    for word in ACRONYM_PATTERN.findall(market.title):
+        if word not in terms:
+            terms.append(word)
+    return terms
+
+
+def _entity_words(entity: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", entity.lower())
+    return {w for w in words if w not in _ENTITY_CONNECTOR_WORDS and len(w) >= 3}
+
+
+def _sentence_mentions_other_entity(
+    sentence: str, subject_terms: list[str], distinctive_terms: Optional[list[str]] = None
+) -> bool:
     """True if the sentence names a capitalized entity/acronym that isn't
-    (even partially) one of this market's own subject terms — a signal the
-    sentence is about something else. Empty subject_terms means we have no
-    way to tell our own subject apart, so never reject on this basis alone.
+    (even partially) one of this market's own subject terms, AND the
+    sentence doesn't ALSO clearly name the market's own DISTINCTIVE
+    subject (title-derived terms, matched word-by-word) — a signal the
+    sentence is about something else entirely. Empty subject_terms means
+    we have no way to tell our own subject apart, so never reject on this
+    basis alone.
+
+    Real bug found live (2026-08-23): a sentence can legitimately name
+    both the market's subject AND an unrelated entity in the same breath,
+    e.g. real evidence "Sanofi's subcutaneous Sarclisa Escena approved in
+    the US" -- "Sarclisa Escena" (a specific product-name variant) doesn't
+    substring-match the subject term "Subcutaneous Sarclisa" as a whole
+    phrase, but they share the distinctive word "Sarclisa". The old logic
+    vetoed the whole sentence as soon as it hit ANY non-matching entity,
+    even when the sentence's own subject was also named -- wrongly
+    discarding real confirming evidence.
+
+    Word-overlap against `distinctive_terms` (title-only), not the full
+    `subject_terms` (title+description), is deliberate: an earlier version
+    of this fix checked for ANY subject-term overlap and reopened the
+    original production false positive this veto exists to catch --
+    "The GENIUS Act was passed by the U.S. Senate..." wrongly matched
+    CLARITY_MARKET because "U.S. Senate" is generic boilerplate present in
+    CLARITY's own description too, even though the sentence is about a
+    completely different bill. Title terms don't have that problem: they
+    ARE the thing that distinguishes this market from every other one.
     """
     if not subject_terms:
         return False
     subject_lower = [_normalize_entity(t) for t in subject_terms]
+    distinctive_words: set[str] = set()
+    for term in distinctive_terms or []:
+        distinctive_words |= _entity_words(term)
     sentence_entities = extract_entities(sentence) + ACRONYM_PATTERN.findall(sentence)
+    subject_mentioned = False
+    other_entity_found = False
     for entity in sentence_entities:
         entity_lower = _normalize_entity(entity)
         if not entity_lower:
             continue
         if not any(entity_lower in s or s in entity_lower for s in subject_lower):
-            return True
-    return False
+            other_entity_found = True
+        if distinctive_words and _entity_words(entity) & distinctive_words:
+            subject_mentioned = True
+    return other_entity_found and not subject_mentioned
 
 
 # Same-entity-name-different-calendar-instance problem: for a RECURRING
@@ -736,11 +802,12 @@ def _extract_default_outcome(description: str) -> Optional[str]:
 
 def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
     subject_terms = _subject_terms(market)
+    distinctive_terms = _distinctive_subject_terms(market)
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence):
                 continue
-            if _sentence_mentions_other_entity(sentence, subject_terms):
+            if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
             if any(_contains_keyword(sentence.lower(), keyword) for keyword in BINARY_YES_KEYWORDS):
                 return Verdict(
@@ -757,7 +824,7 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence):
                 continue
-            if _sentence_mentions_other_entity(sentence, subject_terms):
+            if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
             if _sentence_is_vague_reference(sentence):
                 continue

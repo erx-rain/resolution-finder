@@ -1116,6 +1116,75 @@ def test_semantic_fallback_still_respects_wrong_subject_veto(mock_get_model, moc
     assert verdict.outcome != "YES"  # wrong-subject veto must reject before semantic scoring runs
 
 
+# Real full description copied verbatim from data/markets.json
+# (fda-approves-sanofi-subcutaneous-sarclisa-07-23-2026) -- the longer FDA
+# boilerplate is what actually produced the noisy subject-term list
+# ("New Drug Application", "Biologics License Application", etc.) that
+# exposed the bug below; the short SANOFI_DESCRIPTION above doesn't
+# reproduce it.
+SANOFI_REAL_DESCRIPTION = (
+    "As of market creation, the FDA's expected decision date for the specified application is July 23, 2026.\n\n"
+    "This market will resolve to \"Yes\" if the U.S. Food and Drug Administration (FDA) grants full or conditional "
+    "approval for Sanofi's Subcutaneous Sarclisa in combination with approved standard-of-care regimens for the "
+    "treatment of multiple myeloma across currently approved Sarclisa IV indications by August 6, 2026, 11:59 PM ET. "
+    "Otherwise, this market will resolve to \"No.\"\n\n"
+    "An approval is defined as:\n"
+    "For new drugs: FDA issuance of an approval letter for a New Drug Application (NDA) or Biologics License Application (BLA)\n"
+    "For already-marketed drugs seeking new indications: FDA approval of a supplemental NDA (sNDA) or supplemental BLA (sBLA) for the specific indication referenced\n"
+    "For generic drugs: FDA approval of an Abbreviated New Drug Application (ANDA)\n"
+    "For biosimilars: FDA approval of a 351(k) application\n\n"
+    "The following constitute qualifying approvals:\n"
+    "Standard approval (traditional approval based on clinical benefit), Accelerated approval (based on surrogate endpoints), "
+    "Approval with Risk Evaluation and Mitigation Strategy (REMS), Approval with restricted distribution or indication "
+    "limitations, except compassionate use/expanded access programs\n\n"
+    "The following do not constitute qualifying approvals:\n"
+    "Approvable letters that require additional actions before approval\n"
+    "Tentative approvals pending patent or exclusivity expiration\n"
+    "FDA requests for additional information or studies\n"
+    "Extension of Prescription Drug User Fee Amendments dates\n"
+    "Approval for compassionate use or expanded access programs only\n"
+    "Approval only for export or for use outside the United States\n"
+    "Emergency Use Authorization (EUA) without full approval\n"
+    "Complete Response Letters (CRLs) indicating the application cannot be approved in its current form\n\n"
+    "This market will immediately resolve to \"No\" if the FDA issues a Complete Response Letter (CRL) or explicitly "
+    "declines to approve the application. If the drug sponsor withdraws the application before the end of the "
+    "specified period, the market will resolve to \"No\" immediately.\n\n"
+    "If the listed drug is approved before the end of the specified period, the market will resolve to \"Yes,\" "
+    "regardless of potential Advisory Committee votes against approval or later withdrawal of approval.\n\n"
+    "Conditional approvals may include post-marketing requirements or commitments and still qualify.\n\n"
+    "The primary resolution source will be official information from the FDA; however, a consensus of credible "
+    "reporting will also be used."
+)
+
+SANOFI_REAL_MARKET = Market(
+    id="fda-approves-sanofi-subcutaneous-sarclisa-07-23-2026",
+    title="FDA approves Sanofi's Subcutaneous Sarclisa?",
+    description=SANOFI_REAL_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+def test_wrong_subject_veto_does_not_reject_sentence_that_also_names_subject():
+    # Real bug found live (2026-08-23, full-suite eval batch): this exact
+    # sentence (real evidence, Yahoo Finance, uk.finance.yahoo.com/news/
+    # press-release-sanofi-subcutaneous-sarclisa-123500426.html) is a clean
+    # confirmation but was wrongly vetoed as "mentions another entity"
+    # because "Sarclisa Escena" (a specific product-name variant named in
+    # the article) doesn't substring-match the subject term "Subcutaneous
+    # Sarclisa" -- even though the SAME sentence also plainly names the
+    # subject ("subcutaneous Sarclisa"). The veto must not fire when the
+    # subject itself is also present in the sentence.
+    evidence = [make_ranked(
+        "Sanofi's subcutaneous Sarclisa Escena approved in the US as first "
+        "anticancer treatment administered via on-body injector",
+        url="https://uk.finance.yahoo.com/news/press-release-sanofi-subcutaneous-sarclisa-123500426.html",
+        source_type="credible_backup_secondary",
+    )]
+    verdict = decide(SANOFI_REAL_MARKET, evidence)
+    assert verdict.outcome == "YES"  # matches this market's real ground truth
+
+
 WORLD_CUP_DESCRIPTION = (
     "This market resolves \"Yes\" if the record for most goals scored by a "
     "single player at a single World Cup (currently 13 goals) is broken -- "
