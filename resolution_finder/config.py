@@ -20,6 +20,21 @@ PEER_MARKET_SIMILARITY_THRESHOLD = 0.75
 # else needs to change.
 PEER_MARKET_ENABLED = False
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+# Used ONLY for multi-outcome candidate verification (verdict_engine.py),
+# not for relevance_ranker.py's article-relevance filtering -- a different
+# job needs a different model. Relevance filtering is a genuine similarity
+# question ("is this article even about this market"); verdict verification
+# is a classification question ("does this evidence confirm this specific
+# outcome"), which cosine similarity answers poorly (real calibration
+# 2026-08-23: a false "opinion" sentence scored a HIGHER raw similarity than
+# a true confirmation). An NLI zero-shot entailment model answers the
+# classification question directly instead of via a hand-tuned similarity
+# margin -- real calibration on the same test sentences: TRUE cases scored
+# 0.986-0.999 entailment probability, FALSE cases scored 0.226-0.751, a
+# ~0.235 separation gap vs. the old approach's ~0.027 gap. xsmall variant
+# chosen deliberately: smallest/fastest in the same free model family
+# (142MB, 22M active params), purpose-built for zero-shot classification.
+NLI_VERIFICATION_MODEL_NAME = "MoritzLaurer/deberta-v3-xsmall-zeroshot-v1.1-all-33"
 REQUEST_DELAY_SECONDS = 1
 # A live dry run against just 3 markets took ~65 minutes, dominated by
 # hundreds of Tier 1 (Google News RSS) fetches that are guaranteed to fail

@@ -687,87 +687,80 @@ def _semantic_yes_signal(sentence: str, market: Market) -> Optional[float]:
 # treating a keyword match as the verdict itself, then patching each new
 # false positive with more keywords, is not scalable. From here, a
 # keyword/phrase match in _decide_multi_outcome is only a CANDIDATE (kept
-# cheap, for efficiency, so the embedding model isn't run against every
-# sentence in every article) -- it must also pass this semantic check
+# cheap, for efficiency, so the classifier model isn't run against every
+# sentence in every article) -- it must also pass this verification check
 # before being trusted.
 #
-# Real calibration run (not guessed), 6 real/realistic sentences:
-#   TRUE  winner Adeleke:      pos=0.835 neg=0.756 margin=+0.079
-#   TRUE  winner Arsenal:      pos=0.744 neg=0.706 margin=+0.038
-#   TRUE  eliminated Aurora:   pos=0.855 neg=0.807 margin=+0.048
-#   FALSE winner BoomBoys (win-loss record, not a tournament win):
-#                              pos=0.556 neg=0.614 margin=-0.058
-#   FALSE winner Team Spirit (future/unplayed match):
-#                              pos=0.448 neg=0.436 margin=+0.011
-#   FALSE eliminated Team Spirit (analyst's opinion, not a fact):
-#                              pos=0.800 neg=0.800 margin=+0.000
-# positive_sim ALONE does not separate these -- the false "opinion" case
-# scores 0.800, higher than the true "Arsenal" case at 0.744. MARGIN is
-# what actually separates them cleanly: every TRUE case has margin
-# >= +0.038, every FALSE case has margin <= +0.011. Threshold set at the
-# midpoint of that real gap. Re-run this calibration (see
-# calibrate_multi_outcome_verification.py-style script) if a future false
-# positive doesn't get caught by this threshold, rather than guessing a
-# new number.
-MULTI_OUTCOME_VERIFICATION_MARGIN = 0.025
+# Runs on a dedicated NLI (Natural Language Inference) zero-shot
+# entailment model, NOT the general-purpose sentence-embedding model used
+# for relevance_ranker.py's article filtering -- a different job needs a
+# different model. Relevance filtering is a genuine similarity question
+# ("is this article even about this market"); this is a classification
+# question ("does this evidence entail this specific outcome being true"),
+# which cosine similarity between two independently-encoded texts answers
+# poorly. First built with a cosine-similarity-margin approach (see git
+# history), then REPLACED after a real head-to-head calibration against
+# the same 8 real/realistic test sentences:
+#   old (MiniLM cosine-similarity margin): TRUE margins +0.038 to +0.094,
+#     FALSE margins -0.058 to +0.120 -- only a ~0.027 real gap to set a
+#     threshold in, and the false "opinion" sentence scored a HIGHER raw
+#     similarity (0.800) than the weakest true confirmation (0.744).
+#   new (NLI zero-shot entailment probability): TRUE scores 0.986-0.999,
+#     FALSE scores 0.226-0.751 -- a ~0.235 real gap, an order of magnitude
+#     more robust separation on the exact same sentences.
+# Threshold set at 0.85: comfortably below every real TRUE score (>=0.986,
+# 0.136 of margin) and comfortably above every real FALSE score (<=0.751,
+# 0.099 of margin) -- biased toward the stricter/higher side deliberately,
+# per the user's own stated design principle: not resolving is fine, a
+# given answer must be correct, so a borderline case should fall through
+# to UNCLEAR rather than risk a wrong verdict.
+NLI_VERIFICATION_THRESHOLD = 0.85
+
+_nli_classifier = None
 
 
-def _verify_candidate_semantically(sentence: str, positive_template: str, negative_template: str) -> bool:
-    model = _get_model()
-    sentence_emb = model.encode(sentence, convert_to_tensor=True)
-    positive_emb = model.encode(positive_template, convert_to_tensor=True)
-    negative_emb = model.encode(negative_template, convert_to_tensor=True)
-    positive_sim = float(util.cos_sim(sentence_emb, positive_emb)[0][0])
-    negative_sim = float(util.cos_sim(sentence_emb, negative_emb)[0][0])
-    return (positive_sim - negative_sim) >= MULTI_OUTCOME_VERIFICATION_MARGIN
+def _get_nli_classifier():
+    global _nli_classifier
+    if _nli_classifier is None:
+        from transformers import pipeline
+        from resolution_finder.config import NLI_VERIFICATION_MODEL_NAME
+        _nli_classifier = pipeline("zero-shot-classification", model=NLI_VERIFICATION_MODEL_NAME)
+    return _nli_classifier
+
+
+def _verify_candidate_semantically(sentence: str, positive_hypothesis: str, negative_hypothesis: str) -> bool:
+    classifier = _get_nli_classifier()
+    result = classifier(sentence, candidate_labels=[positive_hypothesis, negative_hypothesis])
+    positive_score = result["scores"][result["labels"].index(positive_hypothesis)]
+    return positive_score >= NLI_VERIFICATION_THRESHOLD
 
 
 def _verify_winner_candidate(sentence: str, option: str, market: Market) -> bool:
-    """True if `sentence` semantically confirms `option` has ALREADY won
-    `market` -- not just that a winner-shaped keyword and the option name
-    both appear in it."""
-    positive = f"{option} has won {market.title}. This has been confirmed and has already happened."
-    negative = f"{option} has not won {market.title}. This has not happened yet and remains unconfirmed or uncertain."
+    """True if `sentence` entails `option` has ALREADY won `market` --
+    not just that a winner-shaped keyword and the option name both
+    appear in it."""
+    positive = f"{option} has won {market.title}."
+    negative = f"{option} has not won {market.title}, or it has not been decided yet."
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
-# A SEPARATE, opponent-aware template for the head-to-head path
-# specifically -- calibration found the general "{option} has won
-# {market.title}" template above does NOT work for a head-to-head market
-# (title shaped like "Who Will Win Series? - Lakers vs. Rockets" rather
-# than a general "who wins X" framing): all 5 real/realistic TRUE
-# head-to-head sentences scored margins near zero (-0.014 to +0.014,
-# below the 0.025 threshold) against it, which would have wrongly
-# rejected genuine confirmations, not just the intended false positives.
-# Referencing the actual opponent instead of the market title fixes this:
-#   TRUE victory over (real):      margin=+0.059
-#   TRUE defeated verb:            margin=+0.040
-#   TRUE matching year:            margin=+0.094
-#   TRUE wins over (plural):       margin=+0.088
-#   TRUE matching phase:           margin=+0.078
-# All comfortably above MULTI_OUTCOME_VERIFICATION_MARGIN. The two
-# context-conflict cases (wrong year, wrong phase) score high margins
-# here too (+0.018, +0.120) -- that's fine, since those are already
-# rejected earlier by _sentence_mentions_conflicting_year/_phase before
-# this function is ever called; this template's job is only "did a
-# result happen at all," not "was it the right instance."
 def _verify_head_to_head_candidate(sentence: str, option: str, other_option: str) -> bool:
-    """True if `sentence` semantically confirms `option` has ALREADY
-    beaten `other_option` -- not just that a win-shaped phrase and both
-    names appear in it."""
-    positive = f"{option} defeated {other_option}. This has been confirmed and has already happened."
-    negative = (
-        f"{option} has not played {other_option} yet, or has not defeated them. "
-        "This has not happened yet and remains unconfirmed or uncertain."
-    )
+    """True if `sentence` entails `option` has ALREADY beaten
+    `other_option` -- not just that a win-shaped phrase and both names
+    appear in it. A separate, opponent-aware hypothesis from
+    _verify_winner_candidate's market-title framing -- a head-to-head
+    market's title (e.g. "Who Will Win Series? - Lakers vs. Rockets")
+    doesn't read naturally as "{option} has won {that title}"."""
+    positive = f"{option} defeated {other_option}."
+    negative = f"{option} has not played {other_option} yet, or has not defeated them."
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
 def _verify_elimination_candidate(sentence: str, option: str, market: Market) -> bool:
-    """True if `sentence` semantically confirms `option` has ALREADY been
-    eliminated from `market` -- not just that an elimination-shaped
-    keyword and the option name both appear in it."""
-    positive = f"{option} has been eliminated and is out of {market.title}. This has been confirmed."
+    """True if `sentence` entails `option` has ALREADY been eliminated
+    from `market` -- not just that an elimination-shaped keyword and the
+    option name both appear in it."""
+    positive = f"{option} has been eliminated and is out of {market.title}."
     negative = f"{option} is still competing in {market.title} and has not been eliminated."
     return _verify_candidate_semantically(sentence, positive, negative)
 
