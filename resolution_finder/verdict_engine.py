@@ -55,16 +55,40 @@ BINARY_YES_KEYWORDS = [
 # ambiguous between two listed options (e.g. osun-state-governor-2026 has
 # both "Ademola Adeleke" and "Taofeek Adeleke"), so this only matches the
 # full option string, same as before.
+# Sports-tournament victory phrases added 2026-08-23 per user request: the
+# original list is thin for sports specifically (built for prize/award and
+# contract-renewal language in earlier tasks) -- real sports journalism
+# essentially never literally says "wins the tournament"; it says
+# "champion(s)", "clinched the title", "lifted the trophy", etc. Kept
+# general (no sport/tournament-specific wording, e.g. not "Dota" or "NBA"
+# terms) per the standing anti-overfitting rule.
 ANNOUNCEMENT_KEYWORDS = [
     "awarded to", "wins", "winner is", "winner of", "named recipient", "recipient is",
     "signed a new contract", "reached an agreement to renew", "contract extension",
     "renewed his contract", "renewed her contract", "extended his contract", "extended her contract",
+    "crowned champion", "crowned champions", "are the champions", "is the champion",
+    "become champions", "became champions", "won the championship", "won the title",
+    "claimed the title", "captured the title", "clinched the title", "lifted the trophy",
+    "took home the title", "champions of",
 ]
 
 # A specific option confirmed to have LOST resolves that option alone to No,
 # independently of whether the overall market winner is known yet (e.g. a
 # team eliminated partway through a tournament that's still ongoing).
-ELIMINATION_KEYWORDS = ["eliminated", "eliminated from", "knocked out", "lost to", "out of the tournament"]
+#
+# Deliberately does NOT include a bare "lost to" -- the mirror image of
+# the "wins over" fix below (a bug found live 2026-08-23, then the user
+# explicitly asked "and vice versa"): losing ONE game/match does not mean
+# eliminated from the tournament in most formats (a best-of-N series, a
+# group stage, a double-elimination bracket all let a team lose individual
+# games and still advance or ultimately win). Unlike "wins over", there's
+# no safe alternate mechanism to route a head-to-head LOSS through either
+# -- a confirmed single-match loss genuinely isn't evidence of tournament
+# elimination, so it's correctly not treated as any signal at all here.
+# The remaining phrases ("eliminated", "knocked out", "out of the
+# tournament") all inherently express finality on their own -- there's no
+# such thing as being "eliminated" from just one game.
+ELIMINATION_KEYWORDS = ["eliminated", "eliminated from", "knocked out", "out of the tournament"]
 
 # Directional head-to-head phrases ("Lakers defeated the Rockets", "Lakers'
 # victory over the Rockets") -- unlike ANNOUNCEMENT_KEYWORDS/
@@ -84,9 +108,14 @@ ELIMINATION_KEYWORDS = ["eliminated", "eliminated from", "knocked out", "lost to
 HEAD_TO_HEAD_WIN_VERBS = [
     "defeated", "defeats", "beat", "beats", "topped", "downed", "routed", "outlasted",
 ]
-# Noun-phrase form ("[team]'s victory over [team]") rather than a
-# transitive verb between two names -- matched the same directional way.
-HEAD_TO_HEAD_WIN_NOUN_PHRASES = ["victory over", "win over", "triumph over"]
+# Noun-phrase form ("[team]'s victory over [team]", "wins over [team]")
+# rather than a transitive verb between two names -- matched the same
+# directional way. "wins over"/"win over" plural+singular both included:
+# a team's tournament RECORD is often described as "N wins over X, Y..."
+# (multiple individual match results), which is exactly what this
+# directional check is for -- see _match_announcement_keyword below for
+# why the bare ANNOUNCEMENT_KEYWORDS "wins" must NOT also match this.
+HEAD_TO_HEAD_WIN_NOUN_PHRASES = ["victory over", "win over", "wins over", "triumph over"]
 
 
 def _match_head_to_head_winner(lowered_sentence: str, winner_option_lower: str, loser_option_lower: str) -> bool:
@@ -100,6 +129,26 @@ def _match_head_to_head_winner(lowered_sentence: str, winner_option_lower: str, 
         if re.search(rf"{winner_re}.{{0,40}}{phrase_re}.{{0,40}}{loser_re}", lowered_sentence):
             return True
     return False
+
+
+# Real bug found live (2026-08-23): "BoomBoys posted a 2-3 win-loss record
+# with wins over OG and Iron Wing, but suffered consecutive losses..."
+# wrongly crowned BoomBoys tournament CHAMPION via the bare "wins"
+# ANNOUNCEMENT_KEYWORDS entry -- a losing overall record (2-3), with
+# "wins over X and Y" describing individual match results within the
+# tournament, not overall victory. The bare "wins" keyword is still
+# legitimately needed for genuine phrasing like "Arsenal wins the race
+# for Vinicius Junior" (verified by an existing test), so it can't just
+# be removed -- the fix is narrower: "wins over"/"win over" specifically
+# is a head-to-head phrase (now handled directionally by
+# _match_head_to_head_winner above, which correctly requires the named
+# opponent to ALSO be one of the market's own listed options -- "OG" and
+# "Iron Wing" above are real opponents but not listed options in this
+# market, so the directional check correctly finds no valid pair and
+# produces no false winner).
+def _match_announcement_keyword(lowered_sentence: str, option_lower: str) -> bool:
+    stripped = re.sub(r"\bwins?\s+over\b", "", lowered_sentence)
+    return _match_option_keyword(stripped, option_lower, ANNOUNCEMENT_KEYWORDS)
 
 # Trigger phrases confirming a multi-outcome market's date-shaped options
 # are CUMULATIVE thresholds ("by August 1" also satisfies "by September 1")
@@ -181,34 +230,51 @@ def _parse_threshold_number(raw: str, suffix: Optional[str]) -> float:
     return value
 
 
+def _first_sentence(text: str) -> str:
+    """The first sentence of `text` -- a market's description
+    conventionally states its core Yes/No condition in its opening
+    sentence, before any exception/edge-case elaboration begins."""
+    sentences = _split_sentences(text)
+    return sentences[0] if sentences else ""
+
+
 def _extract_threshold_condition(market: Market) -> Optional[tuple[str, float]]:
-    """The market's own numeric threshold condition, parsed from its TITLE
-    only (not its description) -- e.g. ("up", 64000.0) for "above
+    """The market's own numeric threshold condition, parsed from its
+    title, or -- if the title has no threshold phrase -- the FIRST
+    SENTENCE of its description only, e.g. ("up", 64000.0) for "above
     $64,000". Returns None for a market that isn't phrased as a
     numeric-threshold question at all, which is the common case and must
     fall through to the existing _decide_binary unchanged.
 
-    Deliberately title-only, not title+description: every real numeric-
-    threshold market states its own core Yes/No condition directly in the
-    title (true of every fixture in this test suite), while a market's
-    DESCRIPTION often contains extended exception/edge-case language that
-    can incidentally contain a threshold-shaped phrase without the market
-    actually being a numeric-threshold comparison. Real bug found live
-    (2026-08-23): a 5-category typhoon-intensity classification market
-    (options=[], title asking specifically about the "Very Strong
+    Deliberately title-first, then only the description's opening
+    sentence -- NOT the full description: every real numeric-threshold
+    market states its own core Yes/No condition directly in the title
+    (true of every fixture in this test suite) or, if not, in the
+    description's own opening statement, while the REST of a market's
+    description often contains extended exception/edge-case language
+    that can incidentally contain a threshold-shaped phrase without the
+    market actually being a numeric-threshold comparison. Real bug found
+    live (2026-08-23): a 5-category typhoon-intensity classification
+    market (options=[], title asking specifically about the "Very Strong
     Typhoon" category, no threshold phrasing in the title at all) had an
-    unrelated exception clause in its description -- "...classifies the
-    system as a tropical depression (below 34 kt)... the crossing does
-    not count and the market resolves to 'No Qualifying Landfall'" --
-    describing a DIFFERENT outcome branch, not the market's actual
-    question. Searching the full description matched "below 34" and
-    wrongly routed the whole market into the numeric-threshold decision
-    path, comparing an unrelated number from real evidence (a
-    building-damage count, "14,000") against a threshold of 34 and
-    confidently resolving NO.
+    unrelated exception clause several sentences into its description --
+    "...classifies the system as a tropical depression (below 34 kt)...
+    the crossing does not count and the market resolves to 'No
+    Qualifying Landfall'" -- describing a DIFFERENT outcome branch, not
+    the market's actual question. Searching the full description matched
+    "below 34" and wrongly routed the whole market into the numeric-
+    threshold decision path, comparing an unrelated number from real
+    evidence (a building-damage count, "14,000") against a threshold of
+    34 and confidently resolving NO. The market's actual opening sentence
+    ("This market resolves to the intensity category...") does not
+    contain the false-match phrase, confirmed by re-reading the real
+    description, so restricting to it (instead of title-only) still
+    excludes this bug while covering a market whose real threshold is
+    stated only in its description's first sentence, not its title.
     """
+    search_text = f"{market.title} {_first_sentence(market.description)}"
     for direction, pattern in _THRESHOLD_CONDITION_PATTERNS:
-        match = pattern.search(market.title)
+        match = pattern.search(search_text)
         if match:
             return direction, _parse_threshold_number(match.group(1), match.group(2))
     return None
@@ -306,11 +372,34 @@ SENTENCE_SPLIT_PATTERN = re.compile(r"(?<![A-Z]\.)(?<=[.!?])\s+")
 # Words/phrases that turn a sentence hypothetical or negated, e.g. "if
 # enacted" or "has not been signed" — a keyword match inside one of these
 # doesn't describe something that actually happened.
+#
+# The "attribution"/"future" phrases below were added 2026-08-23 after the
+# user asked directly: what stops an opinion or a not-yet-decided event
+# from being read as a confirmed fact just because it's phrased assertively?
+# Two real, live-confirmed cases:
+#   - Attribution/opinion (constructed, then verified): "Analysts say Team
+#     Spirit is basically eliminated from the tournament..." matched
+#     "eliminated from" and was wrongly treated as a confirmed elimination
+#     -- it's someone's assessment, not a reported fact.
+#   - Future/scheduling (found live, real search results, same session):
+#     "...where they will face the winner of the lower bracket semifinals
+#     between Team Spirit and BoomBoys..." matched "winner of" near "Team
+#     Spirit" and was wrongly treated as a confirmed tournament win --
+#     the match described hasn't been played yet, and neither name is a
+#     "winner" of anything at the point this sentence describes.
+# Both are the same underlying gap: grammatically assertive phrasing does
+# not mean an already-settled fact. Kept as small, general phrase lists
+# (not exhaustive) in the same style as the rest of this list.
 NEGATION_HEDGE_WORDS = [
     "not ", "n't ", "never ", "without ", "fails to", "failed to",
     "yet to", "has yet", "remains uncertain", "uncertain", "unclear",
     "unlikely", "pending", "awaiting", "no vote", "not scheduled",
     "if ", "unless ", "would be", "could be", "might be",
+    "analysts say", "some say", "pundits say", "reportedly", "allegedly",
+    "is speculated", "some believe", "many believe", "it is believed",
+    "rumored", "sources say", "some argue", "experts say",
+    "will face", "will play", "will meet", "will take on",
+    "is set to", "are set to", "scheduled to",
 ]
 
 # Generic quantifier+"other" hedges of SPECIFICITY -- e.g. "numerous other
@@ -471,6 +560,62 @@ def _sentence_mentions_conflicting_year(sentence: str, expected_year: Optional[i
     return bool(years) and expected_year not in years
 
 
+# Same-year, different-MEETING problem: two teams can play each other more
+# than once within a single year -- a regular-season game and a separate
+# playoff series, or twice in a round-robin-then-knockout tournament. The
+# year-conflict check above can't catch this since the year is identical
+# either way. Real bug found live (2026-08-23), by construction (not yet
+# observed from real search results, but realistic and directly analogous
+# to the year bug): a market specifically about a 2026 NBA PLAYOFF series
+# wrongly resolved YES on evidence about a same-year REGULAR SEASON game
+# between the same two teams.
+#
+# Deliberately scoped to the single clearest, most common real-world
+# distinction (playoff/postseason vs. regular season) rather than a full
+# round-name taxonomy (First Round/Semifinals/Group Stage/Round of 16/...
+# varies too much by sport and competition to generalize safely without a
+# real case to design each one against -- see the plan doc Backlog section
+# for this as a documented, narrower-still residual gap).
+_PLAYOFF_PHRASES = ["playoff", "playoffs", "postseason"]
+_REGULAR_SEASON_PHRASES = ["regular season"]
+
+
+def _market_is_playoff_context(market: Market) -> Optional[bool]:
+    """True if the market's own title/description explicitly states a
+    playoff/postseason context, False if it explicitly states a regular-
+    season context, None if neither is stated (the common case -- most
+    tournament/award/legislative markets have no such ambiguity at all,
+    and are never checked against this)."""
+    combined = f"{market.title} {market.description}".lower()
+    is_playoff = any(p in combined for p in _PLAYOFF_PHRASES)
+    is_regular = any(p in combined for p in _REGULAR_SEASON_PHRASES)
+    if is_playoff and not is_regular:
+        return True
+    if is_regular and not is_playoff:
+        return False
+    return None
+
+
+def _sentence_mentions_conflicting_phase(sentence: str, market_is_playoff: Optional[bool]) -> bool:
+    """True if `sentence` explicitly states the OPPOSITE phase from the
+    market's own (playoff evidence for a regular-season market, or vice
+    versa) and does not also mention the market's own phase. Same
+    fail-safe-only-on-a-positive-signal principle as the year check --
+    market_is_playoff is None (most markets) never rejects anything."""
+    if market_is_playoff is None:
+        return False
+    lowered = sentence.lower()
+    if market_is_playoff and any(p in lowered for p in _REGULAR_SEASON_PHRASES) and not any(
+        p in lowered for p in _PLAYOFF_PHRASES
+    ):
+        return True
+    if market_is_playoff is False and any(p in lowered for p in _PLAYOFF_PHRASES) and not any(
+        p in lowered for p in _REGULAR_SEASON_PHRASES
+    ):
+        return True
+    return False
+
+
 # Calibrated empirically against real evidence sentences (Task 23 Step 3)
 # -- do not change these without re-running that calibration. Real run:
 # expected=True  positive_sim=0.750 negative_sim=0.750 margin=-0.000  (Sanofi/FDA)
@@ -532,6 +677,99 @@ def _semantic_yes_signal(sentence: str, market: Market) -> Optional[float]:
         )
         return positive_sim
     return None
+
+
+# Multi-outcome candidate verification -- architecture change, not another
+# phrase-list patch. Added 2026-08-23 after live testing found repeated
+# keyword false positives (BoomBoys crowned champion off a losing win-loss
+# record; a not-yet-played match treated as decided; an analyst's opinion
+# treated as a confirmed elimination), and the user pushed back directly:
+# treating a keyword match as the verdict itself, then patching each new
+# false positive with more keywords, is not scalable. From here, a
+# keyword/phrase match in _decide_multi_outcome is only a CANDIDATE (kept
+# cheap, for efficiency, so the embedding model isn't run against every
+# sentence in every article) -- it must also pass this semantic check
+# before being trusted.
+#
+# Real calibration run (not guessed), 6 real/realistic sentences:
+#   TRUE  winner Adeleke:      pos=0.835 neg=0.756 margin=+0.079
+#   TRUE  winner Arsenal:      pos=0.744 neg=0.706 margin=+0.038
+#   TRUE  eliminated Aurora:   pos=0.855 neg=0.807 margin=+0.048
+#   FALSE winner BoomBoys (win-loss record, not a tournament win):
+#                              pos=0.556 neg=0.614 margin=-0.058
+#   FALSE winner Team Spirit (future/unplayed match):
+#                              pos=0.448 neg=0.436 margin=+0.011
+#   FALSE eliminated Team Spirit (analyst's opinion, not a fact):
+#                              pos=0.800 neg=0.800 margin=+0.000
+# positive_sim ALONE does not separate these -- the false "opinion" case
+# scores 0.800, higher than the true "Arsenal" case at 0.744. MARGIN is
+# what actually separates them cleanly: every TRUE case has margin
+# >= +0.038, every FALSE case has margin <= +0.011. Threshold set at the
+# midpoint of that real gap. Re-run this calibration (see
+# calibrate_multi_outcome_verification.py-style script) if a future false
+# positive doesn't get caught by this threshold, rather than guessing a
+# new number.
+MULTI_OUTCOME_VERIFICATION_MARGIN = 0.025
+
+
+def _verify_candidate_semantically(sentence: str, positive_template: str, negative_template: str) -> bool:
+    model = _get_model()
+    sentence_emb = model.encode(sentence, convert_to_tensor=True)
+    positive_emb = model.encode(positive_template, convert_to_tensor=True)
+    negative_emb = model.encode(negative_template, convert_to_tensor=True)
+    positive_sim = float(util.cos_sim(sentence_emb, positive_emb)[0][0])
+    negative_sim = float(util.cos_sim(sentence_emb, negative_emb)[0][0])
+    return (positive_sim - negative_sim) >= MULTI_OUTCOME_VERIFICATION_MARGIN
+
+
+def _verify_winner_candidate(sentence: str, option: str, market: Market) -> bool:
+    """True if `sentence` semantically confirms `option` has ALREADY won
+    `market` -- not just that a winner-shaped keyword and the option name
+    both appear in it."""
+    positive = f"{option} has won {market.title}. This has been confirmed and has already happened."
+    negative = f"{option} has not won {market.title}. This has not happened yet and remains unconfirmed or uncertain."
+    return _verify_candidate_semantically(sentence, positive, negative)
+
+
+# A SEPARATE, opponent-aware template for the head-to-head path
+# specifically -- calibration found the general "{option} has won
+# {market.title}" template above does NOT work for a head-to-head market
+# (title shaped like "Who Will Win Series? - Lakers vs. Rockets" rather
+# than a general "who wins X" framing): all 5 real/realistic TRUE
+# head-to-head sentences scored margins near zero (-0.014 to +0.014,
+# below the 0.025 threshold) against it, which would have wrongly
+# rejected genuine confirmations, not just the intended false positives.
+# Referencing the actual opponent instead of the market title fixes this:
+#   TRUE victory over (real):      margin=+0.059
+#   TRUE defeated verb:            margin=+0.040
+#   TRUE matching year:            margin=+0.094
+#   TRUE wins over (plural):       margin=+0.088
+#   TRUE matching phase:           margin=+0.078
+# All comfortably above MULTI_OUTCOME_VERIFICATION_MARGIN. The two
+# context-conflict cases (wrong year, wrong phase) score high margins
+# here too (+0.018, +0.120) -- that's fine, since those are already
+# rejected earlier by _sentence_mentions_conflicting_year/_phase before
+# this function is ever called; this template's job is only "did a
+# result happen at all," not "was it the right instance."
+def _verify_head_to_head_candidate(sentence: str, option: str, other_option: str) -> bool:
+    """True if `sentence` semantically confirms `option` has ALREADY
+    beaten `other_option` -- not just that a win-shaped phrase and both
+    names appear in it."""
+    positive = f"{option} defeated {other_option}. This has been confirmed and has already happened."
+    negative = (
+        f"{option} has not played {other_option} yet, or has not defeated them. "
+        "This has not happened yet and remains unconfirmed or uncertain."
+    )
+    return _verify_candidate_semantically(sentence, positive, negative)
+
+
+def _verify_elimination_candidate(sentence: str, option: str, market: Market) -> bool:
+    """True if `sentence` semantically confirms `option` has ALREADY been
+    eliminated from `market` -- not just that an elimination-shaped
+    keyword and the option name both appear in it."""
+    positive = f"{option} has been eliminated and is out of {market.title}. This has been confirmed."
+    negative = f"{option} is still competing in {market.title} and has not been eliminated."
+    return _verify_candidate_semantically(sentence, positive, negative)
 
 
 def _extract_default_outcome(description: str) -> Optional[str]:
@@ -621,39 +859,59 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
     winner: Optional[Verdict] = None
     eliminated: dict[str, Verdict] = {}
     expected_year = _market_expected_year(market)
+    market_is_playoff = _market_is_playoff_context(market)
 
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence):
                 continue
             lowered = sentence.lower()
-            # Gate winner/elimination matches on this sentence not stating
-            # a conflicting year -- checked once a phrase has matched, not
-            # as a blanket pre-filter (see _sentence_mentions_conflicting_year
-            # docstring for why: incidental years in ordinary prose must
-            # not cause a false rejection).
-            year_conflict = _sentence_mentions_conflicting_year(sentence, expected_year)
+            # Gate winner/elimination matches on this sentence not naming a
+            # conflicting event instance -- checked once a phrase has
+            # matched, not as a blanket pre-filter (see
+            # _sentence_mentions_conflicting_year's docstring for why:
+            # incidental years/phase words in ordinary prose must not
+            # cause a false rejection). Two independent signals: a
+            # different YEAR (a past season's game), or the same year but
+            # a different MEETING within it (a regular-season game vs. the
+            # market's own playoff series).
+            context_conflict = (
+                _sentence_mentions_conflicting_year(sentence, expected_year)
+                or _sentence_mentions_conflicting_phase(sentence, market_is_playoff)
+            )
             for option in market.options:
                 option_lower = option.strip().lower()
                 if not option_lower:
                     continue
 
-                if (winner is None and not year_conflict
-                        and _match_option_keyword(lowered, option_lower, ANNOUNCEMENT_KEYWORDS)):
+                # Keyword/phrase matches are cheap CANDIDATES only -- kept
+                # that way deliberately for efficiency, so the (more
+                # expensive) semantic verification call below only runs
+                # once a candidate has already cleared the free proximity
+                # check, not for every sentence x option pair. A candidate
+                # must ALSO pass semantic verification before it's trusted
+                # as the actual verdict -- see _verify_winner_candidate /
+                # _verify_elimination_candidate for why (real keyword false
+                # positives found live: a losing win-loss record, a
+                # not-yet-played match, an analyst's opinion).
+                if (winner is None and not context_conflict
+                        and _match_announcement_keyword(lowered, option_lower)
+                        and _verify_winner_candidate(sentence, option, market)):
                     winner = Verdict(
                         outcome="YES", option=option, confidence=item.similarity,
                         evidence_snippet=sentence.strip()[:280],
                         source_url=item.article.url, source_type=item.article.source_type,
                     )
 
-                if winner is None and not year_conflict:
+                if winner is None and not context_conflict:
                     for other_option in market.options:
                         if other_option == option:
                             continue
                         other_option_lower = other_option.strip().lower()
                         if not other_option_lower:
                             continue
-                        if _match_head_to_head_winner(lowered, option_lower, other_option_lower):
+                        if (_match_head_to_head_winner(lowered, option_lower, other_option_lower)
+                                and _verify_head_to_head_candidate(sentence, option, other_option)):
                             winner = Verdict(
                                 outcome="YES", option=option, confidence=item.similarity,
                                 evidence_snippet=sentence.strip()[:280],
@@ -661,8 +919,9 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                             )
                             break
 
-                if (option not in eliminated and not year_conflict
-                        and _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS)):
+                if (option not in eliminated and not context_conflict
+                        and _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS)
+                        and _verify_elimination_candidate(sentence, option, market)):
                     eliminated[option] = Verdict(
                         outcome="NO", option=option, confidence=item.similarity,
                         evidence_snippet=sentence.strip()[:280],
@@ -754,9 +1013,13 @@ def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]
                     continue
                 option_lower = option.strip().lower()
                 outcome = None
-                if _match_option_keyword(lowered, option_lower, ANNOUNCEMENT_KEYWORDS):
+                # Same candidate-then-verify gate as _decide_multi_outcome
+                # (see its comment for why) -- a keyword match alone is not
+                # trusted as the verdict.
+                if _match_announcement_keyword(lowered, option_lower) and _verify_winner_candidate(sentence, option, market):
                     outcome = "YES"
-                elif _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS):
+                elif (_match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS)
+                        and _verify_elimination_candidate(sentence, option, market)):
                     outcome = "NO"
                 if outcome:
                     evidence_verdicts[option] = Verdict(

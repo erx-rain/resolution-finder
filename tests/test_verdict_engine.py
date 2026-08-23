@@ -229,6 +229,20 @@ INTERNATIONAL_MARKET = Market(
     close_date=date.today() + timedelta(days=365),
 )
 
+# Real 8-option shape (data/markets.json), used specifically for the
+# "wins over" bare-keyword bug below -- "BoomBoys" and its real opponents
+# ("OG", "Iron Wing") only make sense with the full real option list.
+INTERNATIONAL_MARKET_FULL = Market(
+    id="international-2026-champion",
+    title="The International 2026 Champion",
+    description=INTERNATIONAL_DESCRIPTION,
+    options=[
+        "Team Yandex", "Team Vision", "Team Falcons", "BoomBoys",
+        "Team Spirit", "Team Liquid", "1w Team", "Aurora Gaming",
+    ],
+    close_date=date.today() + timedelta(days=365),
+)
+
 OSUN_DESCRIPTION = (
     "This market will resolve according to the listed candidate who wins "
     "the 2026 Osun State gubernatorial elections. If the results are not "
@@ -456,6 +470,80 @@ def test_multi_outcome_market_still_resolves_yes_when_evidence_states_matching_y
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
 
+def test_multi_outcome_market_ignores_bare_wins_in_a_win_loss_record_summary():
+    # Real bug found live (2026-08-23), asked for by name ("test the
+    # international again"): "BoomBoys posted a 2-3 win-loss record with
+    # wins over OG and Iron Wing, but suffered consecutive losses..."
+    # wrongly crowned BoomBoys tournament CHAMPION off the bare "wins"
+    # keyword -- a losing overall record (2-3), with "wins over X and Y"
+    # describing individual match results within the tournament, not
+    # overall victory. Neither OG nor Iron Wing is even a listed option
+    # in this market.
+    evidence = [make_ranked(
+        "BoomBoys posted a 2-3 win-loss record with wins over OG and "
+        "Iron Wing, but suffered consecutive losses against TEAM VISION, "
+        "Aurora Gaming, and Team Falcons.",
+        url="https://www.gosugamers.net/dota2/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(INTERNATIONAL_MARKET_FULL, evidence)
+    assert all(v.outcome != "YES" for v in verdicts)
+
+
+def test_multi_outcome_market_still_matches_bare_wins_for_genuine_victory():
+    # Safety check: the existing, already-passing "Arsenal wins the race
+    # for Vinicius Junior" case must still work -- the fix must not
+    # blanket-suppress bare "wins", only the "wins over"/"win over"
+    # head-to-head phrasing specifically.
+    evidence = [make_ranked(
+        "Official: Arsenal wins the race for Vinicius Junior.",
+        url="https://www.bbc.com/sport/1", source_type="credible_backup",
+    )]
+    verdicts = decide(VINICIUS_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Arsenal": "YES", "Real Madrid": "NO"}
+
+
+def test_multi_outcome_market_head_to_head_still_works_via_wins_over_phrase():
+    # "wins over" between two LISTED options must still correctly
+    # resolve directionally, via _match_head_to_head_winner -- only the
+    # generic ANNOUNCEMENT_KEYWORDS proximity path is suppressed for this
+    # phrase, not head-to-head confirmation entirely.
+    evidence = [make_ranked(
+        "The Lakers' string of wins over the Rockets this postseason "
+        "sealed the series.",
+        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
+
+
+def test_multi_outcome_market_ignores_head_to_head_result_from_a_different_phase():
+    # Same year, but a DIFFERENT meeting within it: two teams can play
+    # each other more than once in a season (a regular-season game and a
+    # separate playoff series). The year-conflict guard alone can't catch
+    # this since the year is identical -- confirmed by construction
+    # (2026-08-23): a market specifically about the 2026 PLAYOFF series
+    # wrongly resolved YES on a same-year REGULAR SEASON game.
+    evidence = [make_ranked(
+        "The Lakers defeated the Rockets 118-112 in a regular season "
+        "game on Christmas Day, 2026.",
+        url="https://example.com/regular-season-game", source_type="credible_backup",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert all(v.outcome != "YES" for v in verdicts)
+
+
+def test_multi_outcome_market_still_resolves_yes_when_evidence_states_matching_phase():
+    # The market's own phase (playoffs) stated explicitly in evidence
+    # must not be treated as a conflict just because the check fires.
+    evidence = [make_ranked(
+        "The Lakers defeated the Rockets in the playoffs to advance to "
+        "the Western Conference semifinals.",
+        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
+
+
 def test_multi_outcome_market_option_independently_resolves_no_on_elimination():
     # Real scenario: The International 2026 -- Aurora Gaming eliminated,
     # tournament champion still undecided. Must resolve just that option,
@@ -468,6 +556,20 @@ def test_multi_outcome_market_option_independently_resolves_no_on_elimination():
     assert len(verdicts) == 1
     assert verdicts[0].option == "Aurora Gaming"
     assert verdicts[0].outcome == "NO"
+
+
+def test_multi_outcome_market_ignores_single_game_loss_as_elimination():
+    # Mirror image of the "wins over" bug -- user explicitly asked for
+    # this "vice versa" (2026-08-23): losing ONE game/match does not mean
+    # eliminated from the tournament in most formats (a best-of-N series,
+    # a group stage, a double-elimination bracket all let a team lose
+    # individual games and still advance or ultimately win).
+    evidence = [make_ranked(
+        "BoomBoys lost to Team Falcons in Game 2, but lead the series 2-1.",
+        url="https://www.dexerto.com/dota2/1", source_type="credible_backup",
+    )]
+    verdicts = decide(INTERNATIONAL_MARKET_FULL, evidence)
+    assert not any(v.option == "BoomBoys" and v.outcome == "NO" for v in verdicts)
 
 
 def test_multi_outcome_market_elimination_does_not_claim_the_other_option_won():
@@ -695,6 +797,36 @@ TYPHOON_MARKET = Market(
     options=[],
     close_date=date.today() + timedelta(days=30),
 )
+
+# A market whose title alone has no threshold phrasing (a vague human-
+# readable question), but whose description's OPENING sentence states the
+# real condition directly -- the case the title-only version of the fix
+# would have missed.
+DESC_ONLY_THRESHOLD_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if the app reaches at least "
+    "5,000,000 downloads by the close date. Otherwise, this market will "
+    "resolve to \"No\". Some unrelated later text mentions a completely "
+    "different figure, like a $10 signup bonus offered below the 100th "
+    "download milestone, purely for promotional context."
+)
+
+DESC_ONLY_THRESHOLD_MARKET = Market(
+    id="will-the-app-hit-a-download-milestone",
+    title="Will the app hit its download milestone?",
+    description=DESC_ONLY_THRESHOLD_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+def test_threshold_condition_falls_back_to_first_sentence_of_description():
+    evidence = [make_ranked(
+        "The app has now surpassed 6,000,000 downloads worldwide, the "
+        "developer announced.",
+        url="https://example.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(DESC_ONLY_THRESHOLD_MARKET, evidence)
+    assert verdict.outcome == "YES"
 
 
 def test_threshold_condition_ignores_unrelated_number_in_description():
