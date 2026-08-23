@@ -42,113 +42,19 @@ BINARY_YES_KEYWORDS = [
     "cleared both chambers", "confirmed by the senate",
 ]
 
-# "winner of" and the contract-renewal/stay phrases were added after a real
-# dry run: BBC Pidgin's "INEC declare Ademola Adeleke winner of the ..."
-# matched none of the original phrases ("winner is" != "winner of"), and
-# NYTimes/The Athletic describing Vinicius Junior staying at Real Madrid as
-# "reached an agreement to renew his contract" isn't an "announcement"
-# phrase at all in the original list, which was written for prize/award
-# language only. NOTE: both real examples actually named the entity
-# partially ("at Madrid", "Govnor Adeleke") rather than by the full option
-# string ("Real Madrid", "Ademola Adeleke") -- that partial-name gap is NOT
-# fixed here (see Task 19's design note): a bare surname can be genuinely
-# ambiguous between two listed options (e.g. osun-state-governor-2026 has
-# both "Ademola Adeleke" and "Taofeek Adeleke"), so this only matches the
-# full option string, same as before.
-# Sports-tournament victory phrases added 2026-08-23 per user request: the
-# original list is thin for sports specifically (built for prize/award and
-# contract-renewal language in earlier tasks) -- real sports journalism
-# essentially never literally says "wins the tournament"; it says
-# "champion(s)", "clinched the title", "lifted the trophy", etc. Kept
-# general (no sport/tournament-specific wording, e.g. not "Dota" or "NBA"
-# terms) per the standing anti-overfitting rule.
-ANNOUNCEMENT_KEYWORDS = [
-    "awarded to", "wins", "winner is", "winner of", "named recipient", "recipient is",
-    "signed a new contract", "reached an agreement to renew", "contract extension",
-    "renewed his contract", "renewed her contract", "extended his contract", "extended her contract",
-    "crowned champion", "crowned champions", "are the champions", "is the champion",
-    "become champions", "became champions", "won the championship", "won the title",
-    "claimed the title", "captured the title", "clinched the title", "lifted the trophy",
-    "took home the title", "champions of",
-]
-
-# A specific option confirmed to have LOST resolves that option alone to No,
-# independently of whether the overall market winner is known yet (e.g. a
-# team eliminated partway through a tournament that's still ongoing).
-#
-# Deliberately does NOT include a bare "lost to" -- the mirror image of
-# the "wins over" fix below (a bug found live 2026-08-23, then the user
-# explicitly asked "and vice versa"): losing ONE game/match does not mean
-# eliminated from the tournament in most formats (a best-of-N series, a
-# group stage, a double-elimination bracket all let a team lose individual
-# games and still advance or ultimately win). Unlike "wins over", there's
-# no safe alternate mechanism to route a head-to-head LOSS through either
-# -- a confirmed single-match loss genuinely isn't evidence of tournament
-# elimination, so it's correctly not treated as any signal at all here.
-# The remaining phrases ("eliminated", "knocked out", "out of the
-# tournament") all inherently express finality on their own -- there's no
-# such thing as being "eliminated" from just one game.
-ELIMINATION_KEYWORDS = ["eliminated", "eliminated from", "knocked out", "out of the tournament"]
-
-# Directional head-to-head phrases ("Lakers defeated the Rockets", "Lakers'
-# victory over the Rockets") -- unlike ANNOUNCEMENT_KEYWORDS/
-# ELIMINATION_KEYWORDS (checked via _match_option_keyword's simple
-# keyword-near-option proximity, which is fine for one-sided phrases like
-# "winner of X"), these phrases put BOTH team names within the same
-# proximity window as the verb, so proximity alone can't tell winner from
-# loser -- only word ORDER relative to the verb/phrase does. Real bug
-# found live (2026-08-23): a real market's top evidence was "The Lakers'
-# ... victory over the Houston Rockets" -- both team names sat within the
-# existing 40-char window, so naively adding "victory over" to
-# ANNOUNCEMENT_KEYWORDS would have let list ORDER (not the actual winner)
-# decide, e.g. wrongly crowning Rockets if market.options happened to list
-# it first. _match_head_to_head_winner below is directional: it only
-# matches a (candidate_winner, candidate_loser) PAIR in that specific
-# order, tried for every ordered pair of the market's own options.
-HEAD_TO_HEAD_WIN_VERBS = [
-    "defeated", "defeats", "beat", "beats", "topped", "downed", "routed", "outlasted",
-]
-# Noun-phrase form ("[team]'s victory over [team]", "wins over [team]")
-# rather than a transitive verb between two names -- matched the same
-# directional way. "wins over"/"win over" plural+singular both included:
-# a team's tournament RECORD is often described as "N wins over X, Y..."
-# (multiple individual match results), which is exactly what this
-# directional check is for -- see _match_announcement_keyword below for
-# why the bare ANNOUNCEMENT_KEYWORDS "wins" must NOT also match this.
-HEAD_TO_HEAD_WIN_NOUN_PHRASES = ["victory over", "win over", "wins over", "triumph over"]
-
-
-def _match_head_to_head_winner(lowered_sentence: str, winner_option_lower: str, loser_option_lower: str) -> bool:
-    """True if `lowered_sentence` states, in that specific direction, that
-    `winner_option_lower` beat `loser_option_lower` -- not just that both
-    names and a win-shaped word appear somewhere nearby."""
-    winner_re = _word_boundary(winner_option_lower)
-    loser_re = _word_boundary(loser_option_lower)
-    for phrase in HEAD_TO_HEAD_WIN_VERBS + HEAD_TO_HEAD_WIN_NOUN_PHRASES:
-        phrase_re = _word_boundary(phrase)
-        if re.search(rf"{winner_re}.{{0,40}}{phrase_re}.{{0,40}}{loser_re}", lowered_sentence):
-            return True
-    return False
-
-
-# Real bug found live (2026-08-23): "BoomBoys posted a 2-3 win-loss record
-# with wins over OG and Iron Wing, but suffered consecutive losses..."
-# wrongly crowned BoomBoys tournament CHAMPION via the bare "wins"
-# ANNOUNCEMENT_KEYWORDS entry -- a losing overall record (2-3), with
-# "wins over X and Y" describing individual match results within the
-# tournament, not overall victory. The bare "wins" keyword is still
-# legitimately needed for genuine phrasing like "Arsenal wins the race
-# for Vinicius Junior" (verified by an existing test), so it can't just
-# be removed -- the fix is narrower: "wins over"/"win over" specifically
-# is a head-to-head phrase (now handled directionally by
-# _match_head_to_head_winner above, which correctly requires the named
-# opponent to ALSO be one of the market's own listed options -- "OG" and
-# "Iron Wing" above are real opponents but not listed options in this
-# market, so the directional check correctly finds no valid pair and
-# produces no false winner).
-def _match_announcement_keyword(lowered_sentence: str, option_lower: str) -> bool:
-    stripped = re.sub(r"\bwins?\s+over\b", "", lowered_sentence)
-    return _match_option_keyword(stripped, option_lower, ANNOUNCEMENT_KEYWORDS)
+# ANNOUNCEMENT_KEYWORDS / ELIMINATION_KEYWORDS / the directional
+# head-to-head phrase lists that used to live here were removed
+# 2026-08-23: _decide_multi_outcome and _decide_date_thresholds now gate
+# candidates on a plain "does this sentence mention the option" check
+# instead (see _decide_multi_outcome's own comment for the reasoning --
+# any old keyword match already implied the option was mentioned, so the
+# new gate strictly subsumes the old one), and let NLI verification
+# (_verify_winner_candidate / _verify_head_to_head_candidate /
+# _verify_elimination_candidate) decide the outcome direction, not a
+# fixed phrase list. See git history for the removed lists and the real
+# bugs (BoomBoys' win-loss record, a not-yet-played match, list-order-
+# dependent head-to-head crowning) that motivated building them in the
+# first place, before this simplification replaced them.
 
 # Trigger phrases confirming a multi-outcome market's date-shaped options
 # are CUMULATIVE thresholds ("by August 1" also satisfies "by September 1")
@@ -744,24 +650,75 @@ def _verify_winner_candidate(sentence: str, option: str, market: Market) -> bool
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
+# Directional bug found live (2026-08-23), the exact failure mode the
+# original cosine-similarity version was built to prevent: pitting the
+# claim against a vague negative ("has not played them yet, or has not
+# defeated them") does NOT reliably discriminate WHICH side won -- real
+# diagnostic against the actual reversed-option-list test failure showed
+# BOTH "Lakers defeated Rockets" (0.989) AND the wrong "Rockets defeated
+# Lakers" (0.962) scored extremely high against that vague negative on
+# the exact same real sentence. The model was really just detecting "is
+# this text about a Lakers-Rockets result" (topical match), not judging
+# direction. Pitting the claim directly against the SPECIFIC OPPOSITE
+# claim instead fixes this: real re-test, same sentence, correct
+# direction 0.789 vs wrong direction 0.211 -- the model discriminates
+# direction well when given a real contrastive alternative, just not a
+# vague one. Uses 3 candidate labels (positive / opposite / unresolved)
+# so a genuinely not-yet-decided match still has somewhere to go instead
+# of being forced into a coin flip between two real teams -- real
+# calibration: TRUE cases score 0.704/0.988 and are the max of the 3;
+# the reversed-direction case correctly scores lowest (0.186, opposite
+# wins at 0.695); the future/unplayed-match case scores lower still
+# (0.481) despite technically "winning" the 3-way (still below threshold).
+HEAD_TO_HEAD_VERIFICATION_THRESHOLD = 0.65
+
+
 def _verify_head_to_head_candidate(sentence: str, option: str, other_option: str) -> bool:
     """True if `sentence` entails `option` has ALREADY beaten
-    `other_option` -- not just that a win-shaped phrase and both names
-    appear in it. A separate, opponent-aware hypothesis from
-    _verify_winner_candidate's market-title framing -- a head-to-head
-    market's title (e.g. "Who Will Win Series? - Lakers vs. Rockets")
-    doesn't read naturally as "{option} has won {that title}"."""
+    `other_option` specifically -- not just that a win-shaped phrase and
+    both names appear in it, and not just because the sentence is ABOUT
+    a result between them (direction matters)."""
     positive = f"{option} defeated {other_option}."
-    negative = f"{option} has not played {other_option} yet, or has not defeated them."
-    return _verify_candidate_semantically(sentence, positive, negative)
+    opposite = f"{other_option} defeated {option}."
+    unresolved = f"It is not yet known whether {option} or {other_option} won."
+    classifier = _get_nli_classifier()
+    result = classifier(sentence, candidate_labels=[positive, opposite, unresolved])
+    scores = dict(zip(result["labels"], result["scores"]))
+    return scores[positive] >= HEAD_TO_HEAD_VERIFICATION_THRESHOLD and scores[positive] == max(scores.values())
 
 
+# Real bug found live (2026-08-23): the original wordy negative ("is
+# still competing in {title} and has not been eliminated") scored a
+# genuine single-game-loss-within-a-series-they're-leading sentence
+# ("BoomBoys lost to Team Falcons in Game 2, but lead the series 2-1.")
+# at 0.952 for "eliminated" -- confidently wrong, apparently over-
+# weighting the literal "lost to" phrase over the contradicting "but
+# lead the series" clause. A cleaner, grammatically PARALLEL opposite
+# ("is still advancing" vs. "has been eliminated" -- same sentence
+# shape, not a compound "X and not Y") fixed it: real re-calibration,
+# same sentence, dropped to 0.669 (below threshold) while the two real
+# TRUE elimination cases climbed to 0.998-0.999 (better separation, not
+# worse) -- no threshold change needed, the wording was the problem.
 def _verify_elimination_candidate(sentence: str, option: str, market: Market) -> bool:
-    """True if `sentence` entails `option` has ALREADY been eliminated
-    from `market` -- not just that an elimination-shaped keyword and the
-    option name both appear in it."""
-    positive = f"{option} has been eliminated and is out of {market.title}."
-    negative = f"{option} is still competing in {market.title} and has not been eliminated."
+    """True if `sentence` entails `option` has ALREADY been eliminated --
+    not just that an elimination-shaped keyword and the option name both
+    appear in it.
+
+    Deliberately does NOT interpolate market.title here, unlike
+    _verify_winner_candidate -- real bug found live (2026-08-23): this
+    market's title is "The International 2026 Champion" (phrased as the
+    answer to the market's question, not an event name), so a template
+    like "is still advancing in {market.title}" produces a grammatically
+    broken hypothesis ("advancing in ... Champion" doesn't parse), which
+    the classifier handled unpredictably -- every option, including ones
+    never even mentioned in the sentence, scored as eliminated. A
+    generic "eliminated from the competition" template avoids assuming
+    market.title is grammatically an event name, and is exactly what was
+    calibrated: real re-test, same sentence, correctly scored the false
+    case at 0.669 (below threshold) and real eliminations at 0.998-0.999.
+    """
+    positive = f"{option} has been eliminated from the competition."
+    negative = f"{option} is still advancing in the competition."
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
@@ -838,16 +795,6 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                     source_url=None, source_type=None)
 
 
-def _match_option_keyword(lowered_sentence: str, option_lower: str, keywords: list[str]) -> bool:
-    option_re = _word_boundary(option_lower)
-    for keyword in keywords:
-        keyword_re = _word_boundary(keyword)
-        pattern = re.compile(rf"{option_re}.{{0,40}}{keyword_re}|{keyword_re}.{{0,40}}{option_re}")
-        if pattern.search(lowered_sentence):
-            return True
-    return False
-
-
 def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) -> list[Verdict]:
     winner: Optional[Verdict] = None
     eliminated: dict[str, Verdict] = {}
@@ -877,33 +824,52 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 if not option_lower:
                     continue
 
-                # Keyword/phrase matches are cheap CANDIDATES only -- kept
-                # that way deliberately for efficiency, so the (more
-                # expensive) semantic verification call below only runs
-                # once a candidate has already cleared the free proximity
-                # check, not for every sentence x option pair. A candidate
-                # must ALSO pass semantic verification before it's trusted
-                # as the actual verdict -- see _verify_winner_candidate /
-                # _verify_elimination_candidate for why (real keyword false
-                # positives found live: a losing win-loss record, a
-                # not-yet-played match, an analyst's opinion).
-                if (winner is None and not context_conflict
-                        and _match_announcement_keyword(lowered, option_lower)
-                        and _verify_winner_candidate(sentence, option, market)):
+                # Candidate gate: the sentence must at least MENTION this
+                # option -- cheap (a plain word-boundary check, no model
+                # call), kept for efficiency so the real NLI verification
+                # call below only runs on sentences that could plausibly
+                # be about this option at all, not every sentence in every
+                # article. Deliberately broader than the old fixed
+                # ANNOUNCEMENT_KEYWORDS/ELIMINATION_KEYWORDS phrase-list
+                # gate it replaces (2026-08-23, user-requested): any
+                # keyword-matched sentence necessarily already mentions
+                # the option too (the keyword check required proximity to
+                # it), so this gate strictly subsumes the old one --
+                # simplification, not just a broadening. The keyword lists
+                # no longer decide the OUTCOME direction either (winner vs.
+                # eliminated) -- that judgment now belongs entirely to the
+                # NLI verification call, which is what actually reads the
+                # sentence's meaning.
+                option_mentioned = _contains_keyword(lowered, option_lower)
+
+                if winner is None and not context_conflict and option_mentioned and _verify_winner_candidate(sentence, option, market):
                     winner = Verdict(
                         outcome="YES", option=option, confidence=item.similarity,
                         evidence_snippet=sentence.strip()[:280],
                         source_url=item.article.url, source_type=item.article.source_type,
                     )
 
-                if winner is None and not context_conflict:
+                # Head-to-head winner-crowning is only valid for a true
+                # 2-option (one-on-one) market -- beating ONE opponent in
+                # a market with MORE options doesn't decide the whole
+                # thing. Real bug found live (2026-08-23): in the real
+                # 8-team International 2026 market, a sentence describing
+                # BoomBoys losing individual matches to several other
+                # LISTED teams (a normal group-stage record, not the
+                # tournament outcome) got a genuine, correctly-verified
+                # "Team Falcons defeated BoomBoys" head-to-head result
+                # (0.699, a real true fact at the single-match level) --
+                # and then wrongly crowned Team Falcons the overall
+                # CHAMPION off that one match. The NLI check wasn't wrong;
+                # applying "won one head-to-head" as "won the market" was.
+                if len(market.options) == 2 and winner is None and not context_conflict and option_mentioned:
                     for other_option in market.options:
                         if other_option == option:
                             continue
                         other_option_lower = other_option.strip().lower()
                         if not other_option_lower:
                             continue
-                        if (_match_head_to_head_winner(lowered, option_lower, other_option_lower)
+                        if (_contains_keyword(lowered, other_option_lower)
                                 and _verify_head_to_head_candidate(sentence, option, other_option)):
                             winner = Verdict(
                                 outcome="YES", option=option, confidence=item.similarity,
@@ -912,8 +878,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                             )
                             break
 
-                if (option not in eliminated and not context_conflict
-                        and _match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS)
+                if (option not in eliminated and not context_conflict and option_mentioned
                         and _verify_elimination_candidate(sentence, option, market)):
                     eliminated[option] = Verdict(
                         outcome="NO", option=option, confidence=item.similarity,
@@ -1006,13 +971,13 @@ def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]
                     continue
                 option_lower = option.strip().lower()
                 outcome = None
-                # Same candidate-then-verify gate as _decide_multi_outcome
-                # (see its comment for why) -- a keyword match alone is not
-                # trusted as the verdict.
-                if _match_announcement_keyword(lowered, option_lower) and _verify_winner_candidate(sentence, option, market):
+                # Same mention-then-verify gate as _decide_multi_outcome
+                # (see its comment for why) -- a mere mention alone is not
+                # trusted as the verdict, only NLI verification is.
+                option_mentioned = _contains_keyword(lowered, option_lower)
+                if option_mentioned and _verify_winner_candidate(sentence, option, market):
                     outcome = "YES"
-                elif (_match_option_keyword(lowered, option_lower, ELIMINATION_KEYWORDS)
-                        and _verify_elimination_candidate(sentence, option, market)):
+                elif option_mentioned and _verify_elimination_candidate(sentence, option, market):
                     outcome = "NO"
                 if outcome:
                     evidence_verdicts[option] = Verdict(
