@@ -86,6 +86,34 @@ def _load_markets(market_ids: set[str]) -> tuple[list[Market], dict[str, str]]:
     return markets, ground_truth
 
 
+def _score(verdicts: list, ground_truth: str | None, options: list[str]) -> str:
+    """correct/wrong/unresolved/no_ground_truth for one market's verdicts.
+
+    Real bug found live (2026-08-23): the original scoring only compared
+    ground_truth against verdict.outcome ("YES"/"NO"), which is correct
+    for binary markets but wrong for multi-outcome ones, where
+    ground_truth is an OPTION NAME (e.g. "Lakers") -- a market that
+    correctly resolved Lakers=YES/Rockets=NO got scored WRONG, because
+    "LAKERS" was never in the outcome set {"YES", "NO"} to begin with.
+    """
+    if ground_truth is None:
+        return "no_ground_truth"
+
+    if options:
+        matching = [v for v in verdicts if v.option is not None and v.option.lower() == ground_truth.lower()]
+        if matching:
+            return "correct" if any(v.outcome == "YES" for v in matching) else "wrong"
+        # No verdict for the ground-truth option itself -- still wrong if
+        # some OTHER option was wrongly declared the winner instead.
+        return "wrong" if any(v.outcome == "YES" for v in verdicts) else "unresolved"
+
+    outcomes = {v.outcome for v in verdicts}
+    if outcomes & {"YES", "NO"}:
+        got = [v.outcome for v in verdicts if v.outcome in ("YES", "NO")]
+        return "correct" if ground_truth.upper() in [g.upper() for g in got] else "wrong"
+    return "unresolved"
+
+
 def _run_one_market(market: Market, ground_truth: str | None) -> dict:
     print("\n" + "=" * 100)
     print(f"MARKET: {market.id}")
@@ -148,14 +176,7 @@ def _run_one_market(market: Market, ground_truth: str | None) -> dict:
         if v.source_url:
             print(f"    source: {v.source_url}")
 
-    outcomes = {v.outcome for v in verdicts}
-    if ground_truth is None:
-        verdict_class = "no_ground_truth"
-    elif outcomes & {"YES", "NO"}:
-        got = [v.outcome for v in verdicts if v.outcome in ("YES", "NO")]
-        verdict_class = "correct" if ground_truth.upper() in [g.upper() for g in got] else "wrong"
-    else:
-        verdict_class = "unresolved"
+    verdict_class = _score(verdicts, ground_truth, market.options)
 
     return {
         "market_id": market.id,
