@@ -443,6 +443,27 @@ def test_multi_outcome_market_ignores_head_to_head_result_from_a_different_year(
     assert all(v.outcome != "YES" for v in verdicts)
 
 
+def test_multi_outcome_market_ignores_elimination_phrased_as_a_relative_recurring_range():
+    # Real bug found live (2026-08-23, discovered via a from-scratch NLI-
+    # only experiment with no keyword gates at all -- confirmed to
+    # reproduce against the real production decide() too, not just the
+    # experiment): the sentence names no explicit year at all, so
+    # _sentence_mentions_conflicting_year can't help, and NLI confidently
+    # (0.998-0.999) read "knocked ... out of the playoffs" as a clean
+    # elimination regardless of when -- wrongly eliminating BOTH options.
+    # A real, unrelated player's free-agency history, not a report on the
+    # market's own 2026 series.
+    evidence = [make_ranked(
+        "In doing so, he left the Lakers and bypassed an opportunity to "
+        "join the Golden State Warriors, and those are the two West "
+        "rivals that knocked the Rockets out of the playoffs the past "
+        "two years.",
+        url="https://example.com/free-agency", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
+    assert all(v.outcome != "NO" for v in verdicts)
+
+
 def test_multi_outcome_market_still_resolves_yes_when_evidence_has_no_year():
     # Safety check: the real, actual evidence that motivated the
     # head-to-head fix (no year mentioned at all) must still work --

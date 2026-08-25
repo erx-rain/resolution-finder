@@ -532,6 +532,57 @@ def _sentence_mentions_conflicting_year(sentence: str, expected_year: Optional[i
     return bool(years) and expected_year not in years
 
 
+# Sibling gap to the year check above: it only catches an EXPLICIT year
+# number, but a sentence can narrate a recurring, multi-instance pattern
+# with no year at all ("the past two years", "in recent seasons",
+# "historically") -- the same "different calendar instance" problem in
+# different clothing. Real bug found live (2026-08-23), reproduced against
+# the actual production decide() (not just this helper in isolation): a
+# real NBA market ("...Lakers vs. Rockets") wrongly resolved BOTH options
+# eliminated on a sentence about an unrelated player's free-agency history
+# ("...those are the two West rivals that knocked the Rockets out of the
+# playoffs the past two years") -- no explicit year, so
+# _sentence_mentions_conflicting_year couldn't help, and NLI verification
+# confidently (0.998-0.999) read "knocked ... out of the playoffs" as a
+# clean elimination regardless of when.
+#
+# An NLI-based fix (a 3-way "different/past occurrence" hypothesis, the
+# same pattern that fixed the head-to-head order-dependence bug) was tried
+# and rejected: real calibration showed it did NOT fix the actual bug
+# (the real sentence still scored "eliminated" at 0.951, above threshold)
+# AND broke a previously-correct case (a genuinely CURRENT, ongoing-series
+# sentence phrased in ordinary past tense -- "BoomBoys lost ... in Game 2,
+# but lead the series 2-1" -- got mistaken for "different occurrence" at
+# 0.549, since virtually all real evidence is past-tense by the time it's
+# reported, and the model latched onto tense rather than the real signal).
+# The real distinguishing feature is a RELATIVE, recurring-range phrase,
+# which is a surface/syntactic pattern, not a semantic one -- a fixed,
+# closed phrase list is the right tool here, not NLI.
+_RELATIVE_RECENCY_PATTERN = re.compile(
+    r"\b(?:the\s+)?(?:past|last)\s+(?:\d+|few|couple(?:\s+of)?|two|three|four|five|several)\s+(?:years?|seasons?)\b",
+    re.IGNORECASE,
+)
+_RELATIVE_RECENCY_PHRASES = [
+    "in recent years", "in recent seasons", "historically",
+    "in previous years", "in previous seasons", "in past seasons",
+    "over the years", "in years past",
+]
+
+
+def _sentence_mentions_relative_recency(sentence: str) -> bool:
+    """True if `sentence` uses a relative, multi-instance time reference
+    ("the past two years", "historically") instead of describing a single
+    specific occurrence. Deliberately a closed, fixed phrase set, not a
+    general "is this about the past" judgment -- ordinary single-event
+    past-tense reporting ("The Lakers defeated the Rockets last night")
+    must NOT be caught by this; only an explicit recurring-range phrase
+    does."""
+    lowered = sentence.lower()
+    if _RELATIVE_RECENCY_PATTERN.search(lowered):
+        return True
+    return any(phrase in lowered for phrase in _RELATIVE_RECENCY_PHRASES)
+
+
 # Same-year, different-MEETING problem: two teams can play each other more
 # than once within a single year -- a regular-season game and a separate
 # playoff series, or twice in a round-robin-then-knockout tournament. The
@@ -901,13 +952,17 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
             # matched, not as a blanket pre-filter (see
             # _sentence_mentions_conflicting_year's docstring for why:
             # incidental years/phase words in ordinary prose must not
-            # cause a false rejection). Two independent signals: a
-            # different YEAR (a past season's game), or the same year but
-            # a different MEETING within it (a regular-season game vs. the
-            # market's own playoff series).
+            # cause a false rejection). Three independent signals: a
+            # different YEAR (a past season's game), the same year but a
+            # different MEETING within it (a regular-season game vs. the
+            # market's own playoff series), or a RELATIVE recurring-range
+            # reference with no explicit year at all ("the past two
+            # years") -- see _sentence_mentions_relative_recency's own
+            # comment for the real bug this catches.
             context_conflict = (
                 _sentence_mentions_conflicting_year(sentence, expected_year)
                 or _sentence_mentions_conflicting_phase(sentence, market_is_playoff)
+                or _sentence_mentions_relative_recency(sentence)
             )
             for option in market.options:
                 option_lower = option.strip().lower()
