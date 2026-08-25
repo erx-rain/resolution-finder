@@ -17,9 +17,18 @@ logger = logging.getLogger(__name__)
 # "resolves to X" sentence describing the normal win condition. "not known"
 # was added after a real market ("are not known definitively by [date] ...
 # resolve to 'Other'") didn't match any of the original trigger phrases.
+# "otherwise" was added after finding 9 of 18 real markets in the current
+# dataset (2026-08-25) state their default purely as "Otherwise, this
+# market will resolve to 'No'." -- no negation word at all, so none of the
+# original triggers matched it, silently disabling the deadline-passed
+# default for roughly half the dataset. The quote character class also
+# now accepts curly quotes (“/”), not just straight ones -- real
+# markets.json descriptions use curly quotes around the resolved value,
+# which the old \"? literal never matched, so even an "otherwise" trigger
+# alone wouldn't have captured the value.
 DEFAULT_OUTCOME_PATTERN = re.compile(
-    r"(?:not met|has not|have not|not officially|not been|not known)[^.]{0,150}?"
-    r"resolve[s]?\s+to\s+\"?([A-Za-z][A-Za-z0-9 .&'-]*?)\"?[.\n]",
+    r"(?:not met|has not|have not|not officially|not been|not known|otherwise)[^.]{0,150}?"
+    r"resolve[s]?\s+to\s+[\"“]?([A-Za-z][A-Za-z0-9 .&'-]*?)[\"”]?[.\n]",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -902,12 +911,41 @@ def _winner_hypotheses(option: str, market: Market) -> tuple[str, str]:
     return positive, negative
 
 
-def _verify_winner_candidate(sentence: str, option: str, market: Market) -> bool:
+def _verify_winner_candidate(
+    sentence: str, option: str, market: Market,
+    other_mentioned_options: Optional[list[str]] = None,
+) -> bool:
     """True if `sentence` entails `option` has ALREADY won `market` --
     not just that a winner-shaped keyword and the option name both
-    appear in it."""
+    appear in it. When the same sentence also names other listed
+    options (`other_mentioned_options`), their own "has won" claims are
+    thrown in as extra competing labels so the check is genuinely
+    relative, not just an independent threshold test per option.
+
+    Real bug found live (2026-08-25): a schedule-recap sentence --
+    "TEAM VISION 2-3 Team Spirit ... Team Spirit are the champions of
+    TI 2026." -- explicitly names Team Spirit (a different listed
+    option) as the actual champion, yet independently scored "Team
+    Vision has won" at 0.991 against the old vague negative ("has not
+    won ..., or it has not been decided yet"). Same failure mode
+    already found and fixed for head-to-head (see
+    HEAD_TO_HEAD_VERIFICATION_THRESHOLD's comment): a vague negative
+    gives the model no real contrastive alternative, so it just detects
+    topical relevance, not direction. Throwing the other mentioned
+    option's own positive claim in as a competing label fixes it here
+    too: real re-test, same sentence, Team Vision drops to 0.496 (below
+    threshold) and Team Spirit's own claim similarly drops to 0.499 --
+    both correctly fall through instead of crowning the loser. A real,
+    unambiguous sentence naming only one option is untouched by this
+    (skips straight to the single-pair check below) and still scores
+    0.94-0.99 on the real true-positive cases tested (Nobel, Vinicius,
+    Osun)."""
     positive, negative = _winner_hypotheses(option, market)
-    return _verify_candidate_semantically(sentence, positive, negative)
+    if not other_mentioned_options:
+        return _verify_candidate_semantically(sentence, positive, negative)
+    competing_labels = [_winner_hypotheses(other, market)[0] for other in other_mentioned_options]
+    scores = _classify_scores(sentence, [positive, negative] + competing_labels)
+    return scores[positive] >= NLI_VERIFICATION_THRESHOLD and scores[positive] == max(scores.values())
 
 
 # Directional bug found live (2026-08-23), the exact failure mode the
@@ -1130,6 +1168,18 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 or _sentence_mentions_conflicting_phase(sentence, market_is_playoff)
                 or _sentence_mentions_relative_recency(sentence)
             )
+            # All listed options this sentence actually names, computed
+            # once up front so the winner check below can compare a
+            # candidate against every OTHER option the sentence also
+            # mentions, not just check it in isolation -- see
+            # _verify_winner_candidate's docstring for the real bug this
+            # prevents (a sentence naming two options, where the loser
+            # was checked first and scored high against a vague negative
+            # alone).
+            mentioned_options = [
+                opt for opt in market.options
+                if opt.strip() and _contains_keyword(lowered, opt.strip().lower())
+            ]
             for option in market.options:
                 option_lower = option.strip().lower()
                 if not option_lower:
@@ -1153,7 +1203,9 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 # sentence's meaning.
                 option_mentioned = _contains_keyword(lowered, option_lower)
 
-                if winner is None and not context_conflict and option_mentioned and _verify_winner_candidate(sentence, option, market):
+                other_mentioned_options = [opt for opt in mentioned_options if opt != option]
+                if (winner is None and not context_conflict and option_mentioned
+                        and _verify_winner_candidate(sentence, option, market, other_mentioned_options)):
                     winner = Verdict(
                         outcome="YES", option=option, confidence=item.similarity,
                         evidence_snippet=sentence.strip()[:280],

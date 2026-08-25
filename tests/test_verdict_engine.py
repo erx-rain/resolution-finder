@@ -96,6 +96,38 @@ def test_binary_market_applies_stated_default_after_deadline():
     assert verdict.outcome == "NO"
 
 
+# Verbatim from data/markets.json
+# (will-trump-try-to-fire-powell-as-fed-board-member-by-july-31-2026...).
+# Real bug found live (2026-08-25): the default-outcome trigger list only
+# recognized negation phrasing ("has not", "not met", ...) before
+# "resolve(s) to X" -- this market instead uses "Otherwise, this market
+# will resolve to 'No'.", which has no negation word at all. 9 of the 18
+# real markets in the current dataset use exactly this "Otherwise..."
+# phrasing, so this silently disabled the deadline-passed default for
+# roughly half the dataset.
+POWELL_DESCRIPTION = (
+    "This market will resolve to \"Yes\" if Donald Trump publicly and "
+    "unequivocally announces that he is removing Jerome Powell as a member "
+    "of the Federal Reserve Board of Governors, or takes formal action "
+    "toward doing so, such as issuing a directive or formal request, by "
+    "the listed date, 11:59 PM ET. Otherwise, this market will resolve to "
+    "“No”."
+)
+
+POWELL_MARKET = Market(
+    id="will-trump-try-to-fire-powell-as-fed-board-member-by-july-31-2026",
+    title="Will Trump try to fire Powell as Fed Board Member by July 31, 2026?",
+    description=POWELL_DESCRIPTION,
+    options=[],
+    close_date=date.today() - timedelta(days=1),
+)
+
+
+def test_binary_market_applies_otherwise_phrased_default_after_deadline():
+    verdict = decide(POWELL_MARKET, [])
+    assert verdict.outcome == "NO"
+
+
 def test_binary_market_unclear_when_evidence_inconclusive():
     evidence = [make_ranked("The committee discussed the bill's implications for markets.")]
     verdict = decide(CLARITY_MARKET, evidence)
@@ -605,6 +637,29 @@ def test_multi_outcome_market_still_resolves_yes_when_evidence_states_matching_p
     )]
     verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
+
+
+def test_multi_outcome_market_does_not_crown_loser_when_sentence_names_the_real_winner():
+    # Real bug found live (2026-08-25) against real production evidence
+    # for The International 2026: a schedule-recap sentence reading
+    # "TEAM VISION 2-3 Team Spirit ... Team Spirit are the champions of
+    # TI 2026." wrongly confirmed TEAM VISION (the loser, scored 2-3) as
+    # the winner. Root cause: _winner_hypotheses' negative label ("has
+    # not won ..., or it has not been decided yet") is vague, the exact
+    # same failure mode already documented and fixed for head-to-head
+    # (see HEAD_TO_HEAD_VERIFICATION_THRESHOLD's comment) -- a vague
+    # negative doesn't give the model a real contrastive alternative, so
+    # it just detects topical relevance instead of judging direction.
+    # This sentence explicitly names Team Spirit -- a DIFFERENT listed
+    # option -- as the actual champion in the same breath.
+    evidence = [make_ranked(
+        "Grand Final\n- TEAM VISION 2-3 Team Spirit (7am CEST / 1pm UTC "
+        "+8 / 1am ET) \n  - Team Spirit are the champions of TI 2026.",
+        url="https://dotesports.com/dota-2/news/dota-2-ti-2026-schedule-results",
+        source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(INTERNATIONAL_MARKET_FULL, evidence)
+    assert not any(v.option == "Team Vision" and v.outcome == "YES" for v in verdicts)
 
 
 def test_multi_outcome_market_option_independently_resolves_no_on_elimination():
