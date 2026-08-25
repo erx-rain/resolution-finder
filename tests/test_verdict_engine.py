@@ -639,6 +639,26 @@ def test_multi_outcome_market_still_resolves_yes_when_evidence_states_matching_p
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
 
+def test_multi_outcome_market_does_not_treat_a_nomination_as_a_win():
+    # Real bug found live (2026-08-25) against real production evidence
+    # for the 2026 Nobel Peace Prize: "In addition to UNRWA, the ICJ was
+    # also nominated for its seeming contributions to peace through
+    # international law..." wrongly confirmed UNRWA as the WINNER
+    # (0.557 similarity, above the winner-verification threshold). Being
+    # a NOMINEE is not the same claim as having WON -- the sentence
+    # never says UNRWA received the prize, only that it was nominated,
+    # same as hundreds of other nominees every year.
+    evidence = [make_ranked(
+        "In addition to UNRWA, the ICJ was also nominated for its "
+        "seeming contributions to peace through international law, "
+        "including its rulings concerning Israel and Russia.",
+        url="https://www.jpost.com/breaking-news/article-824048",
+        source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(NOBEL_MARKET, evidence)
+    assert not any(v.option == "UNRWA" and v.outcome == "YES" for v in verdicts)
+
+
 def test_multi_outcome_market_does_not_crown_loser_when_sentence_names_the_real_winner():
     # Real bug found live (2026-08-25) against real production evidence
     # for The International 2026: a schedule-recap sentence reading

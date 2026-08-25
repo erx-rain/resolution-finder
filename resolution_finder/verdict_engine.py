@@ -409,6 +409,15 @@ NEGATION_HEDGE_WORDS = [
     "raring to", "hoping to", "hope to", "aiming to", "aim to",
     "looking to", "look to", "bidding to", "bid to", "gunning for",
     "eyeing a", "eyeing the",
+    # Real bug found live (2026-08-25): real evidence for the 2026 Nobel
+    # Peace Prize -- "In addition to UNRWA, the ICJ was also nominated
+    # for its seeming contributions to peace..." -- wrongly confirmed
+    # UNRWA as the WINNER. Being a candidate/nominee is a different claim
+    # than having won; a market with many listed candidates will surface
+    # nomination-stage news for options that never win, same failure
+    # shape as "raring to" (describes standing/eligibility, not a
+    # decided outcome).
+    "nominated", "nomination", "nominee", "shortlisted",
 ]
 
 # Generic quantifier+"other" hedges of SPECIFICITY -- e.g. "numerous other
