@@ -885,6 +885,33 @@ def test_threshold_condition_ignores_unrelated_number_in_description():
     assert verdict.outcome != "NO"
 
 
+def test_threshold_condition_recognizes_number_or_more_phrasing():
+    # Real bug found live (2026-08-23): _THRESHOLD_CONDITION_PATTERNS only
+    # recognized trigger-word-THEN-number phrasing ("at least X", "above
+    # X"), not number-THEN-trigger-word phrasing ("14 or more goals") --
+    # the real market's own real description. This market's real evidence
+    # ("Just Fontaine's incredible record that still stands") never even
+    # reached the numeric-threshold decide function at all before this
+    # fix -- confirmed by checking _extract_threshold_condition directly.
+    from resolution_finder.verdict_engine import _extract_threshold_condition
+    assert _extract_threshold_condition(WORLD_CUP_REAL_MARKET) == ("up", 14.0)
+
+
+def test_threshold_condition_reads_past_a_leading_note_sentence():
+    # Real bug found live (2026-08-23): the real market's description
+    # opens with a "Note: Current record 13 goals (...)." sentence before
+    # the actual Yes/No condition ("...scores 14 or more goals...") --
+    # _first_sentence only ever looks at the FIRST sentence, so the real
+    # condition sentence (the second one) was invisible to threshold
+    # detection entirely.
+    evidence = [make_ranked(
+        "Just Fontaine's incredible record that still stands",
+        url="https://www.beinsports.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
+    assert verdict.outcome == "NO"
+
+
 def test_numeric_threshold_market_resolves_yes_when_evidence_confirms_above_threshold():
     evidence = [make_ranked(
         "Bitcoin surged to $67,200 on Monday amid renewed institutional buying.",
@@ -922,6 +949,35 @@ def test_numeric_threshold_market_handles_reach_at_least_phrasing():
 
 
 def test_numeric_threshold_market_stays_unclear_without_a_number_in_evidence():
+    evidence = [make_ranked(
+        "Bitcoin traders are watching the Fed decision closely this week.",
+        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_numeric_threshold_market_confirms_no_from_plain_english_with_no_number():
+    # Real gap found live (2026-08-23): _decide_numeric_threshold had NO
+    # semantic verification at all, unlike every other decide function --
+    # purely literal number-extraction. Real evidence for this exact
+    # market, headlined "Just Fontaine's incredible record that still
+    # stands", plainly confirms the record was NOT broken, but contains
+    # no digit at all for the extraction regex to find, so it fell
+    # through to UNCLEAR despite being an unambiguous NO in plain English.
+    evidence = [make_ranked(
+        "Just Fontaine's incredible record that still stands",
+        url="https://www.beinsports.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
+    assert verdict.outcome == "NO"
+
+
+def test_numeric_threshold_market_stays_unclear_on_ambiguous_prose_with_no_number():
+    # Safety check: the new semantic-NO check must not fire on a sentence
+    # that doesn't actually confirm anything either way -- this exact
+    # sentence is an existing regression guard (test above) that must
+    # keep passing.
     evidence = [make_ranked(
         "Bitcoin traders are watching the Fed decision closely this week.",
         url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
@@ -1236,6 +1292,35 @@ WORLD_CUP_MARKET = Market(
     id="world-cup-most-goals-record-broken-20260608192914170",
     title="World Cup: Most Player Goals Record Broken?",
     description=WORLD_CUP_DESCRIPTION,
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+# Real full description copied verbatim from data/markets.json
+# (world-cup-most-goals-record-broken-20260608192914170) -- unlike the
+# simplified WORLD_CUP_DESCRIPTION above, this one actually names the
+# real record holder ("Just Fontaine"), which real evidence sentences
+# about the record naturally mention too. The simplified version doesn't
+# name him, so a real sentence naming him gets (correctly) vetoed as an
+# unrecognized entity -- this fixture is what real evidence needs to be
+# tested against.
+WORLD_CUP_REAL_DESCRIPTION = (
+    "Note: Current record 13 goals (Just Fontaine, France, 1958).\n\n"
+    "This market will resolve “Yes” if any player scores 14 or more goals "
+    "across the entire 2026 FIFA World Cup, including extra time. Otherwise, "
+    "this market will resolve to “No”.\n\n"
+    "Penalty shootout goals do not count toward a player's total.\n\n"
+    "If the 2026 FIFA World Cup is cancelled, postponed after August 2, 2026, "
+    "11:59 PM ET, or it cannot be determined whether the record was broken "
+    "within that timeframe, this market will resolve to “No”.\n\n"
+    "The resolution source for this market will be official information from "
+    "FIFA; however, a consensus of credible reporting may also be used."
+)
+
+WORLD_CUP_REAL_MARKET = Market(
+    id="world-cup-most-goals-record-broken-20260608192914170",
+    title="World Cup: Most Player Goals Record Broken?",
+    description=WORLD_CUP_REAL_DESCRIPTION,
     options=[],
     close_date=date.today() + timedelta(days=30),
 )

@@ -120,12 +120,21 @@ _THRESHOLD_MAGNITUDES = {
 # Only single-threshold direction, not "between X and Y" ranges -- see
 # Task 22 design note point 1. Order matters: tried in this sequence, so
 # a title using "at least" isn't accidentally caught by a looser pattern.
+#
+# The last two entries (number BEFORE the trigger word, e.g. "14 or
+# more goals") are a separate shape from the first two (trigger word
+# BEFORE the number, e.g. "at least 14") -- real bug found live
+# (2026-08-23): a real market phrased as "scores 14 or more goals" wasn't
+# recognized as numeric-threshold-shaped at all, so it silently fell
+# through to _decide_binary instead.
 _THRESHOLD_CONDITION_PATTERNS = [
     ("up", re.compile(
         rf"(?:at least|reach(?:es)?|hit|above|over|more than)\s+\(?(?:HIGH\)?\s*)?{_THRESHOLD_NUMBER}",
         re.IGNORECASE,
     )),
     ("down", re.compile(rf"(?:below|under|less than)\s+{_THRESHOLD_NUMBER}", re.IGNORECASE)),
+    ("up", re.compile(rf"{_THRESHOLD_NUMBER}\s+or\s+(?:more|greater|higher|above)", re.IGNORECASE)),
+    ("down", re.compile(rf"{_THRESHOLD_NUMBER}\s+or\s+(?:less|fewer|lower|below)", re.IGNORECASE)),
 ]
 
 
@@ -137,11 +146,20 @@ def _parse_threshold_number(raw: str, suffix: Optional[str]) -> float:
 
 
 def _first_sentence(text: str) -> str:
-    """The first sentence of `text` -- a market's description
-    conventionally states its core Yes/No condition in its opening
-    sentence, before any exception/edge-case elaboration begins."""
-    sentences = _split_sentences(text)
-    return sentences[0] if sentences else ""
+    """The first sentence of `text` that isn't a leading "Note: ..."
+    preamble -- a market's description conventionally states its core
+    Yes/No condition in its opening sentence, before any exception/
+    edge-case elaboration begins, but some real descriptions open with a
+    factual caveat ("Note: Current record 13 goals (...).") before that.
+    Real bug found live (2026-08-23): a real market's actual condition
+    sentence ("...scores 14 or more goals...") was the SECOND sentence,
+    after exactly such a "Note:" preamble, so it was invisible to
+    threshold detection (which only ever looked at sentences[0])
+    entirely."""
+    for sentence in _split_sentences(text):
+        if not sentence.strip().lower().startswith("note:"):
+            return sentence
+    return ""
 
 
 def _extract_threshold_condition(market: Market) -> Optional[tuple[str, float]]:
@@ -229,6 +247,30 @@ def _extract_latest_number(sentence: str) -> Optional[float]:
     return None
 
 
+# Calibrated empirically (2026-08-23) against real evidence
+# ("Just Fontaine's incredible record that still stands") plus several
+# constructed cases covering both directions of the failure mode. Real
+# TRUE-should-be-YES cases scored 0.002-0.007 on the negative label --
+# comfortably below this threshold, so it can't false-trigger on a
+# genuine confirmation. The one real motivating NO case scored 0.788.
+THRESHOLD_NOT_MET_VERIFICATION_THRESHOLD = 0.7
+
+
+def _threshold_not_met_hypotheses() -> tuple[str, str]:
+    positive = "The record or threshold has been broken or exceeded."
+    negative = "The record or threshold remains unbroken, intact, or has not been reached."
+    return positive, negative
+
+
+def _verify_threshold_not_met(sentence: str) -> bool:
+    """True if `sentence` entails the market's threshold/record was NOT
+    met -- deliberately one-directional (see _decide_numeric_threshold's
+    comment for why): only ever used to confirm NO, never YES."""
+    positive, negative = _threshold_not_met_hypotheses()
+    scores = _classify_scores(sentence, [positive, negative])
+    return scores[negative] >= THRESHOLD_NOT_MET_VERIFICATION_THRESHOLD
+
+
 def _decide_numeric_threshold(
     market: Market, ranked_evidence: list[RankedArticle], direction: str, threshold: float
 ) -> Verdict:
@@ -251,6 +293,41 @@ def _decide_numeric_threshold(
                 source_url=item.article.url,
                 source_type=item.article.source_type,
             )
+
+    # Semantic NO-only fallback: only reached when no sentence had an
+    # extractable number at all. Real gap found live (2026-08-23): real
+    # evidence for a real market ("Just Fontaine's incredible record that
+    # still stands") plainly confirms the threshold was NOT met, in plain
+    # English with no digit in it anywhere -- the loop above has no way
+    # to see this, since it only ever looks for a number to compare.
+    #
+    # Deliberately asymmetric -- can only ever produce NO, never YES.
+    # Real calibration (4 wording attempts) found confirming "the record
+    # WAS broken" from prose alone is NOT reliably safe with this model:
+    # every wording tested had at least one realistic phrasing ("one
+    # short of the record", "well below the target") that scored high
+    # for "broken" when it should have been low. But the NOT-met/negative
+    # score was reliably LOW on every genuine true-positive case tested
+    # (0.002-0.007, no false-trigger risk), even on cases where it also
+    # failed to correctly go high on a genuine negative (a safe miss,
+    # not a wrong answer) -- so restricting this check to NO-only can
+    # only ever fill in a missed UNCLEAR with a correct NO, never
+    # introduce a wrong YES. The existing number-extraction path above
+    # remains the only way this function ever returns YES.
+    for item in ranked_evidence:
+        for sentence in _split_sentences(item.text):
+            if _sentence_has_hedge(sentence):
+                continue
+            if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
+                continue
+            if _verify_threshold_not_met(sentence):
+                return Verdict(
+                    outcome="NO",
+                    confidence=item.similarity,
+                    evidence_snippet=sentence.strip()[:280],
+                    source_url=item.article.url,
+                    source_type=item.article.source_type,
+                )
 
     if ranked_evidence:
         top = ranked_evidence[0]
