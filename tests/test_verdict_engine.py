@@ -986,6 +986,28 @@ def test_numeric_threshold_market_stays_unclear_on_ambiguous_prose_with_no_numbe
     assert verdict.outcome == "UNCLEAR"
 
 
+def test_numeric_threshold_market_ignores_unrelated_number_in_vague_records_reference():
+    # Real regression found live (2026-08-23), same eval batch as the fix
+    # above: real evidence for this exact real market, "NEED TO KNOW -
+    # Several records were broken at the 2026 World Cup - ... The 2026
+    # World Cup made history before the tournament was even underway when
+    # a record 48 teams were invited to participate." -- the number-
+    # extraction loop grabbed the unrelated "48" (team invite count, a
+    # DIFFERENT record from the one this market asks about) and wrongly
+    # compared it against the real 13-goal threshold, resolving YES.
+    evidence = [make_ranked(
+        "NEED TO KNOW\n- Several records were broken at the 2026 World Cup\n"
+        "- Cape Verde is the smallest nation to ever make it to the knockout "
+        "stage of the tournament\n- France's Kylian Mbappe became the "
+        "all-time leading goal scorer in men's World Cup history\n"
+        "The 2026 World Cup made history before the tournament was even "
+        "underway when a record 48 teams were invited to participate.",
+        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
 def test_numeric_threshold_market_no_evidence_at_all():
     verdict = decide(BITCOIN_MARKET, [])
     assert verdict.outcome == "NO_EVIDENCE"

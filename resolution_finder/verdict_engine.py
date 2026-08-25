@@ -282,6 +282,8 @@ def _decide_numeric_threshold(
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
+            if _sentence_is_vague_reference(sentence):
+                continue
             value = _extract_latest_number(sentence)
             if value is None:
                 continue
@@ -399,9 +401,18 @@ NEGATION_HEDGE_WORDS = [
 # -- topically on-subject, ground truth NO. Kept domain-general (not
 # hardcoded to "records") since the semantic fallback runs across many
 # market domains (legislative, sports, drug approvals, etc.).
+#
+# "records were broken"/"records broken" added 2026-08-23 after a second,
+# real live bug in the same family, this time in _decide_numeric_threshold's
+# number-extraction loop (not the semantic fallback): "Several records were
+# broken at the 2026 World Cup... a record 48 teams were invited to
+# participate" -- doesn't contain "other", so the original phrase list
+# missed it, and _extract_latest_number grabbed the unrelated "48" (team
+# invite count) and wrongly compared it against the market's real 13-goal
+# threshold.
 VAGUE_REFERENCE_HEDGE_WORDS = [
     "other records", "numerous other", "various other", "several other",
-    "many other", "other such",
+    "many other", "other such", "records were broken", "records broken",
 ]
 
 
