@@ -874,6 +874,43 @@ def _extract_default_outcome(description: str) -> Optional[str]:
     return candidate
 
 
+# Real bug found live (2026-08-23): a BINARY_YES_KEYWORDS match used to
+# decide YES immediately, with no verification at all -- unlike every
+# other market type, where a keyword match is only a CANDIDATE that NLI
+# must confirm. "The bill would need to be signed into law by the
+# president to take effect..." contains the exact phrase "signed into
+# law" but is purely hypothetical/explanatory, not a report that it
+# happened -- and evades the hedge guard too (NEGATION_HEDGE_WORDS has
+# the exact phrase "would be", not "would need to be", so the substring
+# check misses it). Confirmed to reproduce against real production
+# decide() (YES, confidence 0.8) before this fix.
+#
+# Deliberately does NOT interpolate market.title into the hypothesis,
+# unlike _semantic_yes_signal's older cosine-similarity version --
+# calibrated head-to-head against real cases: the title-interpolated
+# version ("Will the CLARITY act...? This has been confirmed...") badly
+# under-scored a genuine true-positive sentence (0.262, would have
+# wrongly REJECTED it), apparently because concatenating a question onto
+# a confirmation statement reads as an ungrammatical, hard-to-judge
+# hypothesis -- the same title-interpolation fragility already
+# documented for _verify_elimination_candidate. The plain version scored
+# real TRUE cases at 0.986-0.992 and the real FALSE case at 0.193 --
+# by the time this runs, _sentence_mentions_other_entity has already
+# ruled out the sentence being about some OTHER subject, so the
+# hypothesis doesn't need to restate the subject itself.
+def _binary_yes_hypotheses() -> tuple[str, str]:
+    positive = "This has been confirmed and has already happened."
+    negative = "This has not happened yet and remains unconfirmed or uncertain."
+    return positive, negative
+
+
+def _verify_binary_yes_candidate(sentence: str) -> bool:
+    """True if `sentence` entails the market's YES condition has ALREADY
+    happened -- not just that a YES-shaped keyword phrase appears in it."""
+    positive, negative = _binary_yes_hypotheses()
+    return _verify_candidate_semantically(sentence, positive, negative)
+
+
 def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
     subject_terms = _subject_terms(market)
     distinctive_terms = _distinctive_subject_terms(market)
@@ -883,7 +920,8 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
-            if any(_contains_keyword(sentence.lower(), keyword) for keyword in BINARY_YES_KEYWORDS):
+            if (any(_contains_keyword(sentence.lower(), keyword) for keyword in BINARY_YES_KEYWORDS)
+                    and _verify_binary_yes_candidate(sentence)):
                 return Verdict(
                     outcome="YES",
                     confidence=item.similarity,

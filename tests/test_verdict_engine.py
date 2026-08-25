@@ -165,6 +165,25 @@ def test_binary_market_ignores_unrelated_entity_across_an_abbreviation():
     assert verdict.outcome != "YES"
 
 
+def test_binary_market_ignores_hypothetical_keyword_match_that_evades_the_hedge_guard():
+    # Real bug found live (2026-08-23): BINARY_YES_KEYWORDS deciding the
+    # outcome directly, with no verification step, means ANY sentence
+    # containing an exact keyword phrase resolves YES -- including a
+    # purely explanatory/hypothetical sentence that the hedge guard
+    # doesn't catch. "would need to be signed into law" contains the
+    # literal phrase "signed into law", but NEGATION_HEDGE_WORDS only has
+    # the exact phrase "would be" (not "would need to be" -- the "need
+    # to" in between means the substring check misses it), so this
+    # sailed straight through to a confident, wrong YES on real
+    # production code (confidence 0.8) before this fix.
+    evidence = [make_ranked(
+        "The bill would need to be signed into law by the president to "
+        "take effect, following approval by both chambers."
+    )]
+    verdict = decide(CLARITY_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
 def test_binary_market_resolves_yes_on_senate_passage_for_a_resolution_market():
     # Real gap found live 2026-08-18: BINARY_YES_KEYWORDS was entirely
     # bill-SIGNING vocabulary ("signed into law", "enacted"), which
