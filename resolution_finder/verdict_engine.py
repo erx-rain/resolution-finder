@@ -700,19 +700,34 @@ def _get_nli_classifier():
     return _nli_classifier
 
 
-def _verify_candidate_semantically(sentence: str, positive_hypothesis: str, negative_hypothesis: str) -> bool:
+def _classify_scores(sentence: str, labels: list[str]) -> dict[str, float]:
+    """Raw NLI entailment score per candidate label, straight from the
+    real production classifier/model. Factored out so the verify_*
+    functions below and nli_report.py (a diagnostic script for inspecting
+    this layer's actual behavior) see identical scores from identical
+    code, instead of the report duplicating hypothesis-construction logic
+    that could silently drift out of sync with production."""
     classifier = _get_nli_classifier()
-    result = classifier(sentence, candidate_labels=[positive_hypothesis, negative_hypothesis])
-    positive_score = result["scores"][result["labels"].index(positive_hypothesis)]
-    return positive_score >= NLI_VERIFICATION_THRESHOLD
+    result = classifier(sentence, candidate_labels=labels)
+    return dict(zip(result["labels"], result["scores"]))
+
+
+def _verify_candidate_semantically(sentence: str, positive_hypothesis: str, negative_hypothesis: str) -> bool:
+    scores = _classify_scores(sentence, [positive_hypothesis, negative_hypothesis])
+    return scores[positive_hypothesis] >= NLI_VERIFICATION_THRESHOLD
+
+
+def _winner_hypotheses(option: str, market: Market) -> tuple[str, str]:
+    positive = f"{option} has won {market.title}."
+    negative = f"{option} has not won {market.title}, or it has not been decided yet."
+    return positive, negative
 
 
 def _verify_winner_candidate(sentence: str, option: str, market: Market) -> bool:
     """True if `sentence` entails `option` has ALREADY won `market` --
     not just that a winner-shaped keyword and the option name both
     appear in it."""
-    positive = f"{option} has won {market.title}."
-    negative = f"{option} has not won {market.title}, or it has not been decided yet."
+    positive, negative = _winner_hypotheses(option, market)
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
@@ -739,17 +754,20 @@ def _verify_winner_candidate(sentence: str, option: str, market: Market) -> bool
 HEAD_TO_HEAD_VERIFICATION_THRESHOLD = 0.65
 
 
+def _head_to_head_hypotheses(option: str, other_option: str) -> tuple[str, str, str]:
+    positive = f"{option} defeated {other_option}."
+    opposite = f"{other_option} defeated {option}."
+    unresolved = f"It is not yet known whether {option} or {other_option} won."
+    return positive, opposite, unresolved
+
+
 def _verify_head_to_head_candidate(sentence: str, option: str, other_option: str) -> bool:
     """True if `sentence` entails `option` has ALREADY beaten
     `other_option` specifically -- not just that a win-shaped phrase and
     both names appear in it, and not just because the sentence is ABOUT
     a result between them (direction matters)."""
-    positive = f"{option} defeated {other_option}."
-    opposite = f"{other_option} defeated {option}."
-    unresolved = f"It is not yet known whether {option} or {other_option} won."
-    classifier = _get_nli_classifier()
-    result = classifier(sentence, candidate_labels=[positive, opposite, unresolved])
-    scores = dict(zip(result["labels"], result["scores"]))
+    positive, opposite, unresolved = _head_to_head_hypotheses(option, other_option)
+    scores = _classify_scores(sentence, [positive, opposite, unresolved])
     return scores[positive] >= HEAD_TO_HEAD_VERIFICATION_THRESHOLD and scores[positive] == max(scores.values())
 
 
@@ -765,6 +783,12 @@ def _verify_head_to_head_candidate(sentence: str, option: str, other_option: str
 # same sentence, dropped to 0.669 (below threshold) while the two real
 # TRUE elimination cases climbed to 0.998-0.999 (better separation, not
 # worse) -- no threshold change needed, the wording was the problem.
+def _elimination_hypotheses(option: str) -> tuple[str, str]:
+    positive = f"{option} has been eliminated from the competition."
+    negative = f"{option} is still advancing in the competition."
+    return positive, negative
+
+
 def _verify_elimination_candidate(sentence: str, option: str, market: Market) -> bool:
     """True if `sentence` entails `option` has ALREADY been eliminated --
     not just that an elimination-shaped keyword and the option name both
@@ -783,8 +807,7 @@ def _verify_elimination_candidate(sentence: str, option: str, market: Market) ->
     calibrated: real re-test, same sentence, correctly scored the false
     case at 0.669 (below threshold) and real eliminations at 0.998-0.999.
     """
-    positive = f"{option} has been eliminated from the competition."
-    negative = f"{option} is still advancing in the competition."
+    positive, negative = _elimination_hypotheses(option)
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
