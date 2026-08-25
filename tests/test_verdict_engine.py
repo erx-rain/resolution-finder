@@ -1009,6 +1009,25 @@ def test_numeric_threshold_market_stays_unclear_on_ambiguous_prose_with_no_numbe
     assert verdict.outcome == "UNCLEAR"
 
 
+def test_numeric_threshold_market_ignores_a_ratio_number_as_the_price():
+    # Real bug found live (2026-08-23): real evidence for the real Bitcoin
+    # $64,000 market, "Binance Bitcoin volume ratio hits record as futures
+    # outweigh spot eight times over ... The ratio now stands at 7.82,
+    # meaning that futures volume outweighs spot nearly eight times
+    # over." -- _extract_latest_number grabbed the 7.82 (a futures-to-spot
+    # VOLUME RATIO, a completely different metric) and compared it against
+    # the real $64,000 PRICE threshold, wrongly resolving NO on a market
+    # whose real ground truth is Yes.
+    evidence = [make_ranked(
+        "Binance Bitcoin volume ratio hits record as futures outweigh spot "
+        "eight times over. The ratio now stands at 7.82, meaning that "
+        "futures volume outweighs spot nearly eight times over.",
+        url="https://cointelegraph.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(BITCOIN_MARKET, evidence)
+    assert verdict.outcome != "NO"
+
+
 def test_numeric_threshold_market_ignores_unrelated_number_in_vague_records_reference():
     # Real regression found live (2026-08-23), same eval batch as the fix
     # above: real evidence for this exact real market, "NEED TO KNOW -

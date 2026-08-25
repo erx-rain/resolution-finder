@@ -284,6 +284,8 @@ def _decide_numeric_threshold(
                 continue
             if _sentence_is_vague_reference(sentence):
                 continue
+            if _sentence_describes_a_different_metric(sentence):
+                continue
             value = _extract_latest_number(sentence)
             if value is None:
                 continue
@@ -431,6 +433,32 @@ VAGUE_REFERENCE_HEDGE_WORDS = [
 def _sentence_is_vague_reference(sentence: str) -> bool:
     lowered = sentence.lower()
     return any(phrase in lowered for phrase in VAGUE_REFERENCE_HEDGE_WORDS)
+
+
+# Real bug found live (2026-08-23), same session as the two guards above but
+# a different failure shape: not a vague/unspecified reference, but a
+# genuine, specific number that measures a DIFFERENT metric than the
+# market's own threshold. Real evidence for the real Bitcoin $64,000 PRICE
+# market: "Binance Bitcoin volume ratio hits record as futures outweigh
+# spot eight times over ... The ratio now stands at 7.82..." --
+# _extract_latest_number grabbed the 7.82 (a futures-to-spot VOLUME RATIO)
+# and compared it directly against the $64,000 price threshold, wrongly
+# resolving NO. This is the same root problem the plan doc's "Submarket
+# price-history tracking" backlog item describes (no way to verify an
+# extracted number matches the market's real metric) -- but unlike that
+# item's general case (which needs a real price-history data source, not
+# a quick fix), THIS specific failure has one clear, catchable, reusable
+# signal: the sentence explicitly names the number as a "ratio", not a
+# price/count. A narrow, targeted guard, not a substitute for that larger
+# feature.
+_DIFFERENT_METRIC_HEDGE_WORDS = [
+    "ratio", "multiple of", "times over", "times higher", "times outweigh",
+]
+
+
+def _sentence_describes_a_different_metric(sentence: str) -> bool:
+    lowered = sentence.lower()
+    return any(phrase in lowered for phrase in _DIFFERENT_METRIC_HEDGE_WORDS)
 
 
 # A bare acronym (e.g. "CLARITY") that Task 4's extract_entities won't catch
