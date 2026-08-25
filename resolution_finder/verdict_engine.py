@@ -386,6 +386,18 @@ NEGATION_HEDGE_WORDS = [
     "rumored", "sources say", "some argue", "experts say",
     "will face", "will play", "will meet", "will take on",
     "is set to", "are set to", "scheduled to",
+    # Real bug found live (2026-08-23): a real pre-tournament preview
+    # sentence ("Defending champions Team Falcons are raring to retain
+    # the Aegis at Dota 2 TI 2026, but they face a stacked field...")
+    # scored 0.926 for "has won the tournament" -- well above threshold.
+    # "Defending champions" (their PAST title) plus "raring to retain"
+    # (future intent) reads as strong topical/lexical confirmation to
+    # the model, but describes an outcome not yet decided. None of the
+    # existing future-tense hedges ("will face", "is set to") catch this
+    # present-tense aspiration phrasing.
+    "raring to", "hoping to", "hope to", "aiming to", "aim to",
+    "looking to", "look to", "bidding to", "bid to", "gunning for",
+    "eyeing a", "eyeing the",
 ]
 
 # Generic quantifier+"other" hedges of SPECIFICITY -- e.g. "numerous other

@@ -483,6 +483,29 @@ def test_multi_outcome_market_ignores_elimination_phrased_as_a_relative_recurrin
     assert all(v.outcome != "NO" for v in verdicts)
 
 
+def test_multi_outcome_market_ignores_pre_tournament_preview_as_a_winner_confirmation():
+    # Real bug found live (2026-08-23): real evidence for the real
+    # International 2026 market, "Defending champions Team Falcons are
+    # raring to retain the Aegis at Dota 2 TI 2026, but they face a
+    # stacked field that includes TEAM VISION..." -- a pre-tournament
+    # PREVIEW, not a result -- scored 0.926 for "Team Falcons has won",
+    # well above threshold, wrongly crowning them champion. Made worse
+    # live: separate real evidence in the same batch ("Team Liquid 2-1
+    # Team Falcons ... Team Falcons have been eliminated") directly
+    # contradicts this. "Defending champions" (their PAST title) plus
+    # "raring to retain" (future intent) reads as strong lexical
+    # confirmation to the model despite describing an undecided outcome.
+    evidence = [make_ranked(
+        "Defending champions Team Falcons are raring to retain the Aegis "
+        "at Dota 2 TI 2026, but they face a stacked field that includes "
+        "TEAM VISION (aka PARIVISION), Team Liquid, Team Spirit, Iron Wing "
+        "(aka 1w Team).",
+        url="https://www.gosugamers.net/dota2/x", source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(INTERNATIONAL_MARKET_FULL, evidence)
+    assert not any(v.option == "Team Falcons" and v.outcome == "YES" for v in verdicts)
+
+
 def test_multi_outcome_market_still_resolves_yes_when_evidence_has_no_year():
     # Safety check: the real, actual evidence that motivated the
     # head-to-head fix (no year mentioned at all) must still work --
