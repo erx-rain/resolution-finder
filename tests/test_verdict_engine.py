@@ -695,6 +695,42 @@ PREMIER_LEAGUE_24_25_MARKET = Market(
 )
 
 
+# Real market pulled from Polymarket (epl-team-to-qualify-for-uefa-
+# champions-league) -- title/description verbatim, options trimmed to
+# the two relevant to the bug below (real full list has 20).
+CHAMPIONS_LEAGUE_QUALIFY_MARKET = Market(
+    id="epl-team-to-qualify-for-uefa-champions-league",
+    title="EPL: Team to qualify for UEFA Champions League",
+    description=(
+        "This market will resolve to \"Yes\" if the listed team clinches a "
+        "league phase spot in the 2026-27 Champions League per UEFA rules. "
+        "Otherwise, the associated market will resolve to \"No\"."
+    ),
+    options=["Crystal Palace", "Manchester United"],
+    close_date=date(2026, 9, 1),
+)
+
+
+def test_multi_outcome_market_ignores_a_different_uefa_competitions_result():
+    # Real bug found live (2026-08-26): the real epl-team-to-qualify-for-
+    # uefa-champions-league market (real winner Manchester United) wrongly
+    # crowned Crystal Palace. Root cause: the real evidence sentence is
+    # about the CONFERENCE LEAGUE -- a different, lower-tier UEFA
+    # competition Crystal Palace actually won and is playing in this
+    # season -- not the Champions League the market asks about. Nothing
+    # checked that the sentence names the SAME UEFA competition as the
+    # market before letting a candidate through.
+    evidence = [make_ranked(
+        "Conference League champions Crystal Palace take on a long trip "
+        "to Turkey to take on Besiktas, while they have also been drawn "
+        "with Real Sociedad, Lyon and Sparta Prague.",
+        url="https://sports.yahoo.com/articles/uefa-europa-league-draw-british-124500790.html",
+        source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(CHAMPIONS_LEAGUE_QUALIFY_MARKET, evidence)
+    assert not any(v.option == "Crystal Palace" and v.outcome == "YES" for v in verdicts)
+
+
 def test_multi_outcome_market_ignores_a_different_seasons_prediction_with_no_year_in_the_matching_sentence():
     # Real bug found live (2026-08-25): the real premier-league-winner-24-25
     # market (asking about the already-decided 2024-25 season, real winner

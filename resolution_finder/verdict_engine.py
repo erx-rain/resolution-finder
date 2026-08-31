@@ -773,6 +773,36 @@ def _sentence_mentions_conflicting_relative_season(
     return False
 
 
+# Different failure shape again: not a wrong TIME, a wrong COMPETITION.
+# Real bug found live (2026-08-26): the real epl-team-to-qualify-for-uefa-
+# champions-league market (real winner Manchester United) wrongly crowned
+# Crystal Palace off a sentence entirely about the CONFERENCE LEAGUE -- a
+# different, lower-tier UEFA club competition Crystal Palace actually won
+# and is playing in this season, not the Champions League the market
+# asks about. The three competitions share enough surface vocabulary
+# ("champions", "the draw", "qualified", team names) that ordinary
+# keyword/option matching can't tell them apart -- this needs an explicit
+# same-competition check, the same shape as the year-conflict guard but
+# for a different kind of "different instance of a recurring thing".
+_UEFA_COMPETITION_NAMES = ["champions league", "europa league", "conference league"]
+
+
+def _market_named_competition(market: Market) -> Optional[str]:
+    combined = f"{market.title} {market.description}".lower()
+    for name in _UEFA_COMPETITION_NAMES:
+        if name in combined:
+            return name
+    return None
+
+
+def _sentence_mentions_conflicting_competition(sentence: str, expected_competition: Optional[str]) -> bool:
+    if expected_competition is None:
+        return False
+    lowered = sentence.lower()
+    mentioned = [name for name in _UEFA_COMPETITION_NAMES if name in lowered]
+    return bool(mentioned) and expected_competition not in mentioned
+
+
 # Same-year, different-MEETING problem: two teams can play each other more
 # than once within a single year -- a regular-season game and a separate
 # playoff series, or twice in a round-robin-then-knockout tournament. The
@@ -1198,6 +1228,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
     eliminated: dict[str, Verdict] = {}
     expected_year = _market_expected_year(market)
     market_is_playoff = _market_is_playoff_context(market)
+    expected_competition = _market_named_competition(market)
 
     for item in ranked_evidence:
         # An article's OPENING sentence conventionally establishes which
@@ -1241,6 +1272,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                     sentence, expected_year, item.article.published_date)
                 or _sentence_mentions_conflicting_phase(sentence, market_is_playoff)
                 or _sentence_mentions_relative_recency(sentence)
+                or _sentence_mentions_conflicting_competition(sentence, expected_competition)
             )
             # All listed options this sentence actually names, computed
             # once up front so the winner check below can compare a
