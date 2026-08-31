@@ -418,6 +418,24 @@ NEGATION_HEDGE_WORDS = [
     # shape as "raring to" (describes standing/eligibility, not a
     # decided outcome).
     "nominated", "nomination", "nominee", "shortlisted",
+    # Real bug found live (2026-08-26): real evidence for the 2026 NHL
+    # Stanley Cup Champion market -- "The Pittsburgh Penguins returned to
+    # the Stanley Cup Playoffs in 2026." -- wrongly confirmed the
+    # Penguins as CHAMPION. Reaching the playoffs is eligibility to
+    # compete for a championship, not the outcome itself -- same
+    # "describes standing, not a decided outcome" shape as nomination
+    # above, different domain (any single-elimination tournament/playoff
+    # market with many listed teams will surface "made the playoffs"
+    # news for teams that don't go on to win it all).
+    # NEGATION_HEDGE_WORDS is a plain substring match (see
+    # _sentence_has_hedge), not a fuzzy one -- "returned to the playoffs"
+    # alone did NOT match the real sentence, which says "returned to the
+    # Stanley Cup Playoffs" (an extra name in between), so the specific
+    # phrase is listed alongside the generic one.
+    "returned to the playoffs", "returned to the stanley cup playoffs",
+    "made the playoffs", "reached the playoffs",
+    "qualified for the playoffs", "advanced to the playoffs",
+    "made the postseason", "reached the postseason", "clinched a playoff spot",
 ]
 
 # Generic quantifier+"other" hedges of SPECIFICITY -- e.g. "numerous other

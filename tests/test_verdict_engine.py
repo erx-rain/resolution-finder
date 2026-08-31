@@ -660,6 +660,35 @@ def test_multi_outcome_market_does_not_treat_a_nomination_as_a_win():
     assert not any(v.option == "UNRWA" and v.outcome == "YES" for v in verdicts)
 
 
+# Real market pulled from Polymarket (2026-nhl-stanley-cup-champion) --
+# title/description verbatim, options trimmed to the two relevant below
+# (real full list has 32).
+STANLEY_CUP_MARKET = Market(
+    id="2026-nhl-stanley-cup-champion",
+    title="2026 NHL Stanley Cup Champion ",
+    description="This market is to predict the winner of the 2025–26 NHL Stanley Cup championship.",
+    options=["Pittsburgh Penguins", "Carolina Hurricanes"],
+    close_date=date(2026, 6, 30),
+)
+
+
+def test_multi_outcome_market_does_not_treat_making_the_playoffs_as_winning_the_championship():
+    # Real bug found live (2026-08-26): the real 2026-nhl-stanley-cup-
+    # champion market (real winner Carolina Hurricanes) wrongly crowned
+    # the Pittsburgh Penguins off "The Pittsburgh Penguins returned to
+    # the Stanley Cup Playoffs in 2026." Reaching the playoffs is
+    # eligibility to compete for the championship, not the outcome
+    # itself -- same "describes standing, not a decided outcome" shape
+    # as the nomination bug above, different domain.
+    evidence = [make_ranked(
+        "The Pittsburgh Penguins returned to the Stanley Cup Playoffs in 2026.",
+        url="https://sports.yahoo.com/articles/penguins-glaring-roster-flaw-must-223156833.html",
+        source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(STANLEY_CUP_MARKET, evidence)
+    assert not any(v.option == "Pittsburgh Penguins" and v.outcome == "YES" for v in verdicts)
+
+
 def test_multi_outcome_market_does_not_crown_loser_when_sentence_names_the_real_winner():
     # Real bug found live (2026-08-25) against real production evidence
     # for The International 2026: a schedule-recap sentence reading
