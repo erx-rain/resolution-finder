@@ -1,6 +1,7 @@
 # resolution_finder/evidence_retriever.py
 import logging
 import time
+from datetime import date
 from typing import Optional
 from urllib.parse import quote_plus, urlparse, parse_qs
 import feedparser
@@ -134,6 +135,21 @@ def _warn_if_feed_fetch_failed(feed, source: str, query: str) -> None:
         )
 
 
+def _entry_published_date(entry) -> Optional[date]:
+    """The RSS entry's own publish date, or None -- best-effort, same
+    degrade-safely convention as the rest of this module. Real, verified
+    against a live Bing News RSS fetch (2026-08-26): feedparser exposes
+    the RSS <pubDate> as `entry.published_parsed`, a time.struct_time,
+    whenever the feed provides one at all."""
+    parsed = getattr(entry, "published_parsed", None)
+    if not parsed:
+        return None
+    try:
+        return date(parsed.tm_year, parsed.tm_mon, parsed.tm_mday)
+    except (TypeError, ValueError):
+        return None
+
+
 def search_bing_news_rss(query: str) -> list[ArticleRef]:
     """General (unscoped) credible-outlet search, replacing Google News RSS
     for Tier 2. Bing's RSS endpoint doesn't honor `site:` scoping (verified
@@ -161,6 +177,7 @@ def search_bing_news_rss(query: str) -> list[ArticleRef]:
             title=entry.title,
             source_type=source_type,
             source_domain=domain,
+            published_date=_entry_published_date(entry),
         ))
         if len(results) >= MAX_RESULTS_PER_QUERY:
             break
@@ -186,6 +203,7 @@ def search_google_news_rss(query: str, site: Optional[str] = None) -> list[Artic
             title=entry.title,
             source_type=source_type,
             source_domain=domain,
+            published_date=_entry_published_date(entry),
         ))
         if len(results) >= MAX_RESULTS_PER_QUERY:
             break

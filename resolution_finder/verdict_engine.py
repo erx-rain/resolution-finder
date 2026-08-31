@@ -729,6 +729,50 @@ def _sentence_mentions_relative_recency(sentence: str) -> bool:
     return any(phrase in lowered for phrase in _RELATIVE_RECENCY_PHRASES)
 
 
+# Sibling gap to both checks above: "last season"/"this season" is neither
+# an explicit year (the year-conflict check needs one stated in the
+# sentence) nor a vague recurring-range reference (deliberately excluded
+# from _sentence_mentions_relative_recency -- see its own docstring: a
+# single specific past occurrence like "last night" must NOT be treated
+# as vague). It's a real, single-instance reference, just stated RELATIVE
+# to when the article was published rather than by an explicit year. Real
+# bug found live (2026-08-26): real evidence for premier-league-winner-
+# 24-25 (asking about the already-decided 2024-25 season) read "Winning
+# the Premier League last season finally answered..." -- Arsenal's
+# 2025-26 title, from an article published in August 2026 -- wrongly
+# crowned Arsenal. Resolving what "last season" numerically means needs
+# the article's own publish date, which evidence_retriever.py now
+# populates from the RSS feed's own <pubDate> (previously declared on
+# ArticleRef but never actually read). Fail-safe: no signal at all
+# (returns False) if that date isn't available -- never guesses.
+_RELATIVE_SEASON_PHRASES = ["last season", "this season"]
+
+# Northern-hemisphere annual leagues (soccer, NHL, NBA) all roughly follow
+# a July/August season start -- a reasonable, if imperfect, general cutover
+# for resolving "this season" from an arbitrary publish date without
+# needing a per-sport calendar.
+_SEASON_START_MONTH = 7
+
+
+def _implied_season_start_year(published: date, relative_phrase: str) -> int:
+    current_season_start = published.year if published.month >= _SEASON_START_MONTH else published.year - 1
+    if relative_phrase == "last season":
+        return current_season_start - 1
+    return current_season_start
+
+
+def _sentence_mentions_conflicting_relative_season(
+    sentence: str, expected_year: Optional[int], published_date: Optional[date],
+) -> bool:
+    if expected_year is None or published_date is None:
+        return False
+    lowered = sentence.lower()
+    for phrase in _RELATIVE_SEASON_PHRASES:
+        if phrase in lowered:
+            return _implied_season_start_year(published_date, phrase) != expected_year
+    return False
+
+
 # Same-year, different-MEETING problem: two teams can play each other more
 # than once within a single year -- a regular-season game and a separate
 # playoff series, or twice in a round-robin-then-knockout tournament. The
@@ -1193,6 +1237,8 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
             context_conflict = (
                 _sentence_mentions_conflicting_year(sentence, expected_year)
                 or _sentence_mentions_conflicting_year(article_lead_sentence, expected_year)
+                or _sentence_mentions_conflicting_relative_season(
+                    sentence, expected_year, item.article.published_date)
                 or _sentence_mentions_conflicting_phase(sentence, market_is_playoff)
                 or _sentence_mentions_relative_recency(sentence)
             )

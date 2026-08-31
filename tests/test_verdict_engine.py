@@ -69,9 +69,10 @@ WAR_POWERS_MARKET = Market(
 )
 
 
-def make_ranked(text, url="https://congress.gov/bill/3633", source_type="primary", similarity=0.8):
+def make_ranked(text, url="https://congress.gov/bill/3633", source_type="primary", similarity=0.8,
+                 published_date=None):
     return RankedArticle(
-        article=ArticleRef(url=url, title="t", source_type=source_type),
+        article=ArticleRef(url=url, title="t", source_type=source_type, published_date=published_date),
         text=text,
         similarity=similarity,
     )
@@ -713,6 +714,23 @@ def test_multi_outcome_market_ignores_a_different_seasons_prediction_with_no_yea
         "favourites to win the Premier League title.",
         url="https://sports.yahoo.com/articles/premier-league-title-supercomputer-predicts-143000616.html",
         source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(PREMIER_LEAGUE_24_25_MARKET, evidence)
+    assert not any(v.option == "Arsenal" and v.outcome == "YES" for v in verdicts)
+
+
+def test_multi_outcome_market_ignores_last_seasons_result_via_publish_date():
+    # Real bug found live (2026-08-26), a second real article for the same
+    # premier-league-winner-24-25 market that evaded the year-conflict fix
+    # above: "Winning the Premier League last season finally answered..."
+    # has no explicit year at all. Published August 2026, "last season"
+    # means Arsenal's 2025-26 title, not the market's 2024-25 season.
+    evidence = [make_ranked(
+        "Winning the Premier League last season finally answered one of "
+        "the biggest questions surrounding Mikel Arteta's Arsenal.",
+        url="https://sports.yahoo.com/articles/opinion-winning-premier-league-just-213500084.html",
+        source_type="credible_backup_secondary",
+        published_date=date(2026, 8, 17),
     )]
     verdicts = decide(PREMIER_LEAGUE_24_25_MARKET, evidence)
     assert not any(v.option == "Arsenal" and v.outcome == "YES" for v in verdicts)

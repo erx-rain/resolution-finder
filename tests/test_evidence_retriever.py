@@ -4,11 +4,13 @@ from unittest.mock import patch, MagicMock
 from datetime import date
 from urllib.parse import quote
 from resolution_finder.models import Market
+import time
 from resolution_finder.evidence_retriever import (
     search_google_news_rss,
     search_bing_news_rss,
     retrieve_evidence,
     entry_source_domain,
+    _entry_published_date,
 )
 
 CLARITY_MARKET = Market(
@@ -100,6 +102,28 @@ def test_entry_source_domain_returns_none_when_unidentifiable():
     assert entry_source_domain(make_entry_without_source("Mystery headline")) is None
     # A human-readable source title is not a domain and must not be treated as one.
     assert entry_source_domain(make_entry("h", "", "The New York Times")) is None
+
+
+# --- _entry_published_date ---------------------------------------------------
+
+def test_entry_published_date_parses_a_real_pubdate():
+    entry = MagicMock()
+    entry.published_parsed = time.struct_time((2026, 8, 17, 10, 4, 0, 0, 0, 0))
+    assert _entry_published_date(entry) == date(2026, 8, 17)
+
+
+def test_entry_published_date_returns_none_when_absent():
+    entry = MagicMock(spec=[])  # no published_parsed attribute at all
+    assert _entry_published_date(entry) is None
+
+
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_search_bing_news_rss_populates_published_date(mock_parse):
+    entry = make_bing_entry("Reuters headline", "https://www.reuters.com/article/x")
+    entry.published_parsed = time.struct_time((2026, 8, 17, 10, 4, 0, 0, 0, 0))
+    mock_parse.return_value = make_fake_feed([entry])
+    results = search_bing_news_rss("q")
+    assert results[0].published_date == date(2026, 8, 17)
 
 
 # --- search_google_news_rss --------------------------------------------------
