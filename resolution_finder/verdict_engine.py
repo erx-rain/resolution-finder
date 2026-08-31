@@ -1156,6 +1156,22 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
     market_is_playoff = _market_is_playoff_context(market)
 
     for item in ranked_evidence:
+        # An article's OPENING sentence conventionally establishes which
+        # calendar instance of a recurring event the whole piece is about
+        # (journalistic lead-paragraph convention) -- computed once per
+        # article, not per sentence, so a LATER sentence that matches an
+        # option but states no year of its own can still inherit that
+        # context. Real bug found live (2026-08-25): premier-league-
+        # winner-24-25 (asking about the already-decided 2024-25 season)
+        # wrongly crowned Arsenal off a headline-style sentence ("Arsenal
+        # tipped to win Premier League title by supercomputer... the
+        # overwhelming favourites") with no year in it at all, while the
+        # SAME article's opening sentence explicitly said "ahead of the
+        # 2026-27 campaign" -- a different season entirely. The per-
+        # sentence-only check (deliberate design, see
+        # _sentence_mentions_conflicting_year's own docstring) had nothing
+        # to compare against on that specific sentence.
+        article_lead_sentence = _first_sentence(item.text)
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence):
                 continue
@@ -1165,8 +1181,10 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
             # matched, not as a blanket pre-filter (see
             # _sentence_mentions_conflicting_year's docstring for why:
             # incidental years/phase words in ordinary prose must not
-            # cause a false rejection). Three independent signals: a
-            # different YEAR (a past season's game), the same year but a
+            # cause a false rejection). Four independent signals: a
+            # different YEAR (a past season's game), the same signal
+            # inherited from the article's own lead sentence when THIS
+            # sentence states no year of its own, the same year but a
             # different MEETING within it (a regular-season game vs. the
             # market's own playoff series), or a RELATIVE recurring-range
             # reference with no explicit year at all ("the past two
@@ -1174,6 +1192,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
             # comment for the real bug this catches.
             context_conflict = (
                 _sentence_mentions_conflicting_year(sentence, expected_year)
+                or _sentence_mentions_conflicting_year(article_lead_sentence, expected_year)
                 or _sentence_mentions_conflicting_phase(sentence, market_is_playoff)
                 or _sentence_mentions_relative_recency(sentence)
             )

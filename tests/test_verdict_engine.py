@@ -682,6 +682,42 @@ def test_multi_outcome_market_does_not_crown_loser_when_sentence_names_the_real_
     assert not any(v.option == "Team Vision" and v.outcome == "YES" for v in verdicts)
 
 
+# Real market pulled from Polymarket (premier-league-winner-24-25) --
+# title/description verbatim, options trimmed to the two relevant to the
+# bug below (real full list has 20).
+PREMIER_LEAGUE_24_25_MARKET = Market(
+    id="premier-league-winner-24-25",
+    title="Premier League Winner",
+    description="This is a market on who will win the Premier League in the 2024-25 season.",
+    options=["Arsenal", "Liverpool"],
+    close_date=date(2025, 5, 25),
+)
+
+
+def test_multi_outcome_market_ignores_a_different_seasons_prediction_with_no_year_in_the_matching_sentence():
+    # Real bug found live (2026-08-25): the real premier-league-winner-24-25
+    # market (asking about the already-decided 2024-25 season, real winner
+    # Liverpool) wrongly crowned Arsenal. Root cause: the real evidence
+    # article's OPENING sentence establishes it's about the 2026-27 season
+    # ("ahead of the 2026-27 campaign"), but the specific sentence that
+    # actually matched "Arsenal" (a headline-style restatement further into
+    # the article) states no year at all, so _sentence_mentions_conflicting_
+    # year -- deliberately a per-sentence-only check, see its own docstring
+    # -- has nothing to compare against on that sentence and lets it through.
+    evidence = [make_ranked(
+        "Sky Sports' supercomputer has attempted to predict who will win "
+        "the Premier League title ahead of the 2026-27 campaign. Arsenal "
+        "are aiming to retain their top-four status.\n\n"
+        "Arsenal tipped to win Premier League title by supercomputer\n"
+        "Sky Sports' supercomputer has made Arsenal the overwhelming "
+        "favourites to win the Premier League title.",
+        url="https://sports.yahoo.com/articles/premier-league-title-supercomputer-predicts-143000616.html",
+        source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(PREMIER_LEAGUE_24_25_MARKET, evidence)
+    assert not any(v.option == "Arsenal" and v.outcome == "YES" for v in verdicts)
+
+
 def test_multi_outcome_market_option_independently_resolves_no_on_elimination():
     # Real scenario: The International 2026 -- Aurora Gaming eliminated,
     # tournament champion still undecided. Must resolve just that option,
