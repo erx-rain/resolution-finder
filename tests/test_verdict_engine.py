@@ -240,6 +240,44 @@ def test_binary_market_resolves_yes_on_both_chambers_passage_phrasing():
     assert verdict.outcome == "YES"
 
 
+# Real market pulled from Polymarket (fda-approves-viridian-therapeutics-
+# veligrotug-06-30-2026) -- title verbatim.
+VIRIDIAN_FDA_MARKET = Market(
+    id="fda-approves-viridian-therapeutics-veligrotug-06-30-2026",
+    title="FDA approves Viridian Therapeutics' Veligrotug?",
+    description="Primary resolution source: official FDA announcement.",
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+def test_binary_market_resolves_yes_on_fda_approval_language():
+    # Real gap found live (2026-08-26): BINARY_YES_KEYWORDS was entirely
+    # legislative vocabulary ("signed into law", "passed the senate", ...)
+    # -- structurally cannot confirm an FDA drug-approval market, which
+    # never gets "signed into law" or "passed" at all.
+    #
+    # The real production evidence for this market ("First approved
+    # treatment for thyroid eye disease... DRI Healthcare is entitled to
+    # a tiered royalty...") scores 0.908 on the NLI check once given the
+    # chance, confirming the keyword gap is real -- but that exact
+    # sentence also names "DRI Healthcare" (a royalty partner) without
+    # repeating "Viridian", which the wrong-subject-entity veto correctly
+    # rejects on its own terms (an article-lead-sentence fallback for
+    # that veto was tried and reverted 2026-08-26: it reopened the
+    # original GENIUS/CLARITY false positive the veto exists to prevent
+    # -- see _sentence_mentions_other_entity's docstring). That specific
+    # production sentence remains a known, accepted gap; this test
+    # verifies the keyword fix itself on a clean sentence that names the
+    # subject directly, which is the common case this fix is really for.
+    evidence = [make_ranked(
+        "The FDA approved Viridian Therapeutics' Veligrotug on Tuesday "
+        "for the treatment of thyroid eye disease."
+    )]
+    verdict = decide(VIRIDIAN_FDA_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
 def test_binary_market_does_not_treat_procedural_advancement_as_final_passage():
     # The real live evidence found for this exact market: a procedural vote
     # to ADVANCE a resolution is not the same as the resolution PASSING --

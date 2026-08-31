@@ -49,6 +49,15 @@ BINARY_YES_KEYWORDS = [
     "passed the senate", "senate passed", "passed the house", "house passed",
     "cleared the senate", "cleared the house", "passed both chambers",
     "cleared both chambers", "confirmed by the senate",
+    # Real bug found live (2026-08-26): this list was entirely legislative
+    # vocabulary -- structurally cannot confirm an FDA drug-approval
+    # market, which never gets "signed into law" or "passed" at all. Real
+    # evidence ("First approved treatment for thyroid eye disease...")
+    # scores 0.908 against the EXISTING, unchanged NLI verification
+    # threshold once it's given the chance to be checked -- this was
+    # purely a missing keyword, not a verification weakness.
+    "fda approves", "fda approved", "fda approval", "approved by the fda",
+    "first approved treatment", "receives fda approval", "gains fda approval",
 ]
 
 # ANNOUNCEMENT_KEYWORDS / ELIMINATION_KEYWORDS / the directional
@@ -628,6 +637,19 @@ def _sentence_mentions_other_entity(
     CLARITY's own description too, even though the sentence is about a
     completely different bill. Title terms don't have that problem: they
     ARE the thing that distinguishes this market from every other one.
+
+    An article-lead-sentence fallback (mirroring the year-conflict guard's
+    fix) was tried and REJECTED (2026-08-26): it reopened this exact
+    GENIUS/CLARITY false positive -- the CLARITY test's lead sentence
+    happens to mention CLARITY, which then let a LATER sentence entirely
+    about the unrelated GENIUS Act through. Unlike the year-conflict case,
+    a real subject mention elsewhere in the article does NOT reliably mean
+    a later sentence naming a different entity is still on-topic; it can
+    just as easily be a genuine comparison to something else, which is
+    exactly what this guard exists to catch. Left as a known gap (real
+    evidence for the Viridian FDA-approval market, mentioning a royalty
+    partner without repeating "Viridian", still gets vetoed) rather than
+    risk reopening a confirmed real bug for an unconfirmed narrower one.
     """
     if not subject_terms:
         return False
