@@ -107,10 +107,16 @@ def _scan_market(
 
     articles_with_text = []
     for ref in candidate_refs:
-        if ref.source_type == "official_social":
+        if ref.source_type == "official_social" or (ref.summary and is_known_unresolvable_url(ref.url)):
             # Never fetch the actual X page — only use the search-result
             # snippet already captured by the retriever. The reviewer
             # checks the real post by hand via the dashboard link.
+            #
+            # The same rule now covers the date-scoped archive pass: those
+            # are news.google.com JS-redirect wrappers (an UNRESOLVABLE_HOST
+            # that returns 200 with no content no matter how the request is
+            # made), so the headline carried in `summary` is the only text
+            # that will ever exist for them.
             text = ref.summary or ref.title
             if text:
                 articles_with_text.append((ref, text))

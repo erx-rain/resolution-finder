@@ -28,7 +28,7 @@ from datetime import date, datetime, timezone
 from resolution_finder.models import Market
 from resolution_finder.query_builder import build_queries
 from resolution_finder.evidence_retriever import retrieve_evidence
-from resolution_finder.article_extractor import extract_article_text
+from resolution_finder.article_extractor import extract_article_text, is_known_unresolvable_url
 from resolution_finder.relevance_ranker import rank_by_relevance
 from resolution_finder.verdict_engine import decide
 from resolution_finder.config import SIMILARITY_THRESHOLD, MARKETS_JSON_PATH
@@ -141,7 +141,10 @@ def _run_one_market(market: Market, ground_truth: str | None) -> dict:
     fetch_failures = 0
     fetch_failure_urls = []
     for ref in candidates:
-        if ref.source_type == "official_social":
+        # Mirrors pipeline.py: an unfetchable host (news.google.com
+        # JS-redirect wrapper) contributes its search-result headline
+        # instead. Covers official_social and the date-scoped archive pass.
+        if ref.source_type == "official_social" or (ref.summary and is_known_unresolvable_url(ref.url)):
             text = ref.summary or ref.title
             if text:
                 articles_with_text.append((ref, text))

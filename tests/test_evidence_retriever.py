@@ -1,7 +1,7 @@
 # tests/test_evidence_retriever.py
 import logging
 from unittest.mock import patch, MagicMock
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import quote
 from resolution_finder.models import Market
 import time
@@ -390,6 +390,71 @@ def test_retrieve_evidence_deduplicates_urls(mock_parse, mock_sleep):
     evidence = retrieve_evidence(CLARITY_MARKET, ["CLARITY act", "CLARITY act status"])
     urls = [e.url for e in evidence]
     assert len(urls) == len(set(urls))
+
+
+# --- Date-scoped archive pass ------------------------------------------------
+
+# A market with no named source and no known social handle, so the ONLY
+# searches retrieve_evidence runs are the Tier 2 Bing pass and (when the
+# close date has passed) the archive pass -- keeps these assertions
+# unambiguous about which call is which.
+def _plain_market(close_date):
+    return Market(
+        id="premier-league-winner-24-25",
+        title="Premier League Winner",
+        description="This is a market on who will win the Premier League in the 2024-25 season.",
+        options=["Liverpool", "Arsenal"],
+        close_date=close_date,
+    )
+
+
+def _fetched_urls(mock_parse):
+    return [call.args[0] for call in mock_parse.call_args_list]
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_runs_date_scoped_archive_pass_for_a_closed_market(mock_parse, mock_sleep):
+    # Real bug this addresses (2026-08-26): news search is recency-biased,
+    # so the real 2024-25 Premier League market retrieved ONLY 2026-27
+    # season articles and kept crowning the wrong champion. Google News RSS
+    # honors after:/before: (verified live); Bing does not (verified live:
+    # 0 entries when the operators are present).
+    mock_parse.return_value = make_fake_feed([])
+    retrieve_evidence(_plain_market(date.today() - timedelta(days=60)), ["Premier League Winner"])
+    archive_calls = [
+        u for u in _fetched_urls(mock_parse)
+        if "news.google.com" in u and "after" in u and "before" in u
+    ]
+    assert archive_calls, "expected a date-scoped Google News archive query for a closed market"
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_retrieve_evidence_skips_archive_pass_for_a_still_open_market(mock_parse, mock_sleep):
+    # For a market that hasn't closed yet, today's news IS the right window
+    # -- scoping to a past window would only hide current evidence.
+    mock_parse.return_value = make_fake_feed([])
+    retrieve_evidence(_plain_market(date.today() + timedelta(days=60)), ["Premier League Winner"])
+    archive_calls = [u for u in _fetched_urls(mock_parse) if "after" in u and "before" in u]
+    assert not archive_calls, "must not date-scope a market that is still open"
+
+
+@patch("resolution_finder.evidence_retriever.time.sleep")
+@patch("resolution_finder.evidence_retriever.feedparser.parse")
+def test_archive_refs_carry_the_headline_as_summary(mock_parse, mock_sleep):
+    # Google's entry.link is an unfetchable JS-redirect wrapper (see
+    # UNRESOLVABLE_HOSTS), so the headline itself is the only text we will
+    # ever have for these -- it must ride along in `summary`, the same way
+    # the official_social path already works.
+    mock_parse.return_value = make_fake_feed([
+        make_entry("Liverpool crowned Premier League champions", "https://www.bbc.com", "BBC"),
+    ])
+    evidence = retrieve_evidence(_plain_market(date.today() - timedelta(days=60)),
+                                 ["Premier League Winner"])
+    archive_refs = [e for e in evidence if e.summary]
+    assert archive_refs, "archive refs must carry the headline text as summary"
+    assert archive_refs[0].summary == "Liverpool crowned Premier League champions"
 
 
 # --- Social ------------------------------------------------------------------

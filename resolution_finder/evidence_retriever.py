@@ -1,7 +1,7 @@
 # resolution_finder/evidence_retriever.py
 import logging
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 from urllib.parse import quote_plus, urlparse, parse_qs
 import feedparser
@@ -210,6 +210,83 @@ def search_google_news_rss(query: str, site: Optional[str] = None) -> list[Artic
     return results
 
 
+# News search is recency-biased, which is a structural problem for a
+# RESOLVED market: the real premier-league-winner-24-25 market (about the
+# 2024-25 season) retrieved ONLY 2026-27 season articles, which is why it
+# kept crowning the wrong champion no matter how many verification guards
+# were added downstream. The fix belongs at retrieval time.
+#
+# Verified live 2026-08-26 against the real endpoints:
+#   * Google News RSS DOES honor after:/before: operators. Same query,
+#     scoped to the market's own window, returned "The Premier League
+#     champions in profile: Liverpool's class of 2024-25" -- i.e. exactly
+#     the confirming evidence, where the unscoped query returned nothing
+#     but 2026-27 previews.
+#   * Bing News RSS does NOT: it returns 0 entries when the operators are
+#     present (treats them as literal search terms), and its only date
+#     control is a RELATIVE qft=interval filter that cannot reach a
+#     historical window. So this pass has to go through Google even though
+#     Tier 2 uses Bing.
+#   * Adding season text to the query ("...2024-25 season champions")
+#     does NOT work -- still returns current-season articles. The date
+#     operators are the entire win.
+#
+# Google's entry.link is an unfetchable JS-redirect wrapper (see
+# UNRESOLVABLE_HOSTS in article_extractor.py), so the headline is the only
+# text we will ever have for these refs -- carried in `summary`, exactly
+# as the existing official_social path already does. Verified end-to-end
+# through the real decide(): headlines are dense and factual enough to
+# resolve correctly ("2026 NHL Stanley Cup Final: Carolina Hurricanes win
+# first title in 20 years"), turning two long-standing WRONG markets
+# correct.
+ARCHIVE_LEAD_DAYS = 30
+ARCHIVE_LAG_DAYS = 21
+
+# Rate-limit budget: this pass adds one Google request per query on top of
+# the existing per-query Bing request, and a big multi-outcome market
+# already builds 20-33 queries. Capped because the generic, non-option
+# queries carry most of the signal anyway -- verified in the prototype,
+# where the first few queries alone produced the correct champion for both
+# markets tested.
+ARCHIVE_MAX_QUERIES = 8
+
+
+def _date_scoped_query(query: str, close_date: date) -> str:
+    """`query` restricted to a window around the market's own close date --
+    where a resolved market's confirming coverage actually lives. The lag
+    matters as much as the lead: results//reaction pieces are published in
+    the days AFTER the event, not only before the deadline."""
+    start = close_date - timedelta(days=ARCHIVE_LEAD_DAYS)
+    end = close_date + timedelta(days=ARCHIVE_LAG_DAYS)
+    return f"{query} after:{start.isoformat()} before:{end.isoformat()}"
+
+
+def search_google_news_archive(query: str, close_date: date) -> list[ArticleRef]:
+    """Date-scoped headline search for an already-closed market. Best-effort
+    and purely additive -- callers keep every candidate the existing
+    unscoped passes already found."""
+    scoped = _date_scoped_query(query, close_date)
+    url = GOOGLE_NEWS_RSS.format(query=quote_plus(scoped))
+    feed = feedparser.parse(url)
+    _warn_if_feed_fetch_failed(feed, "Google News archive", scoped)
+    results = []
+    for entry in feed.entries:
+        domain = entry_source_domain(entry)
+        results.append(ArticleRef(
+            url=entry.link,
+            title=entry.title,
+            source_type=_outlet_tier(domain) or "general",
+            source_domain=domain,
+            published_date=_entry_published_date(entry),
+            # The headline IS the evidence text for these -- the URL can
+            # never be fetched. See this block's comment above.
+            summary=entry.title,
+        ))
+        if len(results) >= MAX_RESULTS_PER_QUERY:
+            break
+    return results
+
+
 def _social_refs(query: str, site: str) -> list[ArticleRef]:
     """Site-scoped social search, validated to actually be from that platform.
 
@@ -296,6 +373,27 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
             elif ref.source_type in CREDIBLE_TIERS:
                 evidence.append(ref)
         time.sleep(REQUEST_DELAY_SECONDS)
+
+    # Archive pass -- only for a market whose close date has already passed.
+    # For a still-open market today's news IS the correct window, and
+    # scoping to a past one would only hide current evidence. See the
+    # comment above search_google_news_archive for why this goes through
+    # Google rather than the Bing endpoint Tier 2 uses.
+    #
+    # Deliberately NOT filtered to CREDIBLE_TIERS, unlike the Bing pass
+    # above: in the real prototype the decisive headlines came from
+    # official competition sites (nhl.com, premierleague.com,
+    # liverpoolfc.com, olympics.com) that aren't on the Tier 2 whitelist
+    # but are about as authoritative as it gets for their own
+    # competition's result. Filtering them out loses the correct answer
+    # outright for premier-league-winner-24-25. Every ref still keeps its
+    # real tier for ranking and reviewer display, and still has to clear
+    # the full verification layer -- this widens what we can SEE, it does
+    # not lower the bar for what we will ASSERT.
+    if market.close_date and date.today() > market.close_date:
+        for query in queries[:ARCHIVE_MAX_QUERIES]:
+            evidence.extend(search_google_news_archive(query, market.close_date))
+            time.sleep(REQUEST_DELAY_SECONDS)
 
     seen_urls = set()
     deduped = []
