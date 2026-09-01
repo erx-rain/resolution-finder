@@ -952,6 +952,44 @@ def test_multi_outcome_market_ignores_a_different_uefa_competitions_result():
     assert not any(v.option == "Crystal Palace" and v.outcome == "YES" for v in verdicts)
 
 
+def test_multi_outcome_market_recognizes_a_common_club_nickname():
+    # Real gap found live (2026-08-26): the real epl-team-to-qualify-for-
+    # uefa-champions-league market's real confirming evidence --
+    # "Arsenal, Man Utd, Liverpool, Man City and Aston Villa will all
+    # take part in the 2026/27 Champions League" -- never even became a
+    # CANDIDATE for "Manchester United", because British football
+    # journalism commonly abbreviates ("Man Utd"), and the option-mention
+    # gate only checks whether the full option string appears verbatim.
+    # Market fell through to a safe UNCLEAR rather than a wrong answer,
+    # but the real, findable confirmation was sitting right there.
+    # Deliberately a small, unambiguous alias list (not "Forest"/
+    # "Palace"/"Villa", which are ordinary English words with real
+    # false-trigger risk) -- see TEAM_NICKNAME_ALIASES' own comment.
+    #
+    # Doesn't assert YES: this same real sentence exposed a SEPARATE,
+    # unrelated bug -- _winner_hypotheses' generic "{option} has won
+    # {market.title}" template reads badly for a QUALIFICATION-shaped
+    # title ("EPL: Team to qualify for UEFA Champions League"), scoring
+    # only 0.161. That's real, but fixing hypothesis wording broadly has
+    # repeatedly backfired this session (4 rejected attempts elsewhere);
+    # not bundling an unvalidated fix into this one. What's verified here
+    # is the actual fix: the option is now correctly recognized as a
+    # genuine, exclusively-mentioned candidate at all (it wasn't before),
+    # and the wrong option (Crystal Palace) still isn't crowned either.
+    evidence = [make_ranked(
+        "Arsenal, Man Utd , Liverpool, Man City and Aston Villa will "
+        "all take part in the 2026/27 Champions League; draw for the "
+        "league phase will take place in Monaco from 5pm UK time on "
+        "Thursday.",
+        url="https://www.skysports.com/football/news/champions-league-qualified",
+        source_type="credible_backup_secondary",
+    )]
+    verdicts = decide(CHAMPIONS_LEAGUE_QUALIFY_MARKET, evidence)
+    assert not any(v.option == "Crystal Palace" and v.outcome == "YES" for v in verdicts)
+    from resolution_finder.verdict_engine import _option_mentioned
+    assert _option_mentioned(evidence[0].text.lower(), "Manchester United")
+
+
 def test_multi_outcome_market_ignores_a_different_seasons_prediction_with_no_year_in_the_matching_sentence():
     # Real bug found live (2026-08-25): the real premier-league-winner-24-25
     # market (asking about the already-decided 2024-25 season, real winner

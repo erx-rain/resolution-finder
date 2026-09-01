@@ -565,6 +565,46 @@ def _contains_keyword(text: str, keyword: str) -> bool:
     return re.search(_word_boundary(keyword), text) is not None
 
 
+# Real gap found live (2026-08-26): the real epl-team-to-qualify-for-
+# uefa-champions-league market's real confirming evidence -- "Arsenal,
+# Man Utd, Liverpool, Man City and Aston Villa will all take part in the
+# 2026/27 Champions League" -- never even became a CANDIDATE for
+# "Manchester United", because British football journalism commonly
+# abbreviates club names, and the option-mention gate only checks
+# whether the full option string appears verbatim in the sentence (not
+# the reverse -- a shorthand mention doesn't satisfy it either). The
+# market correctly fell through to a safe UNCLEAR rather than a wrong
+# answer, but the real, findable confirmation was sitting right there.
+#
+# Deliberately a SMALL, conservative list: only nicknames that are
+# unambiguous in ordinary English text (never mistaken for something
+# else). "Man Utd"/"Man City"/"Spurs"/"Wolves" essentially only ever
+# appear in a football context. Common but AMBIGUOUS nicknames --
+# "Forest" (Nottingham Forest), "Palace" (Crystal Palace), "Villa"
+# (Aston Villa), bare "Brighton" -- are deliberately left OUT: they're
+# ordinary English words/place names with real false-trigger risk, and
+# missing a match here means a safe UNCLEAR, not a wrong answer, which
+# is the acceptable failure mode.
+TEAM_NICKNAME_ALIASES: dict[str, list[str]] = {
+    "Manchester United": ["man utd", "man united"],
+    "Manchester City": ["man city"],
+    "Tottenham Hotspur": ["spurs"],
+    "Wolverhampton Wanderers": ["wolves"],
+}
+
+
+def _option_mentioned(lowered_sentence: str, option: str) -> bool:
+    """True if `lowered_sentence` names `option`, either by its own full
+    name or one of its known, unambiguous nicknames."""
+    option_lower = option.strip().lower()
+    if _contains_keyword(lowered_sentence, option_lower):
+        return True
+    return any(
+        _contains_keyword(lowered_sentence, alias)
+        for alias in TEAM_NICKNAME_ALIASES.get(option, [])
+    )
+
+
 def _split_sentences(text: str) -> list[str]:
     return [s for s in SENTENCE_SPLIT_PATTERN.split(text) if s.strip()]
 
@@ -1429,7 +1469,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
             # alone).
             mentioned_options = [
                 opt for opt in market.options
-                if opt.strip() and _contains_keyword(lowered, opt.strip().lower())
+                if opt.strip() and _option_mentioned(lowered, opt)
             ]
             for option in market.options:
                 option_lower = option.strip().lower()
@@ -1452,7 +1492,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 # eliminated) -- that judgment now belongs entirely to the
                 # NLI verification call, which is what actually reads the
                 # sentence's meaning.
-                option_mentioned = _contains_keyword(lowered, option_lower)
+                option_mentioned = _option_mentioned(lowered, option)
 
                 other_mentioned_options = [opt for opt in mentioned_options if opt != option]
                 if (winner is None and not context_conflict and option_mentioned
@@ -1588,7 +1628,7 @@ def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]
                 # Same mention-then-verify gate as _decide_multi_outcome
                 # (see its comment for why) -- a mere mention alone is not
                 # trusted as the verdict, only NLI verification is.
-                option_mentioned = _contains_keyword(lowered, option_lower)
+                option_mentioned = _option_mentioned(lowered, option)
                 if option_mentioned and _verify_winner_candidate(sentence, option, market):
                     outcome = "YES"
                 elif option_mentioned and _verify_elimination_candidate(sentence, option, market):
