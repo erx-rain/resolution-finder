@@ -287,10 +287,26 @@ EGYPT_MARKET = Market(
     close_date=date(2023, 12, 12),
 )
 
+# Description verbatim from data/markets.json -- needed as-is (not
+# simplified) because the wrong-subject-entity veto's escape hatch reads
+# subject_terms from the FULL description; a simplified description
+# doesn't reproduce the real bug below.
 EPSTEIN_DISCLOSURE_MARKET = Market(
     id="congress-passes-epstein-disclosure-billresolution-in-2025",
     title="Congress passes Epstein disclosure bill/resolution in 2025?",
-    description="Primary resolution source: official congressional records.",
+    description=(
+        'This market will resolve to "Yes" if both the U.S. House of '
+        "Representatives and the U.S. Senate pass the same bill, "
+        "measure, or resolution that explicitly mandates, compels, or "
+        "formally calls for the public release of documents related to "
+        "Jeffrey Epstein by December 31, 2025, at 11:59 PM ET. "
+        'Otherwise, this market will resolve to "No."\n\n'
+        "A measure amended by either chamber will only qualify if the "
+        "amended version is subsequently passed by both chambers in "
+        "identical form.\n\n"
+        "The resolution source will be official congressional voting "
+        "records and a consensus of credible reporting."
+    ),
     options=[],
     close_date=date(2025, 12, 31),
 )
@@ -316,14 +332,24 @@ def test_binary_market_resolves_yes_on_sworn_in_language():
 
 def test_binary_market_resolves_yes_on_forced_release_language():
     # Real bug found live (2026-08-26): the real Congress/Epstein
-    # disclosure market (real answer: Yes) wrongly resolved NO. The
-    # confirming action here ("voted... to force the release of" files)
-    # doesn't match any BINARY_YES_KEYWORDS phrase, all of which assume
-    # bill-signing/chamber-passage vocabulary.
+    # disclosure market (real answer: Yes) wrongly resolved NO, TWICE
+    # over. First: "voted... to force the release of" files doesn't
+    # match any BINARY_YES_KEYWORDS phrase (fixed by CONSEQUENCE_YES_
+    # KEYWORDS). Second, deeper bug found re-testing against the REAL
+    # full article text (not a simplified single-sentence version): the
+    # real sentence also names "Justice Department" and "President
+    # Donald Trump" -- unrelated entities -- and extract_entities'
+    # pattern requires 2+ CONSECUTIVE capitalized words, so it can never
+    # extract a single-word distinctive term like "Epstein" from this
+    # market's own title, silently disabling the wrong-subject veto's
+    # escape hatch for this market entirely (see
+    # _distinctive_subject_terms' own comment).
     evidence = [make_ranked(
         "The Republican-controlled US Congress voted almost unanimously "
         "on Tuesday to force the release of Justice Department files on "
-        "the late convicted sex offender Jeffrey Epstein."
+        "the late convicted sex offender Jeffrey Epstein, an outcome "
+        "President Donald Trump had fought for months before ending his "
+        "opposition."
     )]
     verdict = decide(EPSTEIN_DISCLOSURE_MARKET, evidence)
     assert verdict.outcome == "YES"

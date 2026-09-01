@@ -599,6 +599,26 @@ def _distinctive_subject_terms(market: Market) -> list[str]:
     for word in ACRONYM_PATTERN.findall(market.title):
         if word not in terms:
             terms.append(word)
+    # Real bug found live (2026-08-26): extract_entities' pattern requires
+    # TWO OR MORE consecutive capitalized words, so a market whose only
+    # distinctive title word is a single proper noun ("Congress passes
+    # Epstein disclosure bill/resolution in 2025?" -- "Epstein" has no
+    # adjacent capitalized word) extracts NOTHING at all here, silently
+    # disabling this escape hatch for that market entirely: ANY sentence
+    # mentioning an unrelated entity gets vetoed from then on, even one
+    # that ALSO genuinely names the market's real subject in the same
+    # breath. Restricted to non-title-initial words -- the first word is
+    # ambiguous (capitalized purely by sentence-start convention, not
+    # necessarily a proper noun), but a capitalized word LATER in the
+    # title is a much more reliable name signal. "Congress" (title-
+    # initial) is deliberately NOT picked up this way, matching the
+    # existing "generic reused domain term" reasoning already applied to
+    # "U.S. Senate" boilerplate above. All-caps words are excluded (an
+    # acronym, already handled by ACRONYM_PATTERN just above).
+    for word in market.title.split()[1:]:
+        cleaned = word.strip(".,;:!?()[]\"'")
+        if len(cleaned) >= 4 and cleaned[0].isupper() and cleaned[1:].islower() and cleaned not in terms:
+            terms.append(cleaned)
     return terms
 
 
