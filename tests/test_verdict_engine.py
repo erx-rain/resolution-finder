@@ -816,6 +816,42 @@ def test_multi_outcome_market_does_not_treat_a_nomination_as_a_win():
     assert not any(v.option == "UNRWA" and v.outcome == "YES" for v in verdicts)
 
 
+# Real market pulled from Polymarket (democratic-nominee-2024) --
+# title/description verbatim.
+DEMOCRATIC_NOMINEE_MARKET = Market(
+    id="democratic-nominee-2024",
+    title="Democratic Nominee 2024",
+    description="This is a market on who will be the Democratic nominee for the 2024 presidential election.",
+    options=["Joe Biden", "Gavin Newsom", "Robert F. Kennedy Jr.", "Kamala Harris", "Hillary Clinton",
+             "Michelle Obama", "Elizabeth Warren", "Other (Incl. Whitmer)", "Dean Phillips"],
+    close_date=date(2024, 8, 21),
+)
+
+
+def test_multi_outcome_market_resolves_yes_when_becoming_the_nominee_is_the_win_condition():
+    # Real bug found live (2026-08-26), a direct regression from the fix
+    # right above: bare "nominee" in NEGATION_HEDGE_WORDS also matches
+    # "It's official: Kamala Harris becomes Democrats' 2024 presidential
+    # nominee - NPR" -- which for THIS market (a nomination CONTEST, not
+    # an award) is the actual win condition, not mere candidacy. The
+    # sentence never reached NLI verification at all; direct calibration
+    # confirmed it would have scored 0.997 if it had. The real market
+    # wrongly crowned Michelle Obama instead, off a separate, lower-
+    # similarity sentence merely describing her speaking at the
+    # convention. Distinguishing "nominated FOR an award" (candidacy,
+    # hedge) from "becomes THE nominee" (the win itself, don't hedge)
+    # needs the qualifier -- see NEGATION_HEDGE_WORDS' own comment.
+    evidence = [make_ranked(
+        "It's official: Kamala Harris becomes Democrats' 2024 "
+        "presidential nominee - NPR",
+        url="https://news.google.com/rss/articles/npr-harris",
+        source_type="credible_backup",
+        similarity=0.581,
+    )]
+    verdicts = decide(DEMOCRATIC_NOMINEE_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts}["Kamala Harris"] == "YES"
+
+
 # Real market pulled from Polymarket (2026-nhl-stanley-cup-champion) --
 # title/description verbatim, options trimmed to the two relevant below
 # (real full list has 32).

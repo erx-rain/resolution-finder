@@ -426,7 +426,20 @@ NEGATION_HEDGE_WORDS = [
     # nomination-stage news for options that never win, same failure
     # shape as "raring to" (describes standing/eligibility, not a
     # decided outcome).
-    "nominated", "nomination", "nominee", "shortlisted",
+    #
+    # Qualified with "for" ("nominated FOR", "a nominee FOR"), not bare
+    # "nominated"/"nomination"/"nominee": real regression found live
+    # (2026-08-26) -- for a NOMINATION-CONTEST market (a party primary),
+    # unlike an AWARD market (the Nobel Prize), "becomes the nominee" /
+    # "receives the nomination" IS the win condition, not mere candidacy.
+    # Bare "nominee" wrongly hedged the real evidence "It's official:
+    # Kamala Harris becomes Democrats' 2024 presidential nominee - NPR"
+    # (which direct calibration confirmed scores 0.997 on the winner-
+    # verification NLI check once it's even given the chance), and the
+    # market wrongly crowned a different option off weaker evidence
+    # instead. "nominated for [an award]" / "a nominee for [a prize]" is
+    # unambiguous candidacy language in a way bare "nominee" is not.
+    "nominated for", "nomination for", "a nominee for", "shortlisted for",
     # Real bug found live (2026-08-26): real evidence for the 2026 NHL
     # Stanley Cup Champion market -- "The Pittsburgh Penguins returned to
     # the Stanley Cup Playoffs in 2026." -- wrongly confirmed the
