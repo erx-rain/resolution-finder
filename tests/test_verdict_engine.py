@@ -278,6 +278,57 @@ def test_binary_market_resolves_yes_on_fda_approval_language():
     assert verdict.outcome == "YES"
 
 
+# Real markets pulled from Polymarket (titles verbatim).
+EGYPT_MARKET = Market(
+    id="egypt-presidential-election-will-abdel-fattah-el-sisi-win",
+    title="Egypt Presidential Election: Will Abdel Fattah el-Sisi win?",
+    description="Primary resolution source: official Egyptian election results.",
+    options=[],
+    close_date=date(2023, 12, 12),
+)
+
+EPSTEIN_DISCLOSURE_MARKET = Market(
+    id="congress-passes-epstein-disclosure-billresolution-in-2025",
+    title="Congress passes Epstein disclosure bill/resolution in 2025?",
+    description="Primary resolution source: official congressional records.",
+    options=[],
+    close_date=date(2025, 12, 31),
+)
+
+
+def test_binary_market_resolves_yes_on_sworn_in_language():
+    # Real bug found live (2026-08-26): the real Egypt presidential
+    # election market (real winner: Yes, el-Sisi won) wrongly resolved
+    # NO. BINARY_YES_KEYWORDS has no election/inauguration vocabulary at
+    # all. Doesn't trip the wrong-subject-entity veto or the hedge guard
+    # -- purely a missing keyword, verified via a narrower, separately-
+    # calibrated threshold (see CONSEQUENCE_VERIFICATION_THRESHOLD's own
+    # comment for why the shared 0.85 threshold can't be reused here).
+    evidence = [make_ranked(
+        "Egyptian President Abdel Fattah al-Sisi was sworn in for his "
+        "third term on Tuesday in the country's new capital, the largest "
+        "of the mega-projects that have signaled his push toward "
+        "development."
+    )]
+    verdict = decide(EGYPT_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
+def test_binary_market_resolves_yes_on_forced_release_language():
+    # Real bug found live (2026-08-26): the real Congress/Epstein
+    # disclosure market (real answer: Yes) wrongly resolved NO. The
+    # confirming action here ("voted... to force the release of" files)
+    # doesn't match any BINARY_YES_KEYWORDS phrase, all of which assume
+    # bill-signing/chamber-passage vocabulary.
+    evidence = [make_ranked(
+        "The Republican-controlled US Congress voted almost unanimously "
+        "on Tuesday to force the release of Justice Department files on "
+        "the late convicted sex offender Jeffrey Epstein."
+    )]
+    verdict = decide(EPSTEIN_DISCLOSURE_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
 def test_binary_market_does_not_treat_procedural_advancement_as_final_passage():
     # The real live evidence found for this exact market: a procedural vote
     # to ADVANCE a resolution is not the same as the resolution PASSING --

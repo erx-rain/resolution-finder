@@ -1200,6 +1200,32 @@ def _verify_binary_yes_candidate(sentence: str) -> bool:
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
+# Narrower, separately-calibrated companion to BINARY_YES_KEYWORDS: real
+# bugs found live (2026-08-26), election/inauguration and legislative-
+# consequence language that doesn't fit BINARY_YES_KEYWORDS' shape at all
+# ("was sworn in for his third term", "voted... to force the release of"
+# files) but genuinely confirms a YES outcome. The subject-agnostic NLI
+# check (_verify_binary_yes_candidate, same hypotheses as above) DOES
+# score these correctly relative to real noise -- real calibration:
+# Egypt 0.683, Epstein 0.730, vs FALSE cases like "the committee
+# discussed the bill's implications" (0.860) and "have emerged as the
+# frontrunners" (0.909) scoring HIGHER. That backwards ordering is why
+# the shared NLI_VERIFICATION_THRESHOLD (0.85) can't just be lowered
+# globally -- it would let those false cases through too. This narrower
+# keyword list is gated separately with its own, lower threshold
+# instead: false-trigger risk stays contained by (a) the phrase's own
+# specificity, (b) the existing hedge guard, (c) the existing wrong-
+# subject-entity veto, all still required to pass first, unchanged.
+CONSEQUENCE_YES_KEYWORDS = ["sworn in", "to force the release of"]
+CONSEQUENCE_VERIFICATION_THRESHOLD = 0.6
+
+
+def _verify_consequence_yes_candidate(sentence: str) -> bool:
+    positive, _ = _binary_yes_hypotheses()
+    scores = _classify_scores(sentence, list(_binary_yes_hypotheses()))
+    return scores[positive] >= CONSEQUENCE_VERIFICATION_THRESHOLD
+
+
 def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
     subject_terms = _subject_terms(market)
     distinctive_terms = _distinctive_subject_terms(market)
@@ -1211,6 +1237,15 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                 continue
             if (any(_contains_keyword(sentence.lower(), keyword) for keyword in BINARY_YES_KEYWORDS)
                     and _verify_binary_yes_candidate(sentence)):
+                return Verdict(
+                    outcome="YES",
+                    confidence=item.similarity,
+                    evidence_snippet=sentence.strip()[:280],
+                    source_url=item.article.url,
+                    source_type=item.article.source_type,
+                )
+            if (any(_contains_keyword(sentence.lower(), keyword) for keyword in CONSEQUENCE_YES_KEYWORDS)
+                    and _verify_consequence_yes_candidate(sentence)):
                 return Verdict(
                     outcome="YES",
                     confidence=item.similarity,
