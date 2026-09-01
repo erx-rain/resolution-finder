@@ -755,6 +755,47 @@ def test_multi_outcome_market_still_resolves_yes_when_evidence_states_matching_p
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
 
+CANADIAN_CUP_MARKET = Market(
+    id="will-a-canadian-team-win-nhl-stanley-cup-782",
+    title="Will a Canadian team win NHL Stanley Cup?",
+    description="This market will resolve to \"Yes\" if a Canadian team wins the NHL Stanley Cup.",
+    options=[],
+    close_date=date(2025, 6, 24),
+)
+
+
+def test_binary_market_does_not_treat_a_question_headline_as_a_result():
+    # Real regression found live (2026-08-26) after date-scoped archive
+    # retrieval started supplying HEADLINES as evidence: the real
+    # "Will a Canadian team win NHL Stanley Cup?" market (truth: No)
+    # flipped to YES off the headline "Canada's Stanley Cup drought is
+    # decades long: Can Edmonton Oilers end it?" -- an interrogative,
+    # i.e. speculation, not a report of a result. Headlines make this
+    # failure mode far more common than full article prose did, and no
+    # existing hedge phrase catches "Can ... ?" framing.
+    evidence = [make_ranked(
+        "Canada's Stanley Cup drought is decades long: Can Edmonton "
+        "Oilers end it? - usatoday.com",
+        url="https://news.google.com/rss/articles/xyz",
+        source_type="credible_backup_secondary",
+    )]
+    verdict = decide(CANADIAN_CUP_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_multi_outcome_market_does_not_treat_a_question_headline_as_a_winner():
+    # Same failure mode on the multi-outcome path: "Who could replace Joe
+    # Biden as the 2024 Democratic nominee?" names real options but
+    # confirms nothing.
+    evidence = [make_ranked(
+        "Who could replace Joe Biden as the 2024 Democratic nominee? - CBS News",
+        url="https://news.google.com/rss/articles/abc",
+        source_type="credible_backup",
+    )]
+    verdicts = decide(NOBEL_MARKET, evidence)
+    assert all(v.outcome != "YES" for v in verdicts)
+
+
 def test_multi_outcome_market_does_not_treat_a_nomination_as_a_win():
     # Real bug found live (2026-08-25) against real production evidence
     # for the 2026 Nobel Peace Prize: "In addition to UNRWA, the ICJ was

@@ -296,7 +296,7 @@ def _decide_numeric_threshold(
     distinctive_terms = _distinctive_subject_terms(market)
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
-            if _sentence_has_hedge(sentence):
+            if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
@@ -338,7 +338,7 @@ def _decide_numeric_threshold(
     # remains the only way this function ever returns YES.
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
-            if _sentence_has_hedge(sentence):
+            if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
@@ -559,6 +559,25 @@ def _split_sentences(text: str) -> list[str]:
 def _sentence_has_hedge(sentence: str) -> bool:
     lowered = sentence.lower()
     return any(word in lowered for word in NEGATION_HEDGE_WORDS)
+
+
+def _sentence_is_interrogative(sentence: str) -> bool:
+    """True if `sentence` IS a question, not merely mentions one -- an
+    interrogative headline speculates ("Can Edmonton Oilers end it?"), it
+    doesn't report a result. Real regressions found live (2026-08-26)
+    after date-scoped archive retrieval started supplying HEADLINES as
+    evidence, which made this failure mode far more common than full
+    article prose ever did: "Canada's Stanley Cup drought is decades
+    long: Can Edmonton Oilers end it?" wrongly confirmed a Canadian team
+    winning; "Who could replace Joe Biden as the 2024 Democratic
+    nominee?" wrongly confirmed a nominee. `_split_sentences` splits on
+    "?" followed by whitespace, so the real question sentence keeps its
+    own trailing "?" once split from any trailing attribution ("... end
+    it? - usatoday.com" splits into the question and a separate,
+    keyword-free "- usatoday.com" fragment) -- checking the END of the
+    sentence, not just whether it CONTAINS "?" anywhere, avoids rejecting
+    a sentence that merely quotes a question mark mid-clause."""
+    return sentence.rstrip().endswith("?")
 
 
 def _subject_terms(market: Market) -> list[str]:
@@ -1251,7 +1270,7 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
     distinctive_terms = _distinctive_subject_terms(market)
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
-            if _sentence_has_hedge(sentence):
+            if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
@@ -1278,7 +1297,7 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
     # at all above. Keyword matching stays primary/more precise.
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
-            if _sentence_has_hedge(sentence):
+            if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
@@ -1343,7 +1362,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
         # to compare against on that specific sentence.
         article_lead_sentence = _first_sentence(item.text)
         for sentence in _split_sentences(item.text):
-            if _sentence_has_hedge(sentence):
+            if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
             lowered = sentence.lower()
             # Gate winner/elimination matches on this sentence not naming a
@@ -1527,7 +1546,7 @@ def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]
     evidence_verdicts: dict[str, Verdict] = {}
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
-            if _sentence_has_hedge(sentence):
+            if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
             lowered = sentence.lower()
             for option in market.options:
