@@ -1271,6 +1271,24 @@ def _verify_binary_yes_candidate(sentence: str) -> bool:
 CONSEQUENCE_YES_KEYWORDS = ["sworn in", "to force the release of"]
 CONSEQUENCE_VERIFICATION_THRESHOLD = 0.6
 
+# Real bug found live (2026-08-26): the real Man City market (real
+# answer: Yes) had NO BINARY_YES_KEYWORDS or CONSEQUENCE_YES_KEYWORDS
+# match despite retrieval finding the exact right evidence: "Inside
+# Manchester City's history-making fourth Premier League title in a row
+# - The Athletic - The New York Times" (scores 0.801 on the winner-
+# verification NLI check -- above CONSEQUENCE_VERIFICATION_THRESHOLD).
+# TRIED AND REJECTED: adding "history-making"/"back-to-back"/"in a row"/
+# "record-breaking" as CONSEQUENCE_YES_KEYWORDS. Calibration against
+# plausible PREVIEW sentences ("City's bid for a fourth title in a row
+# continues...", "A fourth title in a row is within reach...") scored
+# 0.803-0.905 -- INDISTINGUISHABLE from the real confirmed case. These
+# words are adjectival descriptors of a STORYLINE, not markers of
+# completion -- they describe an in-progress pursuit exactly as readily
+# as an achieved one, so no threshold can separate them. Shipping this
+# would trade one wrong answer for new, unpredictable ones elsewhere.
+# Left as a known, unfixed gap -- correctly resolves UNCLEAR rather than
+# a guessed wrong answer.
+
 
 def _verify_consequence_yes_candidate(sentence: str) -> bool:
     positive, _ = _binary_yes_hypotheses()
