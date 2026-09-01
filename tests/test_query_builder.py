@@ -41,6 +41,33 @@ def test_build_queries_includes_each_option():
         assert any(option in q for q in queries)
 
 
+# Real market pulled from Polymarket (egypt-presidential-election-will-
+# abdel-fattah-el-sisi-win) -- title/description verbatim.
+EGYPT_QUERY_MARKET = Market(
+    id="egypt-presidential-election-will-abdel-fattah-el-sisi-win",
+    title="Egypt Presidential Election: Will Abdel Fattah el-Sisi win?",
+    description="Primary resolution source: official Egyptian election results.",
+    options=[],
+    close_date=date(2023, 12, 12),
+)
+
+
+def test_build_queries_falls_back_to_title_entities_when_description_has_none():
+    # Real gap found live (2026-08-26): this market's description has NO
+    # 2+-word capitalized phrase at all ("official Egyptian election
+    # results" -- no consecutive capitalized words), so extract_entities
+    # returns [] and the entity-enriched second query never gets built --
+    # only the bare title is ever searched, ONE query total. Measured
+    # live: re-running this exact market 3 times in a row against the
+    # real search endpoint found the confirming evidence only 1 of 3
+    # times -- a single query has no redundancy against ordinary search
+    # non-determinism. The market's own TITLE has real entities ("Egypt
+    # Presidential Election", "Abdel Fattah") that the description-only
+    # check was silently ignoring.
+    queries = build_queries(EGYPT_QUERY_MARKET)
+    assert len(queries) > 1
+
+
 # Real description copied verbatim from data/markets.json
 # (international-2026-champion) -- this is what actually produced the
 # garbled live query, not a constructed example.

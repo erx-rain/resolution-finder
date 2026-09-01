@@ -90,7 +90,18 @@ def extract_entities(text: str) -> list[str]:
 
 def build_queries(market: Market) -> list[str]:
     queries = [market.title]
-    entities = extract_entities(market.description)
+    # Real gap found live (2026-08-26): a market's description can have
+    # NO 2+-word capitalized phrase at all (e.g. "Primary resolution
+    # source: official Egyptian election results.") while its own TITLE
+    # clearly names real entities ("Egypt Presidential Election", "Abdel
+    # Fattah") -- description-only extraction silently produced just ONE
+    # query total for that market, with no redundancy against ordinary
+    # search-result non-determinism. Measured live: re-running that exact
+    # market 3 times against the real search endpoint found its
+    # confirming evidence only 1 of 3 times. Title-derived entities are
+    # a fallback, not additive, to avoid duplicating the bare title
+    # query when the description already supplies real entities.
+    entities = extract_entities(market.description) or extract_entities(market.title)
     if entities:
         queries.append(" ".join(entities[:3]) + " " + market.title.split("?")[0])
     for option in market.options:
