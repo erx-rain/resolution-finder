@@ -1946,31 +1946,78 @@ def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]
     # precision point 2). This mirrors _decide_multi_outcome's own
     # winner/elimination scan but keyed per date-option instead of
     # collecting a single market-wide winner.
-    evidence_verdicts: dict[str, Verdict] = {}
+    #
+    # Phase 4 corroboration (2026-09-02): a single YES confirmation is no
+    # longer enough on its own -- same CORROBORATION_MIN_DOMAINS bar as
+    # the other three decide() paths. NO stays single-source verified,
+    # matching _decide_multi_outcome phase 2's own scope decision (see
+    # its comment): only the positive assertion is gated here, not
+    # elimination, for the same consistency reason across this file's
+    # near-identical winner/elimination NLI mechanism.
+    no_verdicts: dict[str, Verdict] = {}
+    yes_confirmations: dict[str, list[tuple[str, RankedArticle]]] = {}
     for item in ranked_evidence:
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
             lowered = sentence.lower()
             for option in market.options:
-                if option in evidence_verdicts:
+                if option in no_verdicts:
                     continue
                 option_lower = option.strip().lower()
-                outcome = None
+                if not option_lower:
+                    continue
                 # Same mention-then-verify gate as _decide_multi_outcome
                 # (see its comment for why) -- a mere mention alone is not
                 # trusted as the verdict, only NLI verification is.
-                option_mentioned = _option_mentioned(lowered, option)
-                if option_mentioned and _verify_winner_candidate(sentence, option, market):
-                    outcome = "YES"
-                elif option_mentioned and _verify_elimination_candidate(sentence, option, market):
-                    outcome = "NO"
-                if outcome:
-                    evidence_verdicts[option] = Verdict(
-                        outcome=outcome, option=option, confidence=item.similarity,
+                if not _option_mentioned(lowered, option):
+                    continue
+                if (len(yes_confirmations.get(option, [])) < MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION
+                        and _verify_winner_candidate(sentence, option, market)):
+                    yes_confirmations.setdefault(option, []).append((sentence, item))
+                    continue
+                if _verify_elimination_candidate(sentence, option, market):
+                    no_verdicts[option] = Verdict(
+                        outcome="NO", option=option, confidence=item.similarity,
                         evidence_snippet=sentence.strip()[:280],
                         source_url=item.article.url, source_type=item.article.source_type,
                     )
+
+    evidence_verdicts: dict[str, Verdict] = {}
+    for option in market.options:
+        if option in no_verdicts:
+            if option in yes_confirmations:
+                # Genuine disagreement for this SAME option: some evidence
+                # confirms it, other evidence eliminates it -- same shape
+                # as the other phases' conflict abstention. Flag for
+                # review rather than guess which source is right.
+                sentence, item = yes_confirmations[option][0]
+                evidence_verdicts[option] = Verdict(
+                    outcome="UNCLEAR", option=option, confidence=item.similarity,
+                    evidence_snippet=(
+                        "Conflicting evidence for this option -- some "
+                        "sources confirm it, others eliminate it -- "
+                        "flagged for review rather than guessed."
+                    ),
+                    source_url=item.article.url, source_type=item.article.source_type,
+                )
+            else:
+                evidence_verdicts[option] = no_verdicts[option]
+        elif option in yes_confirmations:
+            confirmations = yes_confirmations[option]
+            sentence, item = confirmations[0]
+            if _corroborating_domain_count(confirmations) >= CORROBORATION_MIN_DOMAINS:
+                evidence_verdicts[option] = Verdict(
+                    outcome="YES", option=option, confidence=item.similarity,
+                    evidence_snippet=sentence.strip()[:280],
+                    source_url=item.article.url, source_type=item.article.source_type,
+                )
+            else:
+                evidence_verdicts[option] = Verdict(
+                    outcome="UNCLEAR", option=option, confidence=item.similarity,
+                    evidence_snippet=(sentence.strip()[:280] + _uncorroborated_note(confirmations)),
+                    source_url=item.article.url, source_type=item.article.source_type,
+                )
 
     today = date.today()
     results: list[Verdict] = []
