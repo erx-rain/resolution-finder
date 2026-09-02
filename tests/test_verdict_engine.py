@@ -85,7 +85,17 @@ def test_binary_market_resolves_yes_on_keyword_match():
     assert verdict.source_url == "https://congress.gov/bill/3633"
 
 
-def test_binary_market_applies_stated_default_after_deadline():
+def test_binary_market_does_not_assert_stated_default_after_deadline():
+    # Behaviour deliberately CHANGED 2026-08-26 (was: asserts the stated
+    # default as a NO verdict). Emitting the market's stated fallback on
+    # a close-date-passed market conflates "our retrieval found nothing"
+    # with "the event did not happen". Measured on the real 30-market
+    # eval, that path was a coin flip -- 2 correct (Powell, Canadian-NHL)
+    # and 2 WRONG (Egypt and Man City, both truth=Yes, both asserted NO
+    # only because the confirming article didn't surface on that run).
+    # Under a minimize-wrong objective an unresolved answer is cheap and
+    # a confident wrong one is not. The stated default is still surfaced
+    # as reviewer context in the snippet, never as the outcome.
     past_deadline_market = Market(
         id="clarity-act-2026",
         title=CLARITY_MARKET.title,
@@ -94,7 +104,8 @@ def test_binary_market_applies_stated_default_after_deadline():
         close_date=date.today() - timedelta(days=1),
     )
     verdict = decide(past_deadline_market, [])
-    assert verdict.outcome == "NO"
+    assert verdict.outcome == "NO_EVIDENCE"
+    assert "stated default is NO" in (verdict.evidence_snippet or "")
 
 
 # Verbatim from data/markets.json
@@ -124,9 +135,13 @@ POWELL_MARKET = Market(
 )
 
 
-def test_binary_market_applies_otherwise_phrased_default_after_deadline():
+def test_binary_market_parses_otherwise_phrased_default_but_does_not_assert_it():
+    # The "Otherwise, this market will resolve to 'No'." parsing fix
+    # (2026-08-25) is still exercised -- it must still be RECOGNISED, it
+    # just isn't emitted as the verdict any more (see the test above).
     verdict = decide(POWELL_MARKET, [])
-    assert verdict.outcome == "NO"
+    assert verdict.outcome == "NO_EVIDENCE"
+    assert "stated default is NO" in (verdict.evidence_snippet or "")
 
 
 def test_binary_market_unclear_when_evidence_inconclusive():
@@ -477,14 +492,16 @@ def test_multi_outcome_market_unclear_when_no_option_matches():
     assert verdicts[0].option is None
 
 
-def test_multi_outcome_market_applies_stated_no_default_after_deadline():
+def test_multi_outcome_market_does_not_assert_stated_no_default_after_deadline():
+    # Behaviour deliberately CHANGED 2026-08-26, same reasoning as the
+    # binary case: resolving every option NO purely because the close
+    # date passed asserts an outcome from OUR failure to find evidence.
     past_deadline_market = Market(
         id="nobel-peace-2026", title=NOBEL_MARKET.title, description=NOBEL_DESCRIPTION,
         options=NOBEL_MARKET.options, close_date=date.today() - timedelta(days=1),
     )
     verdicts = decide(past_deadline_market, [])
-    assert {v.option for v in verdicts} == set(NOBEL_MARKET.options)
-    assert all(v.outcome == "NO" for v in verdicts)
+    assert all(v.outcome == "NO_EVIDENCE" for v in verdicts)
 
 
 def test_multi_outcome_market_matches_announcement_keyword_as_whole_word():
@@ -517,13 +534,17 @@ def test_multi_outcome_market_ignores_option_inside_a_longer_word():
     assert verdicts[0].outcome == "UNCLEAR"
 
 
-def test_multi_outcome_market_applies_stated_option_default_after_deadline():
+def test_multi_outcome_market_does_not_crown_a_named_default_option_after_deadline():
+    # Behaviour deliberately CHANGED 2026-08-26. This was the WORST case
+    # of the stated-default rule: a named default ("...resolve to Real
+    # Madrid") crowned a specific option YES on literally no evidence,
+    # purely because the close date had passed.
     past_deadline_market = Market(
         id="vinicius-transfer-2026", title=VINICIUS_MARKET.title, description=VINICIUS_DESCRIPTION,
         options=VINICIUS_MARKET.options, close_date=date.today() - timedelta(days=1),
     )
     verdicts = decide(past_deadline_market, [])
-    assert {v.option: v.outcome for v in verdicts} == {"Real Madrid": "YES", "Arsenal": "NO"}
+    assert all(v.outcome != "YES" for v in verdicts)
 
 
 def test_multi_outcome_market_resolves_yes_on_contract_renewal_language():
@@ -1069,17 +1090,19 @@ def test_multi_outcome_market_elimination_does_not_claim_the_other_option_won():
     assert "Team Spirit" not in {v.option for v in verdicts}
 
 
-def test_multi_outcome_market_named_default_outside_option_list_resolves_all_no():
-    # Real scenario: Osun's "resolve to 'Other'" default. "Other" matches
-    # none of the listed candidates, so every listed option resolves No --
-    # also exercises the new "not known" DEFAULT_OUTCOME_PATTERN trigger.
+def test_multi_outcome_market_named_default_outside_option_list_does_not_resolve():
+    # Real scenario: Osun's "resolve to 'Other'" default, which matches
+    # none of the listed candidates. Behaviour deliberately CHANGED
+    # 2026-08-26 (was: every listed option resolves No). Still exercises
+    # the "not known" DEFAULT_OUTCOME_PATTERN trigger -- the default is
+    # still parsed and surfaced, just not asserted.
     past_deadline_market = Market(
         id="osun-state-governor-2026", title=OSUN_MARKET.title, description=OSUN_DESCRIPTION,
         options=OSUN_MARKET.options, close_date=date.today() - timedelta(days=1),
     )
     verdicts = decide(past_deadline_market, [])
-    assert {v.option for v in verdicts} == set(OSUN_MARKET.options)
-    assert all(v.outcome == "NO" for v in verdicts)
+    assert all(v.outcome == "NO_EVIDENCE" for v in verdicts)
+    assert "stated default is Other" in (verdicts[0].evidence_snippet or "")
 
 
 DATE_THRESHOLD_DESCRIPTION = (
@@ -1098,9 +1121,15 @@ DATE_THRESHOLD_MARKET = Market(
 )
 
 
-def test_date_threshold_option_resolves_no_once_its_own_date_has_passed():
-    # Freeze "today" at a point after the August option's date but before
-    # the September/October ones, with no evidence found for any option.
+def test_date_threshold_option_does_not_resolve_no_once_its_own_date_has_passed():
+    # Behaviour deliberately CHANGED 2026-08-26 (was: resolves NO). An
+    # elapsed date tells us the deadline is behind us, never that the
+    # event failed to occur -- the same absence-as-proof fallacy removed
+    # from the binary and multi-outcome stated-default paths. Unlike
+    # those two, this specific path has no ground-truth data measuring
+    # it (the one date-threshold market in the eval set is
+    # NO_GROUND_TRUTH), so it's changed for consistency of reasoning
+    # rather than on measured error.
     past_date_market = Market(
         id="date-threshold-test", title=DATE_THRESHOLD_MARKET.title,
         description=DATE_THRESHOLD_DESCRIPTION,
@@ -1112,7 +1141,7 @@ def test_date_threshold_option_resolves_no_once_its_own_date_has_passed():
         mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
         verdicts = decide(past_date_market, [])
     by_option = {v.option: v.outcome for v in verdicts}
-    assert by_option["August 1, 2026"] == "NO"
+    assert by_option["August 1, 2026"] == "UNCLEAR"
 
 
 def test_date_threshold_option_stays_unclear_before_its_own_date():

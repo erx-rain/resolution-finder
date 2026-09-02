@@ -1243,6 +1243,24 @@ def _verify_elimination_candidate(sentence: str, option: str, market: Market) ->
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
+def _deadline_default_note(market: Market) -> str:
+    """Reviewer-facing CONTEXT for a market whose close date has passed
+    with nothing confirmed -- never a verdict. See _decide_binary's own
+    comment for why the stated default is no longer emitted as an answer
+    (it was a measured coin flip: 2 correct, 2 wrong, on the real eval).
+    Returns "" when there's nothing useful to say."""
+    if not market.close_date or date.today() <= market.close_date:
+        return ""
+    stated_default = _extract_default_outcome(market.description)
+    if not stated_default:
+        return ""
+    return (
+        f" [Close date passed and no confirming evidence was found. "
+        f"This market's own stated default is {stated_default} -- shown "
+        f"as context for review, NOT asserted as a verdict.]"
+    )
+
+
 def _extract_default_outcome(description: str) -> Optional[str]:
     match = DEFAULT_OUTCOME_PATTERN.search(description)
     if not match:
@@ -1384,27 +1402,38 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                     source_type=item.article.source_type,
                 )
 
-    default_outcome = _extract_default_outcome(market.description)
-    if default_outcome in ("YES", "NO") and date.today() > market.close_date:
-        return Verdict(
-            outcome=default_outcome,
-            confidence=0.5,
-            evidence_snippet="Deadline passed with no matching evidence; applying stated default.",
-            source_url=None,
-            source_type=None,
-        )
+    # A market's description usually states a fallback ("Otherwise, this
+    # market will resolve to 'No'"). That used to be EMITTED AS A VERDICT
+    # once the close date passed with no confirming evidence found.
+    #
+    # Removed 2026-08-26: it conflates "our retrieval found nothing" with
+    # "the event did not happen". Those are the same claim only if our
+    # search is exhaustive, and it demonstrably isn't -- re-running the
+    # real Egypt market 3x against the live search endpoint surfaced its
+    # confirming article only 1 of 3 times. Measured on the real
+    # 30-market eval, this path produced 4 verdicts: 2 correct (Powell,
+    # Canadian-NHL) and 2 WRONG (Egypt and Man City -- both truth=Yes,
+    # both asserted NO purely because the confirming article didn't
+    # surface on that run). A coin flip that emits confident verdicts is
+    # strictly negative value when a wrong answer is the expensive
+    # failure mode and an unresolved one is cheap.
+    #
+    # The stated default is still surfaced to the human reviewer as
+    # CONTEXT on the unresolved verdict -- just never as the answer.
+    deadline_note = _deadline_default_note(market)
 
     if ranked_evidence:
         top = ranked_evidence[0]
         return Verdict(
             outcome="UNCLEAR",
             confidence=top.similarity,
-            evidence_snippet=top.text[:280],
+            evidence_snippet=(top.text[:280] + deadline_note) or None,
             source_url=top.article.url,
             source_type=top.article.source_type,
         )
 
-    return Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+    return Verdict(outcome="NO_EVIDENCE", confidence=0.0,
+                    evidence_snippet=deadline_note or None,
                     source_url=None, source_type=None)
 
 
@@ -1562,38 +1591,23 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
         # not spammed with an UNCLEAR row for every remaining option.
         return list(eliminated.values())
 
-    default_outcome = _extract_default_outcome(market.description)
-    if default_outcome and date.today() > market.close_date:
-        matching_option = (
-            next((opt for opt in market.options if opt.lower() == default_outcome.lower()), None)
-            if default_outcome != "NO" else None
-        )
-        snippet = "Deadline passed with no matching evidence; applying stated default."
-        if matching_option:
-            results = [Verdict(outcome="YES", option=matching_option, confidence=0.5,
-                                evidence_snippet=snippet, source_url=None, source_type=None)]
-            results += [
-                Verdict(outcome="NO", option=opt, confidence=0.5, evidence_snippet=snippet,
-                        source_url=None, source_type=None)
-                for opt in market.options if opt != matching_option
-            ]
-            return results
-        # Either an explicit "No" default, or a named default that matches
-        # none of the listed options (e.g. Osun's "Other") -- both mean the
-        # same thing for a per-option verdict: nothing on the list wins.
-        return [
-            Verdict(outcome="NO", option=opt, confidence=0.5, evidence_snippet=snippet,
-                    source_url=None, source_type=None)
-            for opt in market.options
-        ]
+    # The stated default is no longer emitted as a verdict here either --
+    # same reasoning as _decide_binary (see its comment): it asserts an
+    # outcome purely from OUR failure to find evidence. The multi-outcome
+    # version was arguably worse, since a named default (e.g. Vinicius ->
+    # "Real Madrid") would crown a specific option YES on no evidence at
+    # all.
+    deadline_note = _deadline_default_note(market)
 
     if ranked_evidence:
         top = ranked_evidence[0]
         return [Verdict(outcome="UNCLEAR", option=None, confidence=top.similarity,
-                         evidence_snippet=top.text[:280], source_url=top.article.url,
+                         evidence_snippet=(top.text[:280] + deadline_note) or None,
+                         source_url=top.article.url,
                          source_type=top.article.source_type)]
 
-    return [Verdict(outcome="NO_EVIDENCE", option=None, confidence=0.0, evidence_snippet=None,
+    return [Verdict(outcome="NO_EVIDENCE", option=None, confidence=0.0,
+                     evidence_snippet=deadline_note or None,
                      source_url=None, source_type=None)]
 
 
@@ -1648,11 +1662,21 @@ def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]
             continue
         option_date = _parse_option_as_date(option)
         if today > option_date:
+            # Was "NO" until 2026-08-26 -- same absence-as-proof fallacy
+            # as the stated-default path in _decide_binary (see its
+            # comment): an elapsed date only tells us the deadline is
+            # behind us, never that the event failed to occur. We have no
+            # ground-truth data measuring this specific path (the one
+            # date-threshold market in the eval set is NO_GROUND_TRUTH),
+            # so this is changed for consistency of reasoning rather than
+            # on measured error -- but the reasoning is identical, and
+            # under a minimize-wrong objective an unmeasured confident
+            # assertion is exactly the thing to stop emitting.
             results.append(Verdict(
-                outcome="NO", option=option, confidence=0.5,
+                outcome="UNCLEAR", option=option, confidence=0.0,
                 evidence_snippet=(
-                    f"Deadline ({option}) passed with no matching evidence; "
-                    "this date's threshold was not met."
+                    f"Deadline ({option}) passed and no confirming evidence "
+                    "was found -- unresolved, NOT asserted as not-met."
                 ),
                 source_url=None, source_type=None,
             ))
