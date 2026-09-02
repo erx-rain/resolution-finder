@@ -1618,6 +1618,22 @@ def test_numeric_threshold_market_ignores_unrelated_number_in_vague_records_refe
     assert verdict.outcome != "YES"
 
 
+def test_numeric_threshold_market_ignores_one_shy_of_the_record_phrasing():
+    # Real bug found live (2026-09-02, corroboration re-verification run):
+    # real evidence for this exact market, "Watch Out, Messi: Mbappe
+    # Scores 18th World Cup Goal, One Shy Of All-Time Record" -- wrongly
+    # confirmed the record as broken. "One shy of" plainly states the
+    # record was NOT met -- a near-miss reported as news precisely
+    # because it didn't happen.
+    evidence = [make_ranked(
+        "Watch Out, Messi: Mbappe Scores 18th World Cup Goal, One Shy Of "
+        "All-Time Record",
+        url="https://foxsports.com/x", source_type="credible_backup_secondary",
+    )]
+    verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
 # Real market pulled from Polymarket (will-spcx-reach-145-in-august-2026)
 # -- title verbatim. Real description states this resolves on "any
 # 1-minute candle" reaching the price "at any point during August 2026",

@@ -513,6 +513,19 @@ NEGATION_HEDGE_WORDS = [
     "made the playoffs", "reached the playoffs",
     "qualified for the playoffs", "advanced to the playoffs",
     "made the postseason", "reached the postseason", "clinched a playoff spot",
+    # Real bug found live (2026-09-02, corroboration re-verification run):
+    # real evidence for the World Cup most-goals-record market -- "Watch
+    # Out, Messi: Mbappe Scores 18th World Cup Goal, One Shy Of All-Time
+    # Record" -- wrongly confirmed the record as BROKEN. "One shy of"/
+    # "one short of"/"one behind" plainly states the record was NOT met --
+    # a near-miss is reported as sports news precisely because it's
+    # notable that it DIDN'T happen, the same shape of gap as this file's
+    # own numeric-threshold NO-only fallback already documented ("one
+    # short of the record" scores high for "broken" on the model, hence
+    # that path being restricted to NO-only) -- generalizable phrasing,
+    # not specific to this one tournament or sport.
+    "one shy of", "shy of the record", "one short of", "short of the record",
+    "one behind the record", "one behind the all-time record",
 ]
 
 # Generic quantifier+"other" hedges of SPECIFICITY -- e.g. "numerous other
