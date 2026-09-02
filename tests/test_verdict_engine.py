@@ -873,6 +873,45 @@ def test_multi_outcome_market_resolves_yes_when_becoming_the_nominee_is_the_win_
     assert {v.option: v.outcome for v in verdicts}["Kamala Harris"] == "YES"
 
 
+def test_multi_outcome_market_abstains_when_two_options_both_independently_verify():
+    # Real bug found live (2026-08-27): the winner loop used to stop
+    # checking entirely once the FIRST option verified, so whichever
+    # option's confirming sentence happened to be ranked/ordered first
+    # WON -- even when a genuinely different option ALSO independently
+    # verifies from other real evidence in the same batch. Confirmed
+    # concretely for this exact real market: the true Kamala Harris
+    # sentence above (0.997 NLI score) AND this real, separate Michelle
+    # Obama sentence (a false positive -- it only describes her speaking
+    # at the convention, not winning anything) BOTH independently verify
+    # as winners. The market previously resolved "correctly" only
+    # because Harris's article happened to rank higher and got checked
+    # first -- a coin flip on retrieval order, not a real decision.
+    # Under a minimize-wrong objective, genuine disagreement in the
+    # evidence must abstain, not bet on whichever was found first.
+    evidence = [
+        make_ranked(
+            "It's official: Kamala Harris becomes Democrats' 2024 "
+            "presidential nominee - NPR",
+            url="https://news.google.com/rss/articles/npr-harris",
+            source_type="credible_backup",
+            similarity=0.581,
+        ),
+        make_ranked(
+            "Ready to go: Barack and Michelle Obama electrify the 2024 "
+            "Democratic National Convention with powerful calls to "
+            "action - Northwest Progressive Institute",
+            url="https://news.google.com/rss/articles/obama-dnc",
+            source_type="credible_backup_secondary",
+            similarity=0.476,
+        ),
+    ]
+    verdicts = decide(DEMOCRATIC_NOMINEE_MARKET, evidence)
+    assert len(verdicts) == 1
+    assert verdicts[0].outcome == "UNCLEAR"
+    assert verdicts[0].option is None
+    assert "Conflicting evidence" in (verdicts[0].evidence_snippet or "")
+
+
 # Real market pulled from Polymarket (2026-nhl-stanley-cup-champion) --
 # title/description verbatim, options trimmed to the two relevant below
 # (real full list has 32).

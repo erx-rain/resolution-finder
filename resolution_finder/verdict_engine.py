@@ -1438,7 +1438,24 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
 
 
 def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) -> list[Verdict]:
-    winner: Optional[Verdict] = None
+    # Real bug found live (2026-08-27): the loop used to stop checking
+    # for a winner entirely once the FIRST option verified ("winner is
+    # None" gated every check below) -- so whichever option's confirming
+    # sentence happened to be ranked/ordered first WON, even when a
+    # DIFFERENT option ALSO independently verifies from other real
+    # evidence. Confirmed concretely: for the real democratic-nominee-
+    # 2024 market, both "It's official: Kamala Harris becomes Democrats'
+    # 2024 presidential nominee - NPR" (true) AND "Ready to go: Barack
+    # and Michelle Obama electrify the 2024 Democratic National
+    # Convention..." (false positive -- merely describes her speaking)
+    # independently verify as winners. The market currently resolves
+    # correctly ONLY because Harris's article happens to rank higher and
+    # gets checked first -- a coin flip on retrieval order, not a real
+    # decision. Now collects EVERY option that verifies across all
+    # evidence; if more than one distinct option does, that is
+    # unresolved disagreement, not a market with two winners, so the
+    # market abstains rather than betting on whichever was found first.
+    winner_candidates: dict[str, Verdict] = {}
     eliminated: dict[str, Verdict] = {}
     expected_year = _market_expected_year(market)
     market_is_playoff = _market_is_playoff_context(market)
@@ -1524,9 +1541,9 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 option_mentioned = _option_mentioned(lowered, option)
 
                 other_mentioned_options = [opt for opt in mentioned_options if opt != option]
-                if (winner is None and not context_conflict and option_mentioned
+                if (option not in winner_candidates and not context_conflict and option_mentioned
                         and _verify_winner_candidate(sentence, option, market, other_mentioned_options)):
-                    winner = Verdict(
+                    winner_candidates[option] = Verdict(
                         outcome="YES", option=option, confidence=item.similarity,
                         evidence_snippet=sentence.strip()[:280],
                         source_url=item.article.url, source_type=item.article.source_type,
@@ -1545,7 +1562,8 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 # and then wrongly crowned Team Falcons the overall
                 # CHAMPION off that one match. The NLI check wasn't wrong;
                 # applying "won one head-to-head" as "won the market" was.
-                if len(market.options) == 2 and winner is None and not context_conflict and option_mentioned:
+                if (len(market.options) == 2 and option not in winner_candidates
+                        and not context_conflict and option_mentioned):
                     for other_option in market.options:
                         if other_option == option:
                             continue
@@ -1554,7 +1572,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                             continue
                         if (_contains_keyword(lowered, other_option_lower)
                                 and _verify_head_to_head_candidate(sentence, option, other_option)):
-                            winner = Verdict(
+                            winner_candidates[option] = Verdict(
                                 outcome="YES", option=option, confidence=item.similarity,
                                 evidence_snippet=sentence.strip()[:280],
                                 source_url=item.article.url, source_type=item.article.source_type,
@@ -1569,8 +1587,26 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                         source_url=item.article.url, source_type=item.article.source_type,
                     )
 
-    if winner is not None:
+    if len(winner_candidates) > 1:
+        # Genuine disagreement in the evidence: more than one option
+        # independently verified as the winner. Committing to whichever
+        # was found first is a coin flip on article ranking/order, not a
+        # real decision -- see this function's own opening comment for
+        # the real case this catches. Abstain rather than guess.
+        names = ", ".join(sorted(winner_candidates))
+        return [Verdict(
+            outcome="UNCLEAR", option=None, confidence=0.0,
+            evidence_snippet=(
+                f"Conflicting evidence: {len(winner_candidates)} options "
+                f"({names}) each independently appear to have won -- "
+                "flagged for review rather than guessed."
+            ),
+            source_url=None, source_type=None,
+        )]
+
+    if winner_candidates:
         # Overall winner confirmed: every option gets an explicit verdict.
+        winner = next(iter(winner_candidates.values()))
         results = [winner]
         for option in market.options:
             if option == winner.option:
