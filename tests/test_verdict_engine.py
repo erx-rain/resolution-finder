@@ -1049,6 +1049,17 @@ def test_multi_outcome_market_abstains_when_two_options_both_independently_verif
     # first -- a coin flip on retrieval order, not a real decision.
     # Under a minimize-wrong objective, genuine disagreement in the
     # evidence must abstain, not bet on whichever was found first.
+    #
+    # Updated 2026-09-02 (phase-5 conflict fix): "conflict" is now judged
+    # on CORROBORATED options only (see the code's own comment for the
+    # real world-series-winner/premier-league-winner cases this was
+    # built to fix -- a single stray match could veto a well-supported
+    # answer). Both Harris and Obama here are SINGLE-source claims,
+    # neither reaches CORROBORATION_MIN_DOMAINS, so this no longer
+    # reports as an explicit multi-option "Conflicting evidence" --
+    # it falls through to the plain uncorroborated-note path instead.
+    # The behavior this test actually guards (abstain, don't crown
+    # whichever option was found first) still holds either way.
     evidence = [
         make_ranked(
             "It's official: Kamala Harris becomes Democrats' 2024 "
@@ -1067,6 +1078,43 @@ def test_multi_outcome_market_abstains_when_two_options_both_independently_verif
         ),
     ]
     verdicts = decide(DEMOCRATIC_NOMINEE_MARKET, evidence)
+    assert len(verdicts) == 1
+    assert verdicts[0].outcome == "UNCLEAR"
+    assert verdicts[0].option is None
+    assert "independent source" in (verdicts[0].evidence_snippet or "")
+
+
+def test_multi_outcome_market_abstains_when_two_corroborated_options_both_verify():
+    # Companion to the test above: with the phase-5 conflict fix,
+    # "Conflicting evidence" now only fires when BOTH competing options
+    # are themselves independently corroborated (2+ domains each) --
+    # this is the case that must still abstain, not silently pick one.
+    #
+    # Deliberately built on two CLEAN, unambiguous winner claims (not the
+    # Harris/Obama pair above) -- that Obama sentence is documented
+    # elsewhere in this file as a genuine borderline NLI case (that's the
+    # real bug it exists to guard against), so reusing it here to build a
+    # SECOND corroborating source made this test flaky by construction,
+    # independent of whether the conflict logic itself was correct.
+    evidence = [
+        make_ranked(
+            "The Norwegian Nobel Committee announced that the prize is awarded to Pope Leo XIV.",
+            url="https://nobelprize.org/announcement",
+        ),
+        make_ranked(
+            "Pope Leo XIV has been named winner of this year's Nobel Peace Prize, the committee said Friday.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+        make_ranked(
+            "The Norwegian Nobel Committee announced that the prize is awarded to Donald Trump.",
+            url="https://reuters.com/announcement", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Donald Trump has been named winner of this year's Nobel Peace Prize, the committee said Friday.",
+            url="https://bbc.com/x", source_type="credible_backup_secondary",
+        ),
+    ]
+    verdicts = decide(NOBEL_MARKET, evidence)
     assert len(verdicts) == 1
     assert verdicts[0].outcome == "UNCLEAR"
     assert verdicts[0].option is None

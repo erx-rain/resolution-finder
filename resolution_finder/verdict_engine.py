@@ -405,31 +405,52 @@ def _decide_numeric_threshold(
     met_true = [(s, i) for s, i, m in confirmations if m]
     met_false = [(s, i) for s, i, m in confirmations if not m]
 
-    if met_true and met_false:
-        # Genuine disagreement: some evidence says the threshold was met,
-        # other evidence says it wasn't -- same shape as
-        # _decide_multi_outcome's conflicting-winners abstention. Flag for
-        # review rather than guess which source is right.
+    # Conflict is judged on CORROBORATED sides only, not on any stray
+    # number that happens to land on the other side of the threshold.
+    # Real bug found live (2026-09-02, measured across the full 30-market
+    # eval): the naive "any met=True plus any met=False -> abstain" rule
+    # turned 3 previously-CORRECT answers into unresolved while converting
+    # only 1 wrong one, a net-negative trade on real data. The reasoning
+    # error: in a NUMERIC market, numbers falling on both sides of the
+    # threshold are the NORMAL case, not a sign of genuine dispute -- a
+    # price article legitimately cites many prices, and the real
+    # world-cup-most-goals market (truth: No) was vetoed by a headline
+    # about a DIFFERENT record entirely ("Messi Breaks All-Time World Cup
+    # Scoring Record" -- career goals across tournaments, not the single-
+    # tournament record this market asks about) contradicting a properly
+    # corroborated "Fontaine's record still stands". Requiring BOTH sides
+    # to clear the corroboration bar keeps the abstention for real
+    # disagreement while stopping one stray number from vetoing a
+    # well-sourced answer. The winning side still needs its own 2+
+    # domains, so this stays strictly more conservative than the
+    # pre-corroboration code.
+    true_corroborated = bool(met_true) and _corroborating_domain_count(met_true) >= CORROBORATION_MIN_DOMAINS
+    false_corroborated = bool(met_false) and _corroborating_domain_count(met_false) >= CORROBORATION_MIN_DOMAINS
+
+    if true_corroborated and false_corroborated:
         sentence, item = met_true[0]
         return Verdict(
             outcome="UNCLEAR", confidence=item.similarity,
             evidence_snippet=(
-                "Conflicting evidence: some sources say the threshold was "
-                "met, others say it wasn't -- flagged for review rather "
-                "than guessed."
+                "Conflicting evidence: independently corroborated sources "
+                "disagree on whether the threshold was met -- flagged for "
+                "review rather than guessed."
             ),
             source_url=item.article.url, source_type=item.article.source_type,
         )
 
-    bucket, outcome = (met_true, "YES") if met_true else (met_false, "NO")
-    if bucket:
+    if true_corroborated or false_corroborated:
+        bucket, outcome = (met_true, "YES") if true_corroborated else (met_false, "NO")
         sentence, item = bucket[0]
-        if _corroborating_domain_count(bucket) >= CORROBORATION_MIN_DOMAINS:
-            return Verdict(
-                outcome=outcome, confidence=item.similarity,
-                evidence_snippet=sentence.strip()[:280],
-                source_url=item.article.url, source_type=item.article.source_type,
-            )
+        return Verdict(
+            outcome=outcome, confidence=item.similarity,
+            evidence_snippet=sentence.strip()[:280],
+            source_url=item.article.url, source_type=item.article.source_type,
+        )
+
+    if met_true or met_false:
+        bucket = met_true or met_false
+        sentence, item = bucket[0]
         return Verdict(
             outcome="UNCLEAR", confidence=item.similarity,
             evidence_snippet=(sentence.strip()[:280] + _uncorroborated_note(bucket)),
@@ -1849,40 +1870,61 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                         source_url=item.article.url, source_type=item.article.source_type,
                     )
 
-    if len(winner_confirmations) > 1:
-        # Genuine disagreement in the evidence: more than one option
-        # independently verified as the winner. Committing to whichever
-        # was found first is a coin flip on article ranking/order, not a
-        # real decision -- see this function's own opening comment for
-        # the real case this catches. Abstain rather than guess.
-        names = ", ".join(sorted(winner_confirmations))
+    # Conflict is judged on CORROBORATED options only, not on any option
+    # that merely matched once. Real bug found live (2026-09-02, measured
+    # across the full 30-market eval): treating any two matching options
+    # as "conflict" made this the single largest cause of unresolved
+    # markets -- 8 of 21 -- and in every one of those the TRUE answer was
+    # sitting in the conflicting set, vetoed by an obvious stray. The real
+    # premier-league-winner-24-25 market (truth: Liverpool) abstained
+    # because Arsenal, Brighton, IPSWICH TOWN and Liverpool all
+    # "independently appeared to have won"; the real world-series-winner
+    # market (truth: Dodgers) abstained on Blue Jays vs Dodgers. Letting a
+    # one-source false positive veto a well-corroborated answer applies
+    # corroboration inconsistently -- it demands 2+ domains to ASSERT a
+    # winner, then lets a single unverified domain BLOCK one. Requiring
+    # both sides to clear the same bar is strictly more conservative than
+    # the pre-corroboration code (the crowned winner still needs 2+
+    # independent domains), so this cannot reopen the single-source
+    # failures phase 2 was built to stop.
+    corroborated = {
+        option: confirmations for option, confirmations in winner_confirmations.items()
+        if _corroborating_domain_count(confirmations) >= CORROBORATION_MIN_DOMAINS
+    }
+
+    if len(corroborated) > 1:
+        # Genuine disagreement: more than one option is independently
+        # CORROBORATED as the winner. Committing to whichever was found
+        # first is a coin flip on article ranking/order, not a real
+        # decision -- see this function's own opening comment. Abstain.
+        names = ", ".join(sorted(corroborated))
         return [Verdict(
             outcome="UNCLEAR", option=None, confidence=0.0,
             evidence_snippet=(
-                f"Conflicting evidence: {len(winner_confirmations)} options "
-                f"({names}) each independently appear to have won -- "
-                "flagged for review rather than guessed."
+                f"Conflicting evidence: {len(corroborated)} options "
+                f"({names}) are each independently corroborated as having "
+                "won -- flagged for review rather than guessed."
             ),
             source_url=None, source_type=None,
         )]
 
-    if winner_confirmations:
+    if not corroborated and winner_confirmations:
+        # Options matched, but none reached the corroboration bar -- see
+        # this function's own phase-2 comment for the real Cleveland
+        # Guardians case this catches (a single MLB.com list page).
         option, confirmations = next(iter(winner_confirmations.items()))
-        if _corroborating_domain_count(confirmations) < CORROBORATION_MIN_DOMAINS:
-            # A single option verified, but not corroborated by enough
-            # independent sources -- see this function's own phase-2
-            # comment above for the real Cleveland Guardians case this
-            # catches. Abstain rather than crown a winner off one source.
-            sentence, item = confirmations[0]
-            return [Verdict(
-                outcome="UNCLEAR", option=None, confidence=item.similarity,
-                evidence_snippet=(
-                    f"{option}: " + sentence.strip()[:280] + _uncorroborated_note(confirmations)
-                ),
-                source_url=item.article.url, source_type=item.article.source_type,
-            )]
+        sentence, item = confirmations[0]
+        return [Verdict(
+            outcome="UNCLEAR", option=None, confidence=item.similarity,
+            evidence_snippet=(
+                f"{option}: " + sentence.strip()[:280] + _uncorroborated_note(confirmations)
+            ),
+            source_url=item.article.url, source_type=item.article.source_type,
+        )]
 
+    if corroborated:
         # Overall winner confirmed: every option gets an explicit verdict.
+        option, confirmations = next(iter(corroborated.items()))
         sentence, item = confirmations[0]
         winner = Verdict(
             outcome="YES", option=option, confidence=item.similarity,

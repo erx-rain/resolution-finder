@@ -25,13 +25,27 @@ this market's title.
 Real consequence: even if evidence like "the Senate confirmed Blanche
 52-46" were found, `_decide_binary` has no way to compare 52 against 50
 — it can only match YES via `BINARY_YES_KEYWORDS`/NLI confirmation
-language, never an actual vote-count comparison. The market's own
-description also describes multiple resolution BRACKETS ("if the
-nomination passes unanimously... resolve to highest bracket"), meaning
-the real Polymarket question likely has richer structure (a bracketed
-vote-count range) than a single Yes/No threshold at all — worth
-re-checking whether `options` should be non-empty for this market
-(currently `[]` in `data/markets.json`) before designing a fix.
+language, never an actual vote-count comparison.
+
+**Confirmed (2026-09-02), not just suspected:** re-read this market's
+full pulled description directly. It explicitly states "If the
+nomination passes unanimously or without a specified vote count, this
+market will resolve to the highest bracket. If the nomination is
+rejected... resolves to the lowest bracket." This is unambiguous —
+the REAL Polymarket market is a bracketed vote-count range (multiple
+named brackets, e.g. "45-49", "50-54", "55+"), not a single Yes/No
+threshold at all. A bare-number regex fix would be actively wrong here:
+it would force this into the single-threshold shape when the real
+market has a genuinely different one. `data/markets.json` currently
+flattens it to `options: []` with a single `resolved_to: "Yes"` — this
+is a `pull_test_batch.py` gap (it doesn't yet know how to represent a
+bracketed-range market), not a `verdict_engine.py` one. Needs: (1)
+confirm via the live Polymarket API what the real bracket options are
+for this specific market, (2) design how `pull_test_batch.py` should
+represent a bracketed numeric-range market (a new shape distinct from
+both existing multi-outcome-by-name and single-threshold), (3) design
+a `_decide_*` path for it. Real sub-project, not a quick regex
+addition — re-scoped up from "small fix" after reading the real data.
 
 ## 2. "Between X and Y" range markets (documented gap, not yet reproduced)
 
