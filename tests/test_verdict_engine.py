@@ -1536,11 +1536,18 @@ DESC_ONLY_THRESHOLD_MARKET = Market(
 
 
 def test_threshold_condition_falls_back_to_first_sentence_of_description():
-    evidence = [make_ranked(
-        "The app has now surpassed 6,000,000 downloads worldwide, the "
-        "developer announced.",
-        url="https://example.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The app has now surpassed 6,000,000 downloads worldwide, the "
+            "developer announced.",
+            url="https://example.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Total downloads for the app have climbed past 6,050,000 since "
+            "launch, according to figures shared by the studio on Thursday.",
+            url="https://example.org/y", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(DESC_ONLY_THRESHOLD_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -1580,46 +1587,78 @@ def test_threshold_condition_reads_past_a_leading_note_sentence():
     # _first_sentence only ever looks at the FIRST sentence, so the real
     # condition sentence (the second one) was invisible to threshold
     # detection entirely.
-    evidence = [make_ranked(
-        "Just Fontaine's incredible record that still stands",
-        url="https://www.beinsports.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Just Fontaine's incredible record that still stands",
+            url="https://www.beinsports.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Just Fontaine's record from 1958 remains unbroken heading into the final.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
     assert verdict.outcome == "NO"
 
 
 def test_numeric_threshold_market_resolves_yes_when_evidence_confirms_above_threshold():
-    evidence = [make_ranked(
-        "Bitcoin surged to $67,200 on Monday amid renewed institutional buying.",
-        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Bitcoin surged to $67,200 on Monday amid renewed institutional buying.",
+            url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The price of bitcoin climbed as high as $67,150 during Monday's "
+            "trading session, extending its recent rally.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(BITCOIN_MARKET, evidence)
     assert verdict.outcome == "YES"
 
 
 def test_numeric_threshold_market_resolves_no_when_evidence_contradicts_threshold():
-    evidence = [make_ranked(
-        "Bitcoin fell sharply to $58,400 on Monday as traders took profits.",
-        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Bitcoin fell sharply to $58,400 on Monday as traders took profits.",
+            url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Bitcoin slid to roughly $58,600 during Monday's session as risk "
+            "appetite waned across crypto markets.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(BITCOIN_MARKET, evidence)
     assert verdict.outcome == "NO"
 
 
 def test_numeric_threshold_market_handles_below_direction():
-    evidence = [make_ranked(
-        "Ethereum dropped to $1,150 on Monday, extending its weekly decline.",
-        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Ethereum dropped to $1,150 on Monday, extending its weekly decline.",
+            url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Ether slipped below the $1,160 mark on Monday, its lowest level in weeks.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(ETHEREUM_MARKET, evidence)
     assert verdict.outcome == "YES"
 
 
 def test_numeric_threshold_market_handles_reach_at_least_phrasing():
-    evidence = [make_ranked(
-        "Gold prices hit $4,512 an ounce on Friday, a fresh all-time high.",
-        url="https://www.cnbc.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Gold prices hit $4,512 an ounce on Friday, a fresh all-time high.",
+            url="https://www.cnbc.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Spot gold touched $4,505 an ounce on Friday, setting a new record.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(GOLD_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -1641,10 +1680,16 @@ def test_numeric_threshold_market_confirms_no_from_plain_english_with_no_number(
     # stands", plainly confirms the record was NOT broken, but contains
     # no digit at all for the extraction regex to find, so it fell
     # through to UNCLEAR despite being an unambiguous NO in plain English.
-    evidence = [make_ranked(
-        "Just Fontaine's incredible record that still stands",
-        url="https://www.beinsports.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Just Fontaine's incredible record that still stands",
+            url="https://www.beinsports.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Just Fontaine's record from 1958 remains unbroken heading into the final.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
     assert verdict.outcome == "NO"
 
@@ -1790,10 +1835,16 @@ def test_numeric_threshold_market_ignores_hedged_number():
 def test_numeric_threshold_extracts_the_most_recently_stated_number():
     # "up from X to Y" states the current value last -- must use $64,500,
     # not the earlier $61,000 mentioned in the same sentence.
-    evidence = [make_ranked(
-        "Bitcoin climbed from $61,000 to $64,500 over the trading session.",
-        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Bitcoin climbed from $61,000 to $64,500 over the trading session.",
+            url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Bitcoin rose steadily throughout the session, ending the day near $64,450.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(BITCOIN_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -1807,11 +1858,17 @@ def test_threshold_number_does_not_consume_next_word_as_magnitude_suffix():
     # fix, "$50 before" misparses as $50 * 1e9 (the "b" from "before"),
     # wrongly clearing the $64,000 threshold; correctly read as plain 50,
     # it stays far below it.
-    evidence = [make_ranked(
-        "Bitcoin trading volume dipped slightly, with the price at $50 "
-        "before the announcement.",
-        url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Bitcoin trading volume dipped slightly, with the price at $50 "
+            "before the announcement.",
+            url="https://www.coindesk.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Bitcoin was changing hands at just $50 ahead of Monday's Fed announcement.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(BITCOIN_MARKET, evidence)
     assert verdict.outcome == "NO"
 
@@ -1838,10 +1895,17 @@ def test_numeric_threshold_still_extracts_bare_non_dollar_count():
     # non-dollar numeric-threshold market (sales/vote-count/etc.) has a
     # real threshold figure with no "$" sign or magnitude suffix at all,
     # and must not be rejected just because it lacks one.
-    evidence = [make_ranked(
-        "The game sold 1,200,000 copies in its first week, publishers said.",
-        url="https://www.gamesindustry.biz/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The game sold 1,200,000 copies in its first week, publishers said.",
+            url="https://www.gamesindustry.biz/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "First-week sales for the title reached roughly 1.19 million units, "
+            "according to figures reported by the publisher.",
+            url="https://www.ign.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(SALES_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -1851,10 +1915,17 @@ def test_numeric_threshold_prefers_real_count_over_a_trailing_year():
     # year must be skipped even when it comes LAST (the position
     # _extract_latest_number normally trusts most), falling back to the
     # genuine count earlier in the sentence instead.
-    evidence = [make_ranked(
-        "The game sold 1,200,000 copies since its 2023 launch.",
-        url="https://www.gamesindustry.biz/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The game sold 1,200,000 copies since its 2023 launch.",
+            url="https://www.gamesindustry.biz/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "Total unit sales for the game have reached 1,190,000 since it "
+            "launched, the publisher reported this week.",
+            url="https://www.ign.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(SALES_MARKET, evidence)
     assert verdict.outcome == "YES"
 

@@ -330,7 +330,30 @@ def _decide_numeric_threshold(
 
     subject_terms = _subject_terms(market)
     distinctive_terms = _distinctive_subject_terms(market)
+
+    # Phase 3 corroboration (2026-09-02): a single extracted number is no
+    # longer enough on its own, symmetric for BOTH sides of the threshold
+    # -- unlike _decide_binary/_decide_multi_outcome, which only gate the
+    # positive (YES/winner) assertion, the SAME risky "did we grab the
+    # right number from the right source" mechanism produces both YES and
+    # NO here, so both need the same bar. Real bug this catches: the real
+    # Odyssey box-office market resolved a confident WRONG "NO" off a
+    # the-numbers.com weekend-projections page that never names the
+    # market's subject at all (see docs/superpowers/plans/2026-08-25-
+    # unsupported-market-types.md item 5) -- a single misattributed
+    # number, asserted with no second source to catch it.
+    #
+    # Collects every (sentence, item, met) confirmation across the whole
+    # evidence set (per item: number-extraction tried first, semantic
+    # NO-only fallback only for an item that didn't already confirm via a
+    # number -- same per-item gating fix as _decide_binary's own
+    # confirmations, and for the same reason: an independent source
+    # confirming "still stands" in plain prose, with no digit in it,
+    # must still count as a corroborating source, not be silently
+    # dropped because a DIFFERENT source elsewhere found a number).
+    confirmations: list[tuple[str, RankedArticle, bool]] = []
     for item in ranked_evidence:
+        item_confirmed = False
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
@@ -344,48 +367,74 @@ def _decide_numeric_threshold(
             if value is None:
                 continue
             met = value >= threshold if direction == "up" else value <= threshold
-            return Verdict(
-                outcome="YES" if met else "NO",
-                confidence=item.similarity,
-                evidence_snippet=sentence.strip()[:280],
-                source_url=item.article.url,
-                source_type=item.article.source_type,
-            )
+            confirmations.append((sentence, item, met))
+            item_confirmed = True
 
-    # Semantic NO-only fallback: only reached when no sentence had an
-    # extractable number at all. Real gap found live (2026-08-23): real
-    # evidence for a real market ("Just Fontaine's incredible record that
-    # still stands") plainly confirms the threshold was NOT met, in plain
-    # English with no digit in it anywhere -- the loop above has no way
-    # to see this, since it only ever looks for a number to compare.
-    #
-    # Deliberately asymmetric -- can only ever produce NO, never YES.
-    # Real calibration (4 wording attempts) found confirming "the record
-    # WAS broken" from prose alone is NOT reliably safe with this model:
-    # every wording tested had at least one realistic phrasing ("one
-    # short of the record", "well below the target") that scored high
-    # for "broken" when it should have been low. But the NOT-met/negative
-    # score was reliably LOW on every genuine true-positive case tested
-    # (0.002-0.007, no false-trigger risk), even on cases where it also
-    # failed to correctly go high on a genuine negative (a safe miss,
-    # not a wrong answer) -- so restricting this check to NO-only can
-    # only ever fill in a missed UNCLEAR with a correct NO, never
-    # introduce a wrong YES. The existing number-extraction path above
-    # remains the only way this function ever returns YES.
-    for item in ranked_evidence:
+        if item_confirmed:
+            continue
+        # Semantic NO-only fallback: only reached for an item whose
+        # sentences had no extractable number at all. Real gap found live
+        # (2026-08-23): real evidence for a real market ("Just Fontaine's
+        # incredible record that still stands") plainly confirms the
+        # threshold was NOT met, in plain English with no digit in it
+        # anywhere -- the number-extraction loop above has no way to see
+        # this.
+        #
+        # Deliberately asymmetric -- can only ever contribute a NOT-met
+        # (met=False) confirmation, never a met=True one. Real calibration
+        # (4 wording attempts) found confirming "the record WAS broken"
+        # from prose alone is NOT reliably safe with this model: every
+        # wording tested had at least one realistic phrasing ("one short
+        # of the record", "well below the target") that scored high for
+        # "broken" when it should have been low. But the NOT-met/negative
+        # score was reliably LOW on every genuine true-positive case
+        # tested (0.002-0.007, no false-trigger risk) -- so restricting
+        # this fallback to NOT-met-only can only ever fill in a missed
+        # UNCLEAR with a correct NO-side confirmation, never introduce a
+        # wrong YES-side one. The number-extraction loop above remains
+        # the only way this function ever collects a met=True confirmation.
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
             if _verify_threshold_not_met(sentence):
-                return Verdict(
-                    outcome="NO",
-                    confidence=item.similarity,
-                    evidence_snippet=sentence.strip()[:280],
-                    source_url=item.article.url,
-                    source_type=item.article.source_type,
-                )
+                confirmations.append((sentence, item, False))
+                break
+
+    met_true = [(s, i) for s, i, m in confirmations if m]
+    met_false = [(s, i) for s, i, m in confirmations if not m]
+
+    if met_true and met_false:
+        # Genuine disagreement: some evidence says the threshold was met,
+        # other evidence says it wasn't -- same shape as
+        # _decide_multi_outcome's conflicting-winners abstention. Flag for
+        # review rather than guess which source is right.
+        sentence, item = met_true[0]
+        return Verdict(
+            outcome="UNCLEAR", confidence=item.similarity,
+            evidence_snippet=(
+                "Conflicting evidence: some sources say the threshold was "
+                "met, others say it wasn't -- flagged for review rather "
+                "than guessed."
+            ),
+            source_url=item.article.url, source_type=item.article.source_type,
+        )
+
+    bucket, outcome = (met_true, "YES") if met_true else (met_false, "NO")
+    if bucket:
+        sentence, item = bucket[0]
+        if _corroborating_domain_count(bucket) >= CORROBORATION_MIN_DOMAINS:
+            return Verdict(
+                outcome=outcome, confidence=item.similarity,
+                evidence_snippet=sentence.strip()[:280],
+                source_url=item.article.url, source_type=item.article.source_type,
+            )
+        return Verdict(
+            outcome="UNCLEAR", confidence=item.similarity,
+            evidence_snippet=(sentence.strip()[:280] + _uncorroborated_note(bucket)),
+            source_url=item.article.url, source_type=item.article.source_type,
+        )
 
     if ranked_evidence:
         top = ranked_evidence[0]
