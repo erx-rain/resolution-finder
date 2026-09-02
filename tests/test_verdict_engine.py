@@ -79,7 +79,18 @@ def make_ranked(text, url="https://congress.gov/bill/3633", source_type="primary
 
 
 def test_binary_market_resolves_yes_on_keyword_match():
-    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    # Two independent sources -- see CORROBORATION_MIN_DOMAINS' own
+    # comment: a single confirming source is no longer enough to commit
+    # a verdict, only to reach a candidate.
+    evidence = [
+        make_ranked("The bill was signed into law by the President today."),
+        make_ranked(
+            "The Digital Asset Market CLARITY Act officially became law after the "
+            "President's signature on Tuesday, capping months of negotiation "
+            "between the House and Senate.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(CLARITY_MARKET, evidence)
     assert verdict.outcome == "YES"
     assert verdict.source_url == "https://congress.gov/bill/3633"
@@ -162,7 +173,13 @@ def test_binary_market_ignores_yes_keyword_inside_a_longer_word():
 
 
 def test_binary_market_matches_yes_keyword_as_whole_word():
-    evidence = [make_ranked("Congress enacted the measure this morning.")]
+    evidence = [
+        make_ranked("Congress enacted the measure this morning."),
+        make_ranked(
+            "Lawmakers enacted the Digital Asset Market Clarity Act earlier today.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(CLARITY_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -192,9 +209,14 @@ def test_binary_market_ignores_hedged_keyword_match():
 
 
 def test_binary_market_still_resolves_yes_on_genuine_match():
-    evidence = [make_ranked(
-        "The CLARITY Act was signed into law by the President on Tuesday."
-    )]
+    evidence = [
+        make_ranked("The CLARITY Act was signed into law by the President on Tuesday."),
+        make_ranked(
+            "The Digital Asset Market CLARITY Act became law this week, capping a "
+            "bruising two-year fight in Congress over crypto regulation.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(CLARITY_MARKET, evidence)
     assert verdict.outcome == "YES"
     assert "CLARITY Act was signed into law" in verdict.evidence_snippet
@@ -238,19 +260,40 @@ def test_binary_market_resolves_yes_on_senate_passage_for_a_resolution_market():
     # structurally cannot confirm a market like this one, whose Yes
     # condition is vote PASSAGE by both chambers -- a war powers resolution
     # is never signed into law at all.
-    evidence = [make_ranked("The Senate passed the war powers resolution in a 51-47 vote on Thursday.")]
+    evidence = [
+        make_ranked("The Senate passed the war powers resolution in a 51-47 vote on Thursday."),
+        make_ranked(
+            "In a narrow 51-47 vote Thursday evening, the Senate passed the Iran "
+            "war powers resolution after hours of contentious floor debate.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(WAR_POWERS_MARKET, evidence)
     assert verdict.outcome == "YES"
 
 
 def test_binary_market_resolves_yes_on_house_passage_for_a_resolution_market():
-    evidence = [make_ranked("The House passed the resolution by a vote of 221-206 on Wednesday.")]
+    evidence = [
+        make_ranked("The House passed the resolution by a vote of 221-206 on Wednesday."),
+        make_ranked(
+            "Wednesday's roll call ended 221-206 as the House passed the war "
+            "powers resolution following a contentious floor fight over war authority.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(WAR_POWERS_MARKET, evidence)
     assert verdict.outcome == "YES"
 
 
 def test_binary_market_resolves_yes_on_both_chambers_passage_phrasing():
-    evidence = [make_ranked("The measure cleared both chambers after months of negotiation.")]
+    evidence = [
+        make_ranked("The measure cleared both chambers after months of negotiation."),
+        make_ranked(
+            "After months of behind-the-scenes negotiation between leadership, "
+            "the war powers measure cleared both chambers of Congress this week.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(WAR_POWERS_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -285,10 +328,21 @@ def test_binary_market_resolves_yes_on_fda_approval_language():
     # production sentence remains a known, accepted gap; this test
     # verifies the keyword fix itself on a clean sentence that names the
     # subject directly, which is the common case this fix is really for.
-    evidence = [make_ranked(
-        "The FDA approved Viridian Therapeutics' Veligrotug on Tuesday "
-        "for the treatment of thyroid eye disease."
-    )]
+    evidence = [
+        make_ranked(
+            "The FDA approved Viridian Therapeutics' Veligrotug on Tuesday "
+            "for the treatment of thyroid eye disease, clearing the drug after "
+            "a review process that ran several months longer than expected."
+        ),
+        make_ranked(
+            "Viridian Therapeutics announced FDA approval of Veligrotug for "
+            "thyroid eye disease, with shares of the biotech firm rising "
+            "sharply on the news as analysts pointed to a strong addressable "
+            "patient population and a favorable reimbursement outlook heading "
+            "into next year's launch.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(VIRIDIAN_FDA_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -335,12 +389,20 @@ def test_binary_market_resolves_yes_on_sworn_in_language():
     # -- purely a missing keyword, verified via a narrower, separately-
     # calibrated threshold (see CONSEQUENCE_VERIFICATION_THRESHOLD's own
     # comment for why the shared 0.85 threshold can't be reused here).
-    evidence = [make_ranked(
-        "Egyptian President Abdel Fattah al-Sisi was sworn in for his "
-        "third term on Tuesday in the country's new capital, the largest "
-        "of the mega-projects that have signaled his push toward "
-        "development."
-    )]
+    evidence = [
+        make_ranked(
+            "Egyptian President Abdel Fattah al-Sisi was sworn in for his "
+            "third term on Tuesday in the country's new capital, the largest "
+            "of the mega-projects that have signaled his push toward "
+            "development."
+        ),
+        make_ranked(
+            "Egypt's electoral commission confirmed on Tuesday that Abdel Fattah "
+            "el-Sisi was sworn in to begin a third term as president, following a "
+            "ceremony attended by foreign dignitaries in the new capital.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(EGYPT_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -359,13 +421,21 @@ def test_binary_market_resolves_yes_on_forced_release_language():
     # market's own title, silently disabling the wrong-subject veto's
     # escape hatch for this market entirely (see
     # _distinctive_subject_terms' own comment).
-    evidence = [make_ranked(
-        "The Republican-controlled US Congress voted almost unanimously "
-        "on Tuesday to force the release of Justice Department files on "
-        "the late convicted sex offender Jeffrey Epstein, an outcome "
-        "President Donald Trump had fought for months before ending his "
-        "opposition."
-    )]
+    evidence = [
+        make_ranked(
+            "The Republican-controlled US Congress voted almost unanimously "
+            "on Tuesday to force the release of Justice Department files on "
+            "the late convicted sex offender Jeffrey Epstein, an outcome "
+            "President Donald Trump had fought for months before ending his "
+            "opposition."
+        ),
+        make_ranked(
+            "According to congressional records, a bipartisan majority in "
+            "Congress moved on Tuesday to force the release of the Epstein "
+            "files after a lengthy procedural standoff over the discharge petition.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(EPSTEIN_DISCLOSURE_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -389,7 +459,13 @@ def test_binary_market_resolves_yes_on_keyword_match_still_passes_without_subjec
     # no other entity should still match even without repeating the market's
     # own subject name — real articles use pronouns/short references after
     # establishing context once.
-    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    evidence = [
+        make_ranked("The bill was signed into law by the President today."),
+        make_ranked(
+            "The measure was enacted into law earlier today.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(CLARITY_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -1686,7 +1762,13 @@ def test_non_numeric_binary_market_unaffected():
     # Regression guard: CLARITY Act (legislative binary, no $ threshold in
     # its own text) must be completely unaffected -- routed to the
     # existing _decide_binary path, not misdetected as threshold-shaped.
-    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    evidence = [
+        make_ranked("The bill was signed into law by the President today."),
+        make_ranked(
+            "The measure was enacted into law earlier today.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(CLARITY_MARKET, evidence)
     assert verdict.outcome == "YES"
     assert "signed into law" in verdict.evidence_snippet
@@ -1713,13 +1795,21 @@ def test_semantic_fallback_resolves_yes_above_threshold_and_margin(mock_get_mode
     mock_model = MagicMock()
     mock_model.encode.return_value = "embedding"
     mock_get_model.return_value = mock_model
-    # sentence-vs-positive-template, then sentence-vs-negative-template
-    mock_cos_sim.side_effect = [[[0.75]], [[0.30]]]
+    # Two sources, each needing its own semantic positive/negative check
+    # (calls 1-2, 3-4), then one more call for the corroboration wire-
+    # duplicate domain-merge check (call 5) -- see CORROBORATION_MIN_DOMAINS.
+    mock_cos_sim.side_effect = [[[0.75]], [[0.30]], [[0.80]], [[0.20]], [[0.50]]]
 
-    evidence = [make_ranked(
-        "Regulators granted approval for the subcutaneous formulation this week.",
-        url="https://example.com/x", source_type="credible_backup",
-    )]
+    evidence = [
+        make_ranked(
+            "Regulators granted approval for the subcutaneous formulation this week.",
+            url="https://example.com/x", source_type="credible_backup",
+        ),
+        make_ranked(
+            "The subcutaneous formulation cleared regulatory review this week.",
+            url="https://example.org/y", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(SANOFI_MARKET, evidence)
     assert verdict.outcome == "YES"
 
@@ -1772,7 +1862,13 @@ def test_semantic_fallback_never_runs_when_keyword_match_already_found():
     # a test environment without the mock, this test's own setup gives no
     # semantic signal, so a false regression would surface as this test
     # timing out or erroring on a real model load, not silently passing).
-    evidence = [make_ranked("The bill was signed into law by the President today.")]
+    evidence = [
+        make_ranked("The bill was signed into law by the President today."),
+        make_ranked(
+            "The measure was enacted into law earlier today.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(CLARITY_MARKET, evidence)
     assert verdict.outcome == "YES"
     assert "signed into law" in verdict.evidence_snippet
@@ -1869,12 +1965,22 @@ def test_wrong_subject_veto_does_not_reject_sentence_that_also_names_subject():
     # Sarclisa" -- even though the SAME sentence also plainly names the
     # subject ("subcutaneous Sarclisa"). The veto must not fire when the
     # subject itself is also present in the sentence.
-    evidence = [make_ranked(
-        "Sanofi's subcutaneous Sarclisa Escena approved in the US as first "
-        "anticancer treatment administered via on-body injector",
-        url="https://uk.finance.yahoo.com/news/press-release-sanofi-subcutaneous-sarclisa-123500426.html",
-        source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "Sanofi's subcutaneous Sarclisa Escena approved in the US as first "
+            "anticancer treatment administered via on-body injector",
+            url="https://uk.finance.yahoo.com/news/press-release-sanofi-subcutaneous-sarclisa-123500426.html",
+            source_type="credible_backup_secondary",
+        ),
+        # Second, independently-worded source -- corroboration (see
+        # CORROBORATION_MIN_DOMAINS) needs a distinct domain agreeing.
+        make_ranked(
+            "Sanofi said Wednesday that the FDA approved the subcutaneous "
+            "formulation of Sarclisa, giving patients a faster at-home "
+            "injection option instead of the original intravenous infusion.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(SANOFI_REAL_MARKET, evidence)
     assert verdict.outcome == "YES"  # matches this market's real ground truth
 

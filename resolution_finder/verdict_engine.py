@@ -1409,10 +1409,135 @@ def _verify_consequence_yes_candidate(sentence: str) -> bool:
     return scores[positive] >= CONSEQUENCE_VERIFICATION_THRESHOLD
 
 
+# --- Corroboration: require 2+ independent sources before committing --------
+#
+# Real design decision, not another guard fix: every wrong verdict this
+# session traced back to a SINGLE sentence in a SINGLE article deciding a
+# market (Team Vision crowned over Team Spirit, UNRWA's nomination,
+# the Canadian-NHL question headline, the Michelle Obama false
+# positive...). Committing on the strength of one source is a bet that
+# source is both found AND correct. Requiring a SECOND, INDEPENDENT
+# source to agree converts "got unlucky once" from a wrong verdict into
+# a safe abstention instead -- which is the whole point under a
+# minimize-wrong objective (user, 2026-08-27: "we're trying to minimize
+# wrong, not to minimize unresolved").
+#
+# "Independent" means a different DOMAIN, with wire-service duplication
+# collapsed: two different domains republishing the same underlying
+# report (identical or near-identical confirming sentence, e.g. AP wire
+# copy picked up by both) are NOT two sources, they're one story
+# appearing twice -- counting them as corroboration would be WORSE than
+# no corroboration check at all (false confidence). Sentence embedding
+# similarity detects this, reusing the same free local model already
+# running for relevance ranking -- no new dependency.
+#
+# Known, accepted cost (flagged before building this): markets that only
+# ever retrieve 1-2 real candidate articles (several FDA-approval
+# markets did, this session) will now surface as unresolved even when
+# their single source was genuinely correct. That is the intended trade,
+# not an oversight.
+CORROBORATION_MIN_DOMAINS = 2
+CORROBORATION_WIRE_DUPLICATE_SIMILARITY = 0.95
+
+
+def _confirmation_domain(item: RankedArticle) -> str:
+    """A stable identity for 'which source' a confirmation came from --
+    the real publisher domain when known, falling back to the URL itself
+    (still correctly treats two different unknown-domain URLs as two
+    distinct sources, never silently merges them)."""
+    return item.article.source_domain or item.article.url
+
+
+def _corroborating_domain_count(confirmations: list[tuple[str, RankedArticle]]) -> int:
+    """How many genuinely INDEPENDENT sources support this set of
+    confirming (sentence, item) pairs, after collapsing wire-service
+    duplicates. First groups by domain (multiple confirming sentences
+    from the SAME outlet are still just one source's editorial
+    judgment, not two); then merges different domains whose ARTICLES
+    (full item.text, not just the one matched sentence) are near-
+    identical (the same underlying report syndicated, not independent
+    corroboration).
+    #
+    # Real bug found building this: comparing just the matched SENTENCE
+    # instead of the full article was too aggressive. Two genuinely
+    # independent outlets confirming the same simple fact in one
+    # sentence each ("The FDA approved Viridian's Veligrotug..." vs
+    # "...announced FDA approval of Veligrotug...") measured
+    # sim=0.978 -- indistinguishable from real wire duplication at the
+    # single-sentence level, since a short factual sentence has very
+    # little room to phrase the same fact differently. Comparing the
+    # surrounding full article text instead (which differs in quotes,
+    # structure, and extra detail between independently written
+    # pieces even when their core confirming sentence is near-
+    # identical) separates the two cases correctly.
+    """
+    if not confirmations:
+        return 0
+    by_domain: dict[str, RankedArticle] = {}
+    for sentence, item in confirmations:
+        domain = _confirmation_domain(item)
+        if domain not in by_domain:
+            by_domain[domain] = item
+    if len(by_domain) < 2:
+        return len(by_domain)
+
+    model = _get_model()
+    domains = list(by_domain.keys())
+    embeddings = [model.encode(by_domain[d].text, convert_to_tensor=True) for d in domains]
+
+    parent = list(range(len(domains)))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i in range(len(domains)):
+        for j in range(i + 1, len(domains)):
+            sim = float(util.cos_sim(embeddings[i], embeddings[j])[0][0])
+            if sim > CORROBORATION_WIRE_DUPLICATE_SIMILARITY:
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    parent[ri] = rj
+
+    return len({find(i) for i in range(len(domains))})
+
+
+def _uncorroborated_note(confirmations: list[tuple[str, RankedArticle]]) -> str:
+    domain_count = _corroborating_domain_count(confirmations)
+    return (
+        f" [Only {domain_count} independent source{'s' if domain_count != 1 else ''} "
+        f"confirm{'s' if domain_count == 1 else ''} this -- needs "
+        f"{CORROBORATION_MIN_DOMAINS} to assert a verdict, flagged for review instead.]"
+    )
+
+
 def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
     subject_terms = _subject_terms(market)
     distinctive_terms = _distinctive_subject_terms(market)
+
+    # Collects every confirming (sentence, item) pair instead of
+    # returning on the first match -- see the corroboration comment
+    # above _decide_binary's own definition for why: committing on one
+    # source is a bet that source is both found AND correct.
+    # Semantic fallback is gated PER ITEM, not on the confirmations list as
+    # a whole. Real bug found building this: corroboration needs 2+
+    # INDEPENDENT sources, and independent articles routinely describe the
+    # same event in different words -- one might literally say "signed
+    # into law" (keyword match) while another says "enacting the
+    # legislation" (no keyword match, but a clear semantic match). Gating
+    # the fallback on "did keyword matching find ANYTHING across the whole
+    # evidence set" meant that as soon as ONE source keyword-matched, every
+    # OTHER source that didn't happen to share its exact phrasing was
+    # silently dropped -- making 2-domain corroboration nearly impossible
+    # to satisfy for realistic differently-worded coverage. Falling back to
+    # semantic per un-matched item (keyword stays tried first/primary for
+    # each item) fixes that while still never running the model on an item
+    # that a keyword already confirmed.
+    confirmations: list[tuple[str, RankedArticle]] = []
     for item in ranked_evidence:
+        item_confirmed = False
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
@@ -1420,26 +1545,16 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                 continue
             if (any(_contains_keyword(sentence.lower(), keyword) for keyword in BINARY_YES_KEYWORDS)
                     and _verify_binary_yes_candidate(sentence)):
-                return Verdict(
-                    outcome="YES",
-                    confidence=item.similarity,
-                    evidence_snippet=sentence.strip()[:280],
-                    source_url=item.article.url,
-                    source_type=item.article.source_type,
-                )
+                confirmations.append((sentence, item))
+                item_confirmed = True
+                continue
             if (any(_contains_keyword(sentence.lower(), keyword) for keyword in CONSEQUENCE_YES_KEYWORDS)
                     and _verify_consequence_yes_candidate(sentence)):
-                return Verdict(
-                    outcome="YES",
-                    confidence=item.similarity,
-                    evidence_snippet=sentence.strip()[:280],
-                    source_url=item.article.url,
-                    source_type=item.article.source_type,
-                )
+                confirmations.append((sentence, item))
+                item_confirmed = True
 
-    # Semantic fallback: only reached when keyword matching found nothing
-    # at all above. Keyword matching stays primary/more precise.
-    for item in ranked_evidence:
+        if item_confirmed:
+            continue
         for sentence in _split_sentences(item.text):
             if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
                 continue
@@ -1449,13 +1564,25 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                 continue
             semantic_score = _semantic_yes_signal(sentence, market)
             if semantic_score is not None:
-                return Verdict(
-                    outcome="YES",
-                    confidence=min(item.similarity, semantic_score),
-                    evidence_snippet=sentence.strip()[:280],
-                    source_url=item.article.url,
-                    source_type=item.article.source_type,
-                )
+                confirmations.append((sentence, item))
+
+    if confirmations:
+        sentence, item = confirmations[0]
+        if _corroborating_domain_count(confirmations) >= CORROBORATION_MIN_DOMAINS:
+            return Verdict(
+                outcome="YES",
+                confidence=item.similarity,
+                evidence_snippet=sentence.strip()[:280],
+                source_url=item.article.url,
+                source_type=item.article.source_type,
+            )
+        return Verdict(
+            outcome="UNCLEAR",
+            confidence=item.similarity,
+            evidence_snippet=(sentence.strip()[:280] + _uncorroborated_note(confirmations)),
+            source_url=item.article.url,
+            source_type=item.article.source_type,
+        )
 
     # A market's description usually states a fallback ("Otherwise, this
     # market will resolve to 'No'"). That used to be EMITTED AS A VERDICT
