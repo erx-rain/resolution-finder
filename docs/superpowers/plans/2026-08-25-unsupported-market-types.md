@@ -70,6 +70,49 @@ not duplicated here, just cross-referenced since it's the same class of
 page. Deliberately deprioritized behind sports/politics per standing
 directive.
 
+## 5. Box-office weekend-gross tracking (confirmed real, in current dataset)
+
+`will-the-odyssey-5th-weekend-box-office-be-at-least-21m` (title asks
+about a SPECIFIC weekend's gross for a SPECIFIC film) -- same structural
+shape as item 4 (price-history tracking): the real resolution source is
+a structured data page (the-numbers.com's own weekend-gross table for
+that title), not ordinary news search. Confirmed wrong live
+(2026-09-02, corroboration re-verification run): retrieval ranked a
+the-numbers.com WEEKEND-PROJECTIONS page highly (0.593 similarity) that
+covers OTHER films entirely ("Spider-Man lands fifth straight weekend
+win... Coyote vs. Acme won't end up the winner...") and never names
+"Odyssey" anywhere in the extracted snippet at all -- the wrong-subject
+veto didn't fire because the sentence doesn't name any OTHER
+2+-word-capitalized entity either (a projections page reads more like a
+list/table than prose), so the number-extraction loop had nothing to
+veto on and used a projection number for the wrong film entirely.
+Tried-and-rejected in the moment: a general "sentence must positively
+name the subject, not just avoid naming a different one" gate for
+numeric-threshold markets -- too broad a change to make safely without
+checking it against every other numeric-threshold market's legitimate
+pronoun/short-reference evidence (the CLARITY-Act-style "no repeated
+subject name" case this file already protects elsewhere). Needs the
+same real-data-source treatment as item 4, not a text-search guard.
+
+## 6. Multi-team "qualifies" markets, forced into a single-winner shape
+
+`epl-team-to-qualify-for-uefa-champions-league` (real ground truth:
+Manchester United) -- title reads like a single-winner market
+(`_decide_multi_outcome`'s shape: one option crowned, others
+eliminated), but UEFA Champions League qualification from a domestic
+league is a multi-team outcome (top 4-5 EPL clubs ALL qualify most
+seasons) -- there is no single "the team that qualifies." Confirmed
+wrong live (2026-09-02): real evidence about Arsenal's 2026-27
+Champions League DRAW fixtures (a team that HAS qualified, just not
+necessarily the market's real intended answer) got crowned winner,
+eliminating every other option including the real ground truth
+(Manchester United) outright. Needs the market's real Polymarket
+resolution criteria pulled and read before guessing at a fix -- this
+may be a market whose real question is narrower than its title suggests
+(e.g. "which team qualifies HIGHEST" or a specific bracket/qualifying
+round), which no amount of multi-outcome guard-tuning can address
+without knowing the actual rule.
+
 ## Not yet checked
 
 The remaining 14 markets in `data/markets.json` were not individually

@@ -1452,6 +1452,15 @@ def _verify_consequence_yes_candidate(sentence: str) -> bool:
 CORROBORATION_MIN_DOMAINS = 2
 CORROBORATION_WIRE_DUPLICATE_SIMILARITY = 0.95
 
+# _decide_multi_outcome phase 2: bounds how many confirming (sentence,
+# item) pairs get collected per option before verification stops for
+# that option. Keeps the added NLI-call cost small on markets with many
+# options/many articles (e.g. a 30-team World Series market) -- once an
+# option has enough confirmations to settle corroboration either way, a
+# few extra genuinely wouldn't change the answer, so there is no value
+# in exhaustively verifying every remaining sentence against it too.
+MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION = 3
+
 
 def _confirmation_domain(item: RankedArticle) -> str:
     """A stable identity for 'which source' a confirmation came from --
@@ -1650,7 +1659,22 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
     # evidence; if more than one distinct option does, that is
     # unresolved disagreement, not a market with two winners, so the
     # market abstains rather than betting on whichever was found first.
-    winner_candidates: dict[str, Verdict] = {}
+    #
+    # Phase 2 corroboration (2026-09-02): even a SINGLE option verifying
+    # as winner is no longer enough on its own -- same
+    # CORROBORATION_MIN_DOMAINS bar as _decide_binary (see its own
+    # comment). Real bug this catches: the real world-series-champion-
+    # 2025 market (truth: Los Angeles Dodgers) wrongly crowned Cleveland
+    # Guardians off a single MLB.com historical reference page ("Every
+    # World Series champion since 1943 | ... | Cleveland Guardians") --
+    # a list/table page, not a real 2025 result, and the ONLY source
+    # that ever said so. Collects every (sentence, item) confirmation
+    # per option (capped at MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION,
+    # not unbounded, to keep the added NLI-call cost small -- once an
+    # option has enough confirmations to settle corroboration either
+    # way, further matching sentences for that option stop being
+    # verified) instead of stopping at the first.
+    winner_confirmations: dict[str, list[tuple[str, RankedArticle]]] = {}
     eliminated: dict[str, Verdict] = {}
     expected_year = _market_expected_year(market)
     market_is_playoff = _market_is_playoff_context(market)
@@ -1736,13 +1760,10 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 option_mentioned = _option_mentioned(lowered, option)
 
                 other_mentioned_options = [opt for opt in mentioned_options if opt != option]
-                if (option not in winner_candidates and not context_conflict and option_mentioned
+                if (len(winner_confirmations.get(option, [])) < MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION
+                        and not context_conflict and option_mentioned
                         and _verify_winner_candidate(sentence, option, market, other_mentioned_options)):
-                    winner_candidates[option] = Verdict(
-                        outcome="YES", option=option, confidence=item.similarity,
-                        evidence_snippet=sentence.strip()[:280],
-                        source_url=item.article.url, source_type=item.article.source_type,
-                    )
+                    winner_confirmations.setdefault(option, []).append((sentence, item))
 
                 # Head-to-head winner-crowning is only valid for a true
                 # 2-option (one-on-one) market -- beating ONE opponent in
@@ -1757,7 +1778,8 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 # and then wrongly crowned Team Falcons the overall
                 # CHAMPION off that one match. The NLI check wasn't wrong;
                 # applying "won one head-to-head" as "won the market" was.
-                if (len(market.options) == 2 and option not in winner_candidates
+                if (len(market.options) == 2
+                        and len(winner_confirmations.get(option, [])) < MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION
                         and not context_conflict and option_mentioned):
                     for other_option in market.options:
                         if other_option == option:
@@ -1767,11 +1789,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                             continue
                         if (_contains_keyword(lowered, other_option_lower)
                                 and _verify_head_to_head_candidate(sentence, option, other_option)):
-                            winner_candidates[option] = Verdict(
-                                outcome="YES", option=option, confidence=item.similarity,
-                                evidence_snippet=sentence.strip()[:280],
-                                source_url=item.article.url, source_type=item.article.source_type,
-                            )
+                            winner_confirmations.setdefault(option, []).append((sentence, item))
                             break
 
                 if (option not in eliminated and not context_conflict and option_mentioned
@@ -1782,35 +1800,55 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                         source_url=item.article.url, source_type=item.article.source_type,
                     )
 
-    if len(winner_candidates) > 1:
+    if len(winner_confirmations) > 1:
         # Genuine disagreement in the evidence: more than one option
         # independently verified as the winner. Committing to whichever
         # was found first is a coin flip on article ranking/order, not a
         # real decision -- see this function's own opening comment for
         # the real case this catches. Abstain rather than guess.
-        names = ", ".join(sorted(winner_candidates))
+        names = ", ".join(sorted(winner_confirmations))
         return [Verdict(
             outcome="UNCLEAR", option=None, confidence=0.0,
             evidence_snippet=(
-                f"Conflicting evidence: {len(winner_candidates)} options "
+                f"Conflicting evidence: {len(winner_confirmations)} options "
                 f"({names}) each independently appear to have won -- "
                 "flagged for review rather than guessed."
             ),
             source_url=None, source_type=None,
         )]
 
-    if winner_candidates:
+    if winner_confirmations:
+        option, confirmations = next(iter(winner_confirmations.items()))
+        if _corroborating_domain_count(confirmations) < CORROBORATION_MIN_DOMAINS:
+            # A single option verified, but not corroborated by enough
+            # independent sources -- see this function's own phase-2
+            # comment above for the real Cleveland Guardians case this
+            # catches. Abstain rather than crown a winner off one source.
+            sentence, item = confirmations[0]
+            return [Verdict(
+                outcome="UNCLEAR", option=None, confidence=item.similarity,
+                evidence_snippet=(
+                    f"{option}: " + sentence.strip()[:280] + _uncorroborated_note(confirmations)
+                ),
+                source_url=item.article.url, source_type=item.article.source_type,
+            )]
+
         # Overall winner confirmed: every option gets an explicit verdict.
-        winner = next(iter(winner_candidates.values()))
+        sentence, item = confirmations[0]
+        winner = Verdict(
+            outcome="YES", option=option, confidence=item.similarity,
+            evidence_snippet=sentence.strip()[:280],
+            source_url=item.article.url, source_type=item.article.source_type,
+        )
         results = [winner]
-        for option in market.options:
-            if option == winner.option:
+        for other_option in market.options:
+            if other_option == winner.option:
                 continue
-            if option in eliminated:
-                results.append(eliminated[option])
+            if other_option in eliminated:
+                results.append(eliminated[other_option])
             else:
                 results.append(Verdict(
-                    outcome="NO", option=option, confidence=winner.confidence,
+                    outcome="NO", option=other_option, confidence=winner.confidence,
                     evidence_snippet=winner.evidence_snippet,
                     source_url=winner.source_url, source_type=winner.source_type,
                 ))

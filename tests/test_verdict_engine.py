@@ -545,10 +545,16 @@ LAKERS_ROCKETS_MARKET_REVERSED_OPTIONS = Market(
 def test_multi_outcome_market_full_sweep_on_confirmed_winner():
     # Requirement: once an overall winner is confirmed, every option gets an
     # explicit verdict, not just the winner.
-    evidence = [make_ranked(
-        "The Norwegian Nobel Committee announced that the prize is awarded to Pope Leo XIV.",
-        url="https://nobelprize.org/announcement",
-    )]
+    evidence = [
+        make_ranked(
+            "The Norwegian Nobel Committee announced that the prize is awarded to Pope Leo XIV.",
+            url="https://nobelprize.org/announcement",
+        ),
+        make_ranked(
+            "Pope Leo XIV has been named winner of this year's Nobel Peace Prize, the committee said Friday.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(NOBEL_MARKET, evidence)
     assert isinstance(verdicts, list)
     by_option = {v.option: v.outcome for v in verdicts}
@@ -581,10 +587,17 @@ def test_multi_outcome_market_does_not_assert_stated_no_default_after_deadline()
 
 
 def test_multi_outcome_market_matches_announcement_keyword_as_whole_word():
-    evidence = [make_ranked(
-        "Official: Arsenal wins the race for Vinicius Junior.",
-        url="https://www.bbc.com/sport/1", source_type="credible_backup",
-    )]
+    evidence = [
+        make_ranked(
+            "Official: Arsenal wins the race for Vinicius Junior.",
+            url="https://www.bbc.com/sport/1", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Vinicius Junior has completed his move to Arsenal, ending his "
+            "spell at Real Madrid, the club confirmed Tuesday.",
+            url="https://www.skysports.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(VINICIUS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Arsenal": "YES", "Real Madrid": "NO"}
 
@@ -627,11 +640,18 @@ def test_multi_outcome_market_resolves_yes_on_contract_renewal_language():
     # Real gap found live: NYTimes/The Athletic on Vinicius Junior described
     # him staying at Real Madrid as "reached an agreement to renew his
     # contract", not any of the old ANNOUNCEMENT_KEYWORDS.
-    evidence = [make_ranked(
-        "Real Madrid have confirmed Vinicius Junior signed a new contract, "
-        "ending Arsenal's interest in the forward.",
-        url="https://www.nytimes.com/athletic/1", source_type="credible_backup",
-    )]
+    evidence = [
+        make_ranked(
+            "Real Madrid have confirmed Vinicius Junior signed a new contract, "
+            "ending Arsenal's interest in the forward.",
+            url="https://www.nytimes.com/athletic/1", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Real Madrid have fended off Arsenal's interest, confirming "
+            "Wednesday that Vinicius Junior signed a new deal to stay.",
+            url="https://www.marca.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(VINICIUS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Real Madrid": "YES", "Arsenal": "NO"}
 
@@ -639,10 +659,16 @@ def test_multi_outcome_market_resolves_yes_on_contract_renewal_language():
 def test_multi_outcome_market_resolves_yes_on_winner_of_phrase():
     # Real gap found live: BBC Pidgin on the Osun election used "declare ...
     # winner of ..." — "winner of" wasn't in ANNOUNCEMENT_KEYWORDS.
-    evidence = [make_ranked(
-        "INEC declare Ademola Adeleke winner of the Osun State election.",
-        url="https://www.bbc.com/pidgin/1", source_type="credible_backup",
-    )]
+    evidence = [
+        make_ranked(
+            "INEC declare Ademola Adeleke winner of the Osun State election.",
+            url="https://www.bbc.com/pidgin/1", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Ademola Adeleke has been declared the winner of the Osun governorship race by the electoral commission.",
+            url="https://www.premiumtimesng.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(OSUN_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {
         "Ademola Adeleke": "YES", "Taofeek Adeleke": "NO",
@@ -656,12 +682,19 @@ def test_multi_outcome_market_resolves_yes_on_head_to_head_victory_phrase():
     # ("wins", "winner of", ...) nor ELIMINATION_KEYWORDS covers "victory
     # over" phrasing, so this landed on UNCLEAR despite clearly confirming
     # the winner.
-    evidence = [make_ranked(
-        "The Los Angeles Lakers' first-round playoff victory over the "
-        "Houston Rockets may have accomplished more than advancing the "
-        "franchise to the Western Conference semifinals.",
-        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The Los Angeles Lakers' first-round playoff victory over the "
+            "Houston Rockets may have accomplished more than advancing the "
+            "franchise to the Western Conference semifinals.",
+            url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The Lakers eliminated the Rockets in the first round to reach "
+            "the Western Conference semifinals.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
@@ -673,21 +706,34 @@ def test_multi_outcome_head_to_head_winner_is_order_independent():
     # not from list position. This is the specific failure mode a naive
     # ANNOUNCEMENT_KEYWORDS addition would have had: both team names sit
     # within the same 40-char proximity window as "victory over".
-    evidence = [make_ranked(
-        "The Los Angeles Lakers' first-round playoff victory over the "
-        "Houston Rockets may have accomplished more than advancing the "
-        "franchise to the Western Conference semifinals.",
-        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The Los Angeles Lakers' first-round playoff victory over the "
+            "Houston Rockets may have accomplished more than advancing the "
+            "franchise to the Western Conference semifinals.",
+            url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The Lakers eliminated the Rockets in the first round to reach "
+            "the Western Conference semifinals.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(LAKERS_ROCKETS_MARKET_REVERSED_OPTIONS, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
 
 def test_multi_outcome_market_resolves_yes_on_head_to_head_defeated_verb():
-    evidence = [make_ranked(
-        "The Lakers defeated the Rockets in six games to advance.",
-        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The Lakers defeated the Rockets in six games to advance.",
+            url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The Lakers advanced to the next round after eliminating the Rockets in six games on Sunday night.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
@@ -756,12 +802,19 @@ def test_multi_outcome_market_still_resolves_yes_when_evidence_has_no_year():
     # head-to-head fix (no year mentioned at all) must still work --
     # the new year-conflict guard must not be a blanket "any year
     # anywhere" filter, only a check on sentences that already matched.
-    evidence = [make_ranked(
-        "The Los Angeles Lakers' first-round playoff victory over the "
-        "Houston Rockets may have accomplished more than advancing the "
-        "franchise to the Western Conference semifinals.",
-        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The Los Angeles Lakers' first-round playoff victory over the "
+            "Houston Rockets may have accomplished more than advancing the "
+            "franchise to the Western Conference semifinals.",
+            url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The Lakers eliminated the Rockets in the first round to reach "
+            "the Western Conference semifinals.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
@@ -769,11 +822,17 @@ def test_multi_outcome_market_still_resolves_yes_when_evidence_has_no_year():
 def test_multi_outcome_market_still_resolves_yes_when_evidence_states_matching_year():
     # The matching year (2026, same as the market's own) must not be
     # treated as a conflict just because the check fires.
-    evidence = [make_ranked(
-        "The Lakers defeated the Rockets in the 2026 Western Conference "
-        "First Round series.",
-        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The Lakers defeated the Rockets in the 2026 Western Conference "
+            "First Round series.",
+            url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The Lakers advanced to the next round after eliminating the Rockets in the 2026 first-round series on Sunday night.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
@@ -802,10 +861,17 @@ def test_multi_outcome_market_still_matches_bare_wins_for_genuine_victory():
     # for Vinicius Junior" case must still work -- the fix must not
     # blanket-suppress bare "wins", only the "wins over"/"win over"
     # head-to-head phrasing specifically.
-    evidence = [make_ranked(
-        "Official: Arsenal wins the race for Vinicius Junior.",
-        url="https://www.bbc.com/sport/1", source_type="credible_backup",
-    )]
+    evidence = [
+        make_ranked(
+            "Official: Arsenal wins the race for Vinicius Junior.",
+            url="https://www.bbc.com/sport/1", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Vinicius Junior has completed his move to Arsenal, ending his "
+            "spell at Real Madrid, the club confirmed Tuesday.",
+            url="https://www.skysports.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(VINICIUS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Arsenal": "YES", "Real Madrid": "NO"}
 
@@ -815,11 +881,18 @@ def test_multi_outcome_market_head_to_head_still_works_via_wins_over_phrase():
     # resolve directionally, via _match_head_to_head_winner -- only the
     # generic ANNOUNCEMENT_KEYWORDS proximity path is suppressed for this
     # phrase, not head-to-head confirmation entirely.
-    evidence = [make_ranked(
-        "The Lakers' string of wins over the Rockets this postseason "
-        "sealed the series.",
-        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The Lakers' string of wins over the Rockets this postseason "
+            "sealed the series.",
+            url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The Lakers eliminated the Rockets in the first round to reach "
+            "the Western Conference semifinals.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
@@ -843,11 +916,17 @@ def test_multi_outcome_market_ignores_head_to_head_result_from_a_different_phase
 def test_multi_outcome_market_still_resolves_yes_when_evidence_states_matching_phase():
     # The market's own phase (playoffs) stated explicitly in evidence
     # must not be treated as a conflict just because the check fires.
-    evidence = [make_ranked(
-        "The Lakers defeated the Rockets in the playoffs to advance to "
-        "the Western Conference semifinals.",
-        url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
-    )]
+    evidence = [
+        make_ranked(
+            "The Lakers defeated the Rockets in the playoffs to advance to "
+            "the Western Conference semifinals.",
+            url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The Lakers advanced to the next round after eliminating the Rockets in the first-round playoff series on Sunday night.",
+            url="https://www.espn.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(LAKERS_ROCKETS_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts} == {"Lakers": "YES", "Rockets": "NO"}
 
@@ -938,13 +1017,19 @@ def test_multi_outcome_market_resolves_yes_when_becoming_the_nominee_is_the_win_
     # convention. Distinguishing "nominated FOR an award" (candidacy,
     # hedge) from "becomes THE nominee" (the win itself, don't hedge)
     # needs the qualifier -- see NEGATION_HEDGE_WORDS' own comment.
-    evidence = [make_ranked(
-        "It's official: Kamala Harris becomes Democrats' 2024 "
-        "presidential nominee - NPR",
-        url="https://news.google.com/rss/articles/npr-harris",
-        source_type="credible_backup",
-        similarity=0.581,
-    )]
+    evidence = [
+        make_ranked(
+            "It's official: Kamala Harris becomes Democrats' 2024 "
+            "presidential nominee - NPR",
+            url="https://news.google.com/rss/articles/npr-harris",
+            source_type="credible_backup",
+            similarity=0.581,
+        ),
+        make_ranked(
+            "Kamala Harris has clinched the 2024 Democratic presidential nomination, delegates confirmed Monday.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
     verdicts = decide(DEMOCRATIC_NOMINEE_MARKET, evidence)
     assert {v.option: v.outcome for v in verdicts}["Kamala Harris"] == "YES"
 
