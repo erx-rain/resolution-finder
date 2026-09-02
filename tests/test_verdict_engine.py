@@ -1542,6 +1542,48 @@ def test_numeric_threshold_market_ignores_unrelated_number_in_vague_records_refe
     assert verdict.outcome != "YES"
 
 
+# Real market pulled from Polymarket (will-spcx-reach-145-in-august-2026)
+# -- title verbatim. Real description states this resolves on "any
+# 1-minute candle" reaching the price "at any point during August 2026",
+# with Pyth's own historical price data as the resolution source -- a
+# real, structural gap ordinary news search cannot answer, deliberately
+# deferred (see docs/superpowers/plans/2026-08-10-...: "Submarket
+# price-history tracking for numeric-threshold markets").
+SPCX_MARKET = Market(
+    id="will-spcx-reach-145-in-august-2026",
+    title="Will SpaceX (SPCX) hit (HIGH) $145 in August?",
+    description=(
+        "This market will resolve to \"Yes\" if, at any point during "
+        "August 2026, any 1-minute candle for SpaceX (SPCX) has a final "
+        "\"High\" price equal to or above the listed price. Otherwise, "
+        "this market will resolve to \"No\"."
+    ),
+    options=[],
+    close_date=date(2026, 9, 1),
+)
+
+
+def test_numeric_threshold_market_declines_to_answer_a_price_window_market_from_a_news_snapshot():
+    # Real bug found live (2026-09-02): this real market (truth: Yes)
+    # wrongly resolved NO off "SpaceX Stock Price Prediction: SPCX Sinks
+    # 35%, Eyes August Earnings" -- a snapshot headline, not the market's
+    # real "at any point during the window" condition. No amount of
+    # incidental news-headline text can answer that; it needs the real
+    # historical price-history data source, which is explicitly
+    # deferred. The archive pass made this WORSE, not better: it now
+    # finds a misleading snapshot where it previously found nothing,
+    # converting a safe unresolved into a wrong answer.
+    evidence = [make_ranked(
+        "SpaceX Stock Price Prediction: SPCX Sinks 35%, Eyes August "
+        "Earnings - Coin Gabbar",
+        url="https://news.google.com/rss/articles/spcx-sinks",
+        source_type="general",
+    )]
+    verdict = decide(SPCX_MARKET, evidence)
+    assert verdict.outcome != "NO"
+    assert verdict.outcome != "YES"
+
+
 def test_numeric_threshold_market_no_evidence_at_all():
     verdict = decide(BITCOIN_MARKET, [])
     assert verdict.outcome == "NO_EVIDENCE"

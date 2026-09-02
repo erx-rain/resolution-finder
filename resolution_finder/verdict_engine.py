@@ -292,6 +292,42 @@ def _verify_threshold_not_met(sentence: str) -> bool:
 def _decide_numeric_threshold(
     market: Market, ranked_evidence: list[RankedArticle], direction: str, threshold: float
 ) -> Verdict:
+    # Real bug found live (2026-09-02): the real will-spcx-reach-145-in-
+    # august-2026 market (title marker "(HIGH)", truth: Yes) wrongly
+    # resolved NO off "SpaceX Stock Price Prediction: SPCX Sinks 35%,
+    # Eyes August Earnings" -- a snapshot headline, not the market's real
+    # condition ("at any point during August 2026, any 1-minute candle
+    # ... has a final High price equal to or above the listed price",
+    # per its real description; resolution source is Pyth's own 1-minute
+    # candle data, not news coverage at all). No amount of incidental
+    # news-headline text can answer a "did the price touch X at ANY
+    # point in a window" question -- that needs the real historical
+    # price-history data source, which is explicitly deferred (see
+    # docs/superpowers/plans/2026-08-10-...: "Submarket price-history
+    # tracking for numeric-threshold markets"). The archive pass made
+    # this WORSE, not better: it now finds a misleading snapshot where
+    # it previously found nothing, converting unresolved into wrong.
+    # "(HIGH)"/"(LOW)" in the title is the real, already-used marker for
+    # this exact market shape (verified: matches both real price-window
+    # markets in the current dataset, no others) -- refuse to assert
+    # anything from ordinary evidence for these until the real price
+    # source is built, rather than guess from a headline that cannot
+    # possibly answer the real question.
+    if "(HIGH)" in market.title or "(LOW)" in market.title:
+        if ranked_evidence:
+            top = ranked_evidence[0]
+            return Verdict(
+                outcome="UNCLEAR", confidence=top.similarity,
+                evidence_snippet=(
+                    "This market resolves on a price-history window (see title's "
+                    "HIGH/LOW marker), which ordinary news search cannot answer -- "
+                    "needs the real historical price API (deferred, not yet built)."
+                ),
+                source_url=top.article.url, source_type=top.article.source_type,
+            )
+        return Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                        source_url=None, source_type=None)
+
     subject_terms = _subject_terms(market)
     distinctive_terms = _distinctive_subject_terms(market)
     for item in ranked_evidence:
