@@ -401,6 +401,25 @@ NEGATION_HEDGE_WORDS = [
     "yet to", "has yet", "remains uncertain", "uncertain", "unclear",
     "unlikely", "pending", "awaiting", "no vote", "not scheduled",
     "if ", "unless ", "would be", "could be", "might be",
+    # Real bug found live (2026-09-02): "may " -- despite "might be"/
+    # "could be"/"would be" already being covered above -- was missing
+    # entirely. Real evidence, a vague multi-sport summary headline
+    # ("Famous records that may soon be broken"), never got hedge-
+    # blocked at all, letting an unrelated number ("800m landmarks", an
+    # athletics reference) reach number-extraction and wrongly confirm a
+    # numeric-threshold market.
+    #
+    # TRIED AND REJECTED: bare "may " -- regressed 3 existing tests. The
+    # real Lakers/Rockets true-positive uses "may have accomplished more
+    # than..." -- a RHETORICAL hedge about the SIGNIFICANCE of an
+    # already-confirmed victory ("playoff victory over the Houston
+    # Rockets" is stated as settled fact), not genuine uncertainty about
+    # whether it happened. "may soon"/"may be broken" (future tense,
+    # genuine uncertainty about occurrence) is a different grammatical
+    # pattern than "may have" (present perfect, rhetorical) -- narrowed
+    # to the phrases the real sentence actually needs instead of bare
+    # "may " catching both.
+    "may soon", "may be broken", "may break",
     "analysts say", "some say", "pundits say", "reportedly", "allegedly",
     "is speculated", "some believe", "many believe", "it is believed",
     "rumored", "sources say", "some argue", "experts say",

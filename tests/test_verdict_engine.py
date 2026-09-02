@@ -1905,3 +1905,29 @@ def test_semantic_fallback_rejects_vague_other_records_reference(mock_get_model,
     verdict = decide(WORLD_CUP_MARKET, evidence)
     assert verdict.outcome != "YES"
     mock_get_model.assert_not_called()
+
+
+def test_numeric_threshold_ignores_a_bare_may_hedge_and_unrelated_number():
+    # Real bug found live (2026-09-02), surfaced by the date-scoped
+    # archive pass (headline-only evidence made this failure mode more
+    # reachable than full article prose did): the real world-cup-most-
+    # goals-record-broken market (truth: No -- Just Fontaine's 13-goal
+    # SINGLE-TOURNAMENT record, real record still stands) wrongly
+    # resolved YES off a vague, multi-sport summary headline: "World Cup
+    # goals, 800m landmarks and Tour de France wins: Famous records that
+    # may soon be broken - The Athletic - The New York Times".
+    # _extract_latest_number grabbed "800" from the unrelated "800m
+    # landmarks" (an athletics reference, not World Cup goals) and
+    # compared it against the 14-goal threshold. "may" -- despite
+    # "might be"/"could be"/"would be" already being covered -- was
+    # missing from NEGATION_HEDGE_WORDS entirely, so this sentence never
+    # got hedge-blocked at all before reaching number extraction.
+    evidence = [make_ranked(
+        "World Cup goals, 800m landmarks and Tour de France wins: "
+        "Famous records that may soon be broken - The Athletic - The "
+        "New York Times",
+        url="https://news.google.com/rss/articles/records-may-be-broken",
+        source_type="credible_backup",
+    )]
+    verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
+    assert verdict.outcome != "YES"
