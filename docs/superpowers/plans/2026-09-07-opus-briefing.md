@@ -244,6 +244,33 @@ shape as gap #1; "what will Trump say/post" multi-option word-guessing
 markets are the same excluded shape already filtered out (not resolvable
 from news reporting at all, by design).
 
+## 6a. Explicit user request: review the retrieval/networking layer for anomalies
+
+User asked directly for Opus to review `evidence_retriever.py` /
+`article_extractor.py` (the HTTP-fetching layer) for anomalies and
+whether any steps should change — not investigated in depth this
+session, but one concrete, recurring anomaly was already visible in
+every eval log all session and is worth starting from:
+
+**Bing News RSS fails its own fetch-health check on 17-24% of markets,
+consistently, across every run this session** (7/33 in the in-progress
+97-market run so far, 10/42 and 7/42 in two earlier runs — a stable
+rate, not a fluke). The warning is `Bing News RSS fetch may have failed
+... (status=None, bozo=True)`, raised by `_warn_if_feed_fetch_failed`
+in `evidence_retriever.py`. **Plausible root cause, not yet confirmed:**
+`search_bing_news_rss` (evidence_retriever.py:153) calls `feedparser.
+parse(url)` with no custom headers, unlike other fetches in this same
+file that explicitly spoof a browser User-Agent
+(`headers={"User-Agent": "Mozilla/5.0"}`) — `status=None` is consistent
+with Bing soft-blocking or rate-limiting feedparser's default UA rather
+than a genuine network failure. Worth Opus deciding: (a) confirm the
+UA-spoofing theory directly, (b) decide whether Bing Tier 2 is
+contributing enough real evidence to be worth keeping at all given this
+failure rate, since it exists specifically as a Google-News-RSS
+`site:`-scoping workaround (see the function's own docstring) — if it's
+frequently dead weight, that's retrieval latency being spent for
+nothing on a fifth to a quarter of all markets.
+
 ## 7. New market candidates found, NOT yet merged (per user instruction: verify before merging)
 
 126 additional real, resolved markets pulled verbatim from Polymarket's
