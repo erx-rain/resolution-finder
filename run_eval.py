@@ -79,7 +79,12 @@ def _load_markets(market_ids: set[str]) -> tuple[list[Market], dict[str, str]]:
         Market(
             id=m["id"], title=m["title"], description=m["description"],
             options=m.get("options", []),
-            close_date=date.fromisoformat(m["close_date"]),
+            # A real market can genuinely have no close_date in the source
+            # API response (e.g. some pulled March Madness markets) --
+            # Market.close_date is Optional and verdict_engine already
+            # guards every use of it (`if market.close_date and ...`), so
+            # this is a real, valid state to load, not bad data to reject.
+            close_date=date.fromisoformat(m["close_date"]) if m.get("close_date") else None,
         )
         for m in raw
     ]

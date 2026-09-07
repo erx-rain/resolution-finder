@@ -9,7 +9,11 @@ class Market:
     title: str
     description: str
     options: list[str]
-    close_date: date
+    # Optional: a real market can genuinely have no close_date in its
+    # source data (confirmed live, 2026-09-07 -- some pulled March
+    # Madness markets). Every real usage already guards this
+    # (`if market.close_date and ...`) -- this annotation was just stale.
+    close_date: Optional[date]
 
 
 @dataclass
