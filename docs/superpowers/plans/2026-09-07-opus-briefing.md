@@ -1,40 +1,40 @@
 # Briefing for Opus: corroboration rollout results, open bugs, structural gaps
 
-## -1. MOST IMPORTANT ITEM — the real target use case is NICHE markets, and our whole eval set is the opposite
+## -1. Future-phase item — the eventual target is niche markets with NO Polymarket equivalent
 
-User's explicit statement (2026-09-07, dictated): this program's main use
-case is **niche markets** — narrow, low-news-coverage questions like "how
-many yellow cards will a player get," NOT mainstream headline markets
-(World Series, presidential elections, NBA Finals). There is already a
-**separate, existing system that monitors Polymarket directly** — when a
-market closes on Polymarket itself, the corresponding market on the
-user's side should close/resolve using THAT signal, not this tool's news-
-search pipeline. So this tool's real job is the long tail that Polymarket's
-own resolution and mainstream news coverage don't handle well — it is
-NOT meant to compete with resolving the easy, well-covered mainstream
-cases. (One phrase in the same statement was not understood and needs
-re-confirming with the user: "these are basically for market start[?] r
-and o[?] in polymarket" — flagged, not guessed at. Saved to persistent
-memory as `target-use-case-niche-markets`.)
+User's explicit statement (2026-09-07, dictated, self-corrected after an
+initial garbled version): the eventual real target use case is **niche
+markets that are NOT on Polymarket at all** — narrow questions (e.g. "how
+many yellow cards will a player get") with no existing Polymarket market
+to piggyback resolution off of. Separately, there is already an existing
+system that watches Polymarket directly: when a market closes there, the
+mirrored market on the user's side closes using THAT signal — this tool
+was never meant to compete with resolving markets Polymarket itself
+already resolves.
 
-**This directly undercuts the eval methodology used all session so far.**
-Every market pulled and merged this session (the original 30, the +12,
-the +55 in the current in-progress run) was deliberately selected for
-HIGH LIQUIDITY and MAINSTREAM profile — explicitly the opposite of the
-real target distribution. A niche, low-coverage market is much less
-likely to ever have 2+ independent outlets covering it, meaning the
-corroboration rule (this session's entire body of work) may be far
-HARDER to satisfy in practice on the real target distribution than
-anything measured against this session's mainstream-heavy eval set —
-the "wrong=0" results reported this session could be systematically
-optimistic relative to production reality. **This is probably the single
-highest-priority thing for Opus to reason about before finalizing any
-other design decision** — it may change how the corroboration bar,
-retrieval breadth, and even the acceptable-unresolved-rate framing
-should be tuned, and it means a genuinely representative eval batch
-(niche/narrow markets, not mainstream ones) is likely needed before any
-other conclusion in this document can be trusted as representative of
-production.
+**Sequencing, stated explicitly — this is NOT an urgent correction to
+current work.** Broad/mainstream-market testing (everything pulled and
+evaluated this session — the original 30, +12, +55) is the CORRECT
+current phase. Niche-market testing is an explicit LATER phase: "after
+we get to a point where we say 'alright, this is good' [on broad
+coverage], we should try and see how our model does with more niche
+subjects." (An earlier draft of this section overstated this as an
+urgent blocker undercutting the whole eval methodology — corrected here
+after the user clarified; don't read anything below this note as
+implying the current mainstream-market eval work should stop or is
+wrong.)
+
+**What this means for later:** once broad-market performance is judged
+solid, deliberately pull a batch of narrow/niche markets with no
+Polymarket equivalent — harder to source via `pull_test_batch.py`
+specifically, since it's built on Polymarket's own search API, so a
+different sourcing approach will likely be needed for genuinely
+non-Polymarket niche markets — and re-measure specifically against
+those. Retrieval breadth and the corroboration bar were both tuned
+against mainstream-market coverage density this session and may behave
+differently (likely harder to satisfy 2+ independent domains) on a
+low-coverage niche market; worth keeping in mind as a known unknown,
+not something to solve now.
 
 ## 0. HEADLINE FINDING — the embedding model silently truncates long descriptions at 256 tokens
 
