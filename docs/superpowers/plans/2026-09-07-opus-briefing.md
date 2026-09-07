@@ -375,9 +375,16 @@ one.
 
 ## 8. Final 97-market batch result (completed after this doc was mostly written)
 
-`correct=18 wrong=1 unresolved=74 no_ground_truth=4`. The single wrong:
-`womens-march-madness-iowa-vs-lsu` (truth=Iowa, got=YES for LSU) — NOT
-investigated this session, flagged only so it isn't lost. `unresolved`
+`correct=18 wrong=1 unresolved=74 no_ground_truth=4`. The single wrong,
+`womens-march-madness-iowa-vs-lsu` (truth=Iowa, got=YES for LSU) — **now
+investigated and fixed** (commit `0eb9a2f`, 268 tests pass): a "last
+year's title game" reference (LSU won the PRIOR year's championship)
+was misread as confirming LSU won the CURRENT Elite Eight game. New
+guard `_sentence_mentions_last_year_reference`, deliberately
+unconditional on year/close_date info being available (this market had
+neither) — see the commit for full reasoning. Re-running this specific
+market after the fix would be the natural verification step, not done
+in this session (time-boxed). `unresolved`
 is very high (74/93 with ground truth) on this batch — consistent with
 most of the +55 newly-merged markets being narrow single-game/tournament
 questions with thinner news coverage than the original 30, which is
