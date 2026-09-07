@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/resolution_finder.db
+# Local, regenerable retrieval snapshot for run_eval.py's replay mode --
+# see resolution_finder/eval_cache.py's own docstring. Not a versioned
+# historical record the way data/eval_history.jsonl is; can be large
+# (full article text per candidate, per market) and is trivially
+# regenerated with `python run_eval.py --live`.
+data/eval_cache.json

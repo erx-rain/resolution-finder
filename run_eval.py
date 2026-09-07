@@ -16,8 +16,29 @@ batch (seconds, not minutes) instead of the full set:
 
     python run_eval.py bitcoin-above-64k-on-august-17-2026 clarity-act-2026
 
-With no arguments, runs every market in data/markets.json (slow -- real
-network fetches with rate-limit delays across the whole set).
+With no arguments, runs every market in data/markets.json.
+
+CACHING (see resolution_finder/eval_cache.py's own docstring for the full
+reasoning): retrieval is live and non-deterministic, so by default this
+script is now cache-first -- a market with an existing snapshot in
+data/eval_cache.json replays against that FIXED evidence (real ranking,
+real decide() still run -- only the retrieval inputs are cached, not the
+verdict). This removes the network/rate-limit time entirely -- the
+dominant cost on a replayed run is the one-time embedding/NLI model load
+(measured: ~60-70s per process invocation, same whether 1 market or 97),
+not per-market work, so replaying a big batch is dramatically faster
+(minutes, not the ~90 for a full live run) while a tiny 1-2 market
+replay mostly just pays that fixed model-load cost. Critically, this lets
+two runs of different CODE be compared without retrieval noise
+confounding the comparison -- verified live: a market re-run from the
+same cached snapshot twice produced byte-identical VERDICT/evidence/
+source output both times. A market with no cached snapshot yet is
+fetched live and the result is cached automatically for next time. Pass
+--live to force a fresh live fetch (and overwrite any existing snapshot)
+instead:
+
+    python run_eval.py --live                     # refresh everything
+    python run_eval.py --live clarity-act-2026     # refresh just this one
 """
 import json
 import logging
@@ -32,6 +53,7 @@ from resolution_finder.article_extractor import extract_article_text, is_known_u
 from resolution_finder.relevance_ranker import rank_by_relevance
 from resolution_finder.verdict_engine import decide
 from resolution_finder.config import SIMILARITY_THRESHOLD, MARKETS_JSON_PATH
+from resolution_finder.eval_cache import load_cache, save_cache, load_market_snapshot, store_market_snapshot
 
 logging.basicConfig(level=logging.WARNING)  # quiet; this prints its own trace
 
@@ -119,17 +141,43 @@ def _score(verdicts: list, ground_truth: str | None, options: list[str]) -> str:
     return "unresolved"
 
 
-def _run_one_market(market: Market, ground_truth: str | None) -> dict:
+def _fetch_live(market: Market) -> tuple[list, dict, list[str]]:
+    """Real retrieval + extraction, exactly as before caching existed --
+    returns (candidates, article_text_by_url, queries). `article_text`
+    maps every candidate's url to its extracted text, or None for a real
+    fetch/extract failure (kept, not dropped, so a later cached replay
+    reproduces the SAME failures rather than silently fewer candidates
+    than this live run actually had)."""
+    queries = build_queries(market)
+    candidates = retrieve_evidence(market, queries)
+    article_text: dict = {}
+    for ref in candidates:
+        # Mirrors pipeline.py: an unfetchable host (news.google.com
+        # JS-redirect wrapper) contributes its search-result headline
+        # instead. Covers official_social and the date-scoped archive pass.
+        if ref.source_type == "official_social" or (ref.summary and is_known_unresolvable_url(ref.url)):
+            article_text[ref.url] = ref.summary or ref.title
+        else:
+            article_text[ref.url] = extract_article_text(ref.url)
+    return candidates, article_text, queries
+
+
+def _run_one_market(market: Market, ground_truth: str | None, cache: dict, live: bool) -> dict:
     print("\n" + "=" * 100)
     print(f"MARKET: {market.id}")
     print(f"  title: {market.title}")
     print(f"  close_date: {market.close_date}")
     print(f"  ground_truth resolved_to: {ground_truth}")
 
-    queries = build_queries(market)
-    print(f"  queries built ({len(queries)}): {queries}")
+    snapshot = None if live else load_market_snapshot(cache, market.id)
+    if snapshot is not None:
+        print("  [replaying from cached retrieval snapshot -- pass --live to refresh]")
+        candidates, article_text, queries = snapshot["candidates"], snapshot["article_text"], snapshot["queries"]
+    else:
+        candidates, article_text, queries = _fetch_live(market)
+        store_market_snapshot(cache, market.id, queries, candidates, article_text)
 
-    candidates = retrieve_evidence(market, queries)
+    print(f"  queries built ({len(queries)}): {queries}")
     print(f"  candidate refs retrieved: {len(candidates)}")
     by_type: dict[str, list] = {}
     for c in candidates:
@@ -143,23 +191,14 @@ def _run_one_market(market: Market, ground_truth: str | None) -> dict:
         candidates_by_type[stype] = [c.url for c in items]
 
     articles_with_text = []
-    fetch_failures = 0
     fetch_failure_urls = []
     for ref in candidates:
-        # Mirrors pipeline.py: an unfetchable host (news.google.com
-        # JS-redirect wrapper) contributes its search-result headline
-        # instead. Covers official_social and the date-scoped archive pass.
-        if ref.source_type == "official_social" or (ref.summary and is_known_unresolvable_url(ref.url)):
-            text = ref.summary or ref.title
-            if text:
-                articles_with_text.append((ref, text))
-            continue
-        text = extract_article_text(ref.url)
+        text = article_text.get(ref.url)
         if text:
             articles_with_text.append((ref, text))
         else:
-            fetch_failures += 1
             fetch_failure_urls.append(ref.url)
+    fetch_failures = len(fetch_failure_urls)
     print(f"  articles with extracted text: {len(articles_with_text)} (fetch/extract failures: {fetch_failures})")
 
     ranked = rank_by_relevance(market, articles_with_text)
@@ -199,6 +238,7 @@ def _run_one_market(market: Market, ground_truth: str | None) -> dict:
     return {
         "market_id": market.id,
         "ground_truth": ground_truth,
+        "from_cache": snapshot is not None,
         "verdicts": [
             {
                 "outcome": v.outcome, "option": v.option, "confidence": round(v.confidence, 3),
@@ -224,13 +264,16 @@ def _run_one_market(market: Market, ground_truth: str | None) -> dict:
     }
 
 
-def run_eval(market_ids: set[str]) -> None:
+def run_eval(market_ids: set[str], live: bool = False) -> None:
     markets, ground_truth = _load_markets(market_ids)
-    run_results = [_run_one_market(m, ground_truth.get(m.id)) for m in markets]
+    cache = load_cache()
+    run_results = [_run_one_market(m, ground_truth.get(m.id), cache, live) for m in markets]
+    save_cache(cache)
 
     print("\n" + "=" * 100)
     print("SCORECARD")
     counts = {"correct": 0, "wrong": 0, "unresolved": 0, "no_ground_truth": 0}
+    replayed = sum(1 for r in run_results if r["from_cache"])
     for r in run_results:
         counts[r["verdict_class"]] += 1
         got = [v["outcome"] for v in r["verdicts"]]
@@ -238,6 +281,8 @@ def run_eval(market_ids: set[str]) -> None:
 
     print(f"\ncorrect={counts['correct']} wrong={counts['wrong']} "
           f"unresolved={counts['unresolved']} no_ground_truth={counts['no_ground_truth']}")
+    print(f"({replayed}/{len(markets)} market(s) replayed from cached retrieval, "
+          f"{len(markets) - replayed} fetched live)")
 
     git_commit, git_dirty = _git_state()
     record = {
@@ -255,4 +300,7 @@ def run_eval(market_ids: set[str]) -> None:
 
 
 if __name__ == "__main__":
-    run_eval(set(sys.argv[1:]))
+    args = sys.argv[1:]
+    live_flag = "--live" in args
+    market_id_args = {a for a in args if a != "--live"}
+    run_eval(market_id_args, live=live_flag)
