@@ -1,5 +1,41 @@
 # Briefing for Opus: corroboration rollout results, open bugs, structural gaps
 
+## -1. MOST IMPORTANT ITEM — the real target use case is NICHE markets, and our whole eval set is the opposite
+
+User's explicit statement (2026-09-07, dictated): this program's main use
+case is **niche markets** — narrow, low-news-coverage questions like "how
+many yellow cards will a player get," NOT mainstream headline markets
+(World Series, presidential elections, NBA Finals). There is already a
+**separate, existing system that monitors Polymarket directly** — when a
+market closes on Polymarket itself, the corresponding market on the
+user's side should close/resolve using THAT signal, not this tool's news-
+search pipeline. So this tool's real job is the long tail that Polymarket's
+own resolution and mainstream news coverage don't handle well — it is
+NOT meant to compete with resolving the easy, well-covered mainstream
+cases. (One phrase in the same statement was not understood and needs
+re-confirming with the user: "these are basically for market start[?] r
+and o[?] in polymarket" — flagged, not guessed at. Saved to persistent
+memory as `target-use-case-niche-markets`.)
+
+**This directly undercuts the eval methodology used all session so far.**
+Every market pulled and merged this session (the original 30, the +12,
+the +55 in the current in-progress run) was deliberately selected for
+HIGH LIQUIDITY and MAINSTREAM profile — explicitly the opposite of the
+real target distribution. A niche, low-coverage market is much less
+likely to ever have 2+ independent outlets covering it, meaning the
+corroboration rule (this session's entire body of work) may be far
+HARDER to satisfy in practice on the real target distribution than
+anything measured against this session's mainstream-heavy eval set —
+the "wrong=0" results reported this session could be systematically
+optimistic relative to production reality. **This is probably the single
+highest-priority thing for Opus to reason about before finalizing any
+other design decision** — it may change how the corroboration bar,
+retrieval breadth, and even the acceptable-unresolved-rate framing
+should be tuned, and it means a genuinely representative eval batch
+(niche/narrow markets, not mainstream ones) is likely needed before any
+other conclusion in this document can be trusted as representative of
+production.
+
 ## 0. HEADLINE FINDING — the embedding model silently truncates long descriptions at 256 tokens
 
 Confirmed live (2026-09-07): `EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"`
