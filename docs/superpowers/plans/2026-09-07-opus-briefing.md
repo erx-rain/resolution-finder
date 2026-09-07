@@ -391,3 +391,19 @@ questions with thinner news coverage than the original 30, which is
 itself a small, accidental preview of the niche-market coverage
 question in section -1 above, worth Opus noting as a data point even
 though it wasn't deliberately designed as a niche-market test.
+
+## 9. Post-fix live re-verification (Iowa-LSU)
+
+Re-ran the specific market against live retrieval after the "last
+year's" fix: now correctly `UNRESOLVED` (was `WRONG`), blocked by
+corroboration (single source). One residual soft signal noted for
+completeness, not chased further: the neutral, no-stated-winner
+sentence "Iowa and LSU meet again, this time in Elite Eight" alone
+still gets read as a weak LSU-win candidate by `_verify_winner_
+candidate` (unclear why LSU specifically and not Iowa -- possibly
+second-named-team bias in this specific sentence structure, not
+investigated). This never surfaces as a wrong answer on its own since
+corroboration requires a second independent domain, which this signal
+is unlikely to reliably get -- but it's a softer version of the same
+underlying pattern (matchup-announcement language misread as a result
+claim) worth Opus knowing about if a similar case surfaces elsewhere.
