@@ -1,0 +1,205 @@
+# Briefing for Opus: corroboration rollout results, open bugs, structural gaps
+
+Compiled 2026-09-07 on Sonnet, per explicit user request, ahead of an Opus
+planning session to sequence remaining work against a 2-week deadline. Every
+claim below is either a git commit, a real eval-log trace, or a live
+diagnostic run in this session — nothing here is invented or extrapolated
+without a citation.
+
+## 1. What shipped this session (all committed, all tested)
+
+The corroboration rule (2+ independent domains required before a definitive
+verdict) was built across all four `decide()` paths, then a follow-on
+root-cause pass fixed real bugs the corroboration rollout itself surfaced.
+Commit order:
+
+1. `8b74acf` — `_decide_binary` requires 2+ independent domains (phase 1)
+2. `5037729` — fix: "one shy of"/"one short of" near-miss phrasing
+3. `98f5934` — `_decide_multi_outcome`, same bar (phase 2)
+4. `c2b6713` — real-data measurement after phase 2
+5. `8e20d2a` — `_decide_numeric_threshold`, SYMMETRIC (both YES and NO gated) (phase 3)
+6. `933b38e` — `_decide_date_thresholds` (phase 4, final)
+7. `fe142d9` — fix: conflict abstention now requires BOTH sides corroborated
+   (root cause: was blocking 8/21 unresolved markets on single-source noise)
+8. `8b15d96` — docs: 42-market structural audit; scope-corrected the crypto price gap
+9. `9334233` — fix: aggregate field-wide stats + pre-election polling misreads
+10. `708be7f` — fix: "passed by Congress" bicameral-bill phrasing
+11. `6fa873d` — fix: vote-share GROWTH language wrongly read as a win
+
+267 tests pass as of the last commit. Full test suite: `pytest tests/ -q`.
+
+## 2. Eval history trend (real runs, `data/eval_history.jsonl`)
+
+| timestamp (UTC) | correct | wrong | unresolved | no_gt | note |
+|---|---|---|---|---|---|
+| 09-02 09:38 | 11 | 3 | 12 | 4 | pre-corroboration baseline (30 markets) |
+| 09-02 11:32 | 6 | 4 | 16 | 4 | phase 1+2 landed, not yet root-caused |
+| 09-02 13:31 | 9 | 1 | 16 | 4 | phase 2 fixed (Guardians, EPL misreads) |
+| 09-02 14:25 | 5 | **0** | 21 | 4 | all 4 phases landed (30 markets) |
+| 09-07 08:29 | 8 | 2 | 28 | 4 | **42 markets** (12 new merged); conflict fix landed; 2 NEW bugs found |
+| 09-07 09:24 | 7 | 1 | 30 | 4 | fixed bug #1 (aggregate stat); bug #2 (polling) still open |
+| 09-07 09:31 | — | — | — | — | targeted Germany-only re-check after fixing bug #2 + a 3rd bug (vote-share growth) found on the SAME market: now UNCLEAR, not wrong |
+
+**Read on this trend:** `wrong` is the metric the user has explicitly said
+matters most ("minimize wrong, not unresolved — a human reviews the
+monitor"). It went 3/4 → 0 → 2 (new markets + new bugs) → 1 → 0 (confirmed
+by targeted re-check, not yet by a full re-run). `unresolved` has grown
+substantially (12 → 30) as a direct, accepted consequence of the
+corroboration bar. **A fresh full 42-market run has NOT been done since the
+last 2 fixes landed** — the next full-batch number is unverified, only the
+single-market Germany re-check is confirmed post-fix.
+
+## 3. Real bugs found and FIXED this session (all with root cause + test)
+
+See commits 2, 7, 9, 10, 11 above for full narrative. Short form:
+- Numeric "one shy of the record" near-miss phrasing wrongly read as YES.
+- Conflict abstention fired on ANY contradicting match, even single-source
+  noise (Ipswich Town veto-ing a corroborated Liverpool). Fixed to require
+  both sides corroborated.
+- Aggregate tournament-wide stat ("1,039 players... score 308 goals")
+  misread as a single player's tally.
+- Pre-election MRP polling projection misread as the actual result.
+- "AfD doubled its share of votes" (true, but describes growth not victory)
+  misread as a win.
+- "Bill Passed by Congress" (no chamber named) didn't match any existing
+  keyword phrase.
+
+## 4. Confirmed NOT bugs — correctly cautious (live-diagnosed this session)
+
+Using a new diagnostic (`scratchpad/full_text_probe.py`, still in the repo)
+that fetches REAL live evidence and prints full untruncated text + gate
+results per sentence — this matters because `run_eval.py`'s own console log
+only prints a 160-char snippet, which caused at least one wasted diagnostic
+pass earlier in this session (see appendix).
+
+- **`nba-playoffs-who-will-win-series-lakers-vs-rockets`**: the CORRECT
+  evidence is found and correctly verified (`_verify_winner_candidate`
+  returns True for Lakers, elimination True for Rockets) — but both
+  confirming sentences come from the SAME domain (Sky Sports), so
+  corroboration correctly withholds a verdict. **This is a retrieval-
+  breadth gap, not a decide()-logic bug** — the fix would be finding a
+  SECOND independent source, not changing any verdict logic.
+- **`will-man-city-win-the-premier-league`**: every retrieved sentence is
+  pre-season preview/odds-market language (hedge-flagged correctly), no
+  actual season-result evidence surfaced this run. Correctly UNCLEAR.
+
+## 5a. Significant NEW finding — election-type confusion (needs Opus judgment, not a quick fix)
+
+**`which-party-wins-the-most-seats-in-french-election`** (a French
+PARLIAMENTARY/legislative election market): the top-ranked retrieved
+evidence is a real article about a completely DIFFERENT election — the EU
+Parliament election (covering Rima Hassan's controversy) — not the
+national parliamentary election this market actually asks about. From
+that ONE wrong-election article, the live probe shows `_verify_winner_
+candidate` independently returning `won=True` for BOTH "La France
+Insoumise" ("secure a notable portion of the vote") AND "National Rally"
+("made substantial gains") — neither claim is even about the right
+election, let alone about winning the most SEATS (a proportional EU vote
+share and a "made gains" framing are both weaker/different claims than
+"won the most seats nationally"). This run happened to still end UNCLEAR
+(not wrong) because neither reached 2-domain corroboration, but the
+underlying evidence-relevance failure is real and would not be caught by
+adding more sources of the SAME confusion.
+
+This is the same SHAPE of problem the existing `_sentence_mentions_
+conflicting_competition` guard already solves for sports (a market about
+one tournament shouldn't accept evidence about a different one), but
+**no equivalent guard exists for political elections** — a country can
+hold multiple distinct elections (national parliamentary, EU parliament,
+municipal, presidential) in overlapping timeframes, and nothing currently
+distinguishes them. Worth Opus's judgment: is this worth a general
+"election-type" guard (generalizes across many political markets, real
+architecture work), or narrower per-market disambiguation? Not attempted
+this session — flagged, not fixed.
+
+## 5b. NOT YET diagnosed (ran out of scope for this pass, listed for Opus/Sonnet to pick up)
+
+Still in the `NO_MATCH` bucket from the last full run, not yet probed with
+the live full-text tool:
+- `will-messi-win-ballon-dor-23`
+- `trump-found-guilty-in-hush-money-case-before-election-day`
+- `egypt-presidential-election-will-abdel-fattah-el-sisi-win` (a prior
+  diagnosis attempt on this one was INVALIDATED — see appendix, it was
+  built on a truncated/misremembered sentence, not real run data)
+- `congress-passes-epstein-disclosure-billresolution-in-2025` (same
+  invalidated-diagnosis caveat)
+
+Confirmed correctly-cautious, not bugs, no action needed:
+- `supreme-court-vacancy-in-2024`, `will-a-canadian-team-win-nhl-stanley-cup-782`,
+  `will-the-senate-confirm-ed-martin-before-july`,
+  `will-trump-try-to-fire-powell-as-fed-board-member...` — all confirmed by
+  their log snippets to be genuine absence-of-evidence or off-topic
+  retrieval, not a matching failure.
+
+**A genuinely different, unresolved kind of gap:** `will-aston-martin-beat-mercedes-in-the-2023-f1-season`'s
+top evidence is a markdown TABLE of F1 standings embedded in article text,
+not prose. No sentence-based guard can read a table. This needs actual
+table parsing — a different kind of fix than a keyword/hedge addition, not
+attempted this session. Worth Opus's judgment on whether it's worth
+building for one market or logging as a known content-shape limitation.
+
+## 6. Structural gaps (full detail: `docs/superpowers/plans/2026-08-25-unsupported-market-types.md`)
+
+Six tracked, re-scoped this session:
+1. **Bracketed vote-count markets** (Todd Blanche) — CONFIRMED via direct
+   API pull the real market has options like discrete vote-count brackets.
+   Real sub-project: new market representation + new decide path.
+2. "Between X and Y" range markets — documented gap, still unconfirmed
+   against a real market.
+3. Multi-category classification markets — undiagnosed.
+4. **Crypto/finance price-API gap — RE-SCOPED this session.** Not just the
+   2 window-shaped markets (SPCX, XAUUSD) — Bitcoin and Ethereum ALSO
+   resolve on one exact Binance candle close, exactly as unanswerable from
+   news text, just currently unguarded. Real sub-project; Binance has a
+   free public `klines` REST endpoint that's literally the market's own
+   named resolution source for BTC/ETH. XAUUSD is Pyth-sourced, a
+   different integration.
+5. Box-office weekend-gross (Odyssey) — same shape as #4, no public API
+   for the-numbers.com, likely needs scraping (see ToS-risk memory).
+6. Multi-team "qualifies" markets (EPL Champions League) — needs the real
+   Polymarket resolution rule read before any fix is designable.
+
+**Audit sweep (`8b15d96`)** ran a heuristic pattern check over all 42
+current markets — found nothing new beyond the above 6; two flags were
+false positives (checked by reading the real description, not just the
+regex hit).
+
+**This round's market search (see §7) also found nothing that looks like
+a genuinely new market TYPE** — margin-of-victory brackets are the same
+shape as gap #1; "what will Trump say/post" multi-option word-guessing
+markets are the same excluded shape already filtered out (not resolvable
+from news reporting at all, by design).
+
+## 7. New market candidates found, NOT yet merged (per user instruction: verify before merging)
+
+126 additional real, resolved markets pulled verbatim from Polymarket's
+public API this session (`scratchpad/supported_candidates.json`), already
+shape-filtered to exclude known-unsupported types. Categories represented:
+2024 presidential debate events (including some novelty "bingo"-style
+behavioral markets — lower substantive value, flagged for the user to
+decide whether to include), multiple 2024 special elections (House/Senate),
+several 2025-26 SCOTUS rulings, 2 impeachment markets. Liquidity/volume was
+NOT used as a filter criterion in this pass (would need a per-market API
+call not currently in `pull_test_batch.py`) — the API does expose `volume`/
+`liquidity` fields (confirmed live, see appendix) if that's worth adding
+before merging.
+
+**Not merged into `data/markets.json` yet** — per user instruction, new
+market types get flagged for review first, and per standing convention
+`data/markets.json` changes get a deliberate merge step, not an automatic
+one.
+
+## Appendix: process notes worth knowing before continuing this work
+
+- `run_eval.py`'s console log truncates article text to 160 characters
+  (`run_eval.py:164`). Diagnosing a `NO_MATCH` from that log alone risks
+  testing against a misremembered "complete" sentence instead of the real
+  one — this actually happened once this session (an Epstein-disclosure
+  diagnosis had to be thrown out). `scratchpad/full_text_probe.py` (live,
+  read-only, reuses the real pipeline) is the correct tool for this now.
+- Corroboration's wire-duplicate-collapse check compares FULL article text
+  between two same-option sources, not just the matched sentence — this
+  matters if extending corroboration logic further; comparing only the
+  matched sentence was tried first and was too aggressive (two independent
+  outlets confirming the same simple fact in one sentence each measured
+  0.978 similarity, indistinguishable from real syndication).
