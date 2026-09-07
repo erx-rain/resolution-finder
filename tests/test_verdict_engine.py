@@ -774,6 +774,39 @@ def test_multi_outcome_market_ignores_elimination_phrased_as_a_relative_recurrin
     assert all(v.outcome != "NO" for v in verdicts)
 
 
+GERMANY_ELECTION_MARKET = Market(
+    id="germany-parliamentary-election-test",
+    title="Germany Parliamentary Election Winner",
+    description="This market resolves to the party that wins the most seats.",
+    options=["CDU/CSU", "AfD", "SPD"],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+def test_multi_outcome_market_ignores_pre_election_polling_projection():
+    # Real bug found live (2026-09-02, 42-market eval): the real Germany
+    # Parliamentary Election market (truth: CDU/CSU) wrongly crowned AfD
+    # off "AfD remain on course for record result in YouGov's second MRP
+    # model of the 2025 German election" -- a PRE-ELECTION POLLING
+    # PROJECTION, not the actual result. Corroboration alone didn't catch
+    # this since multiple outlets ran similar pre-election polling
+    # headlines -- the fix has to be a hedge on the polling/forecast
+    # language itself, generalizable to any election market.
+    evidence = [
+        make_ranked(
+            "AfD remain on course for record result in YouGov's second "
+            "MRP model of the 2025 German election - YouGov",
+            url="https://yougov.de/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "A new MRP poll shows AfD on course to win the most seats in the upcoming German election.",
+            url="https://www.politico.eu/x", source_type="credible_backup",
+        ),
+    ]
+    verdicts = decide(GERMANY_ELECTION_MARKET, evidence)
+    assert not any(v.option == "AfD" and v.outcome == "YES" for v in verdicts)
+
+
 def test_multi_outcome_market_ignores_pre_tournament_preview_as_a_winner_confirmation():
     # Real bug found live (2026-08-23): real evidence for the real
     # International 2026 market, "Defending champions Team Falcons are
@@ -1792,6 +1825,32 @@ def test_numeric_threshold_market_ignores_unrelated_number_in_vague_records_refe
         "underway when a record 48 teams were invited to participate.",
         url="https://sports.yahoo.com/x", source_type="credible_backup_secondary",
     )]
+    verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
+    assert verdict.outcome != "YES"
+
+
+def test_numeric_threshold_market_ignores_aggregate_field_wide_goal_count():
+    # Real bug found live (2026-09-02, 42-market eval): real evidence for
+    # this exact market, "FIFA's biggest global showpiece saw 1,039
+    # players from 48 nations play across 16 venues and score 308 goals."
+    # -- an AGGREGATE tournament-wide total (every player's combined
+    # goals) wrongly extracted as 308 and compared against the 14-goal
+    # INDIVIDUAL threshold, resolving YES. "N players/teams from M
+    # nations" is boilerplate describing the field's scale, never a
+    # single subject's own statistic -- generalizes beyond this one
+    # tournament.
+    evidence = [
+        make_ranked(
+            "FIFA's biggest global showpiece saw 1,039 players from 48 "
+            "nations play across 16 venues and score 308 goals.",
+            url="https://www.aljazeera.com/x", source_type="credible_backup",
+        ),
+        make_ranked(
+            "A record 1,039 players from 48 competing nations combined "
+            "for 308 goals across the tournament's 16 host venues.",
+            url="https://www.bbc.com/x", source_type="credible_backup",
+        ),
+    ]
     verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
     assert verdict.outcome != "YES"
 

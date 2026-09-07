@@ -583,6 +583,21 @@ NEGATION_HEDGE_WORDS = [
     "made the playoffs", "reached the playoffs",
     "qualified for the playoffs", "advanced to the playoffs",
     "made the postseason", "reached the postseason", "clinched a playoff spot",
+    # Real bug found live (2026-09-02, 42-market eval): the real Germany
+    # Parliamentary Election market (truth: CDU/CSU) wrongly crowned AfD
+    # off "AfD remain on course for record result in YouGov's second MRP
+    # model of the 2025 German election" -- a PRE-ELECTION POLLING
+    # PROJECTION, not the actual result, and it fooled corroboration too
+    # since multiple outlets ran similar pre-election polling headlines.
+    # Same "describes standing/trajectory, not a decided outcome" shape
+    # as "raring to"/"hoping to" above -- generalizable to any election
+    # market, not specific to Germany. Deliberately NOT hedging bare
+    # "poll"/"exit poll" -- an exit poll is a real-time result indicator
+    # reported as the ACTUAL outcome on election night, a different claim
+    # than a pre-election forecast model.
+    "on course for", "on course to win", "mrp model", "polling model",
+    "opinion poll suggests", "polls suggest", "projected to win",
+    "forecast to win",
     # Real bug found live (2026-09-02, corroboration re-verification run):
     # real evidence for the World Cup most-goals-record market -- "Watch
     # Out, Messi: Mbappe Scores 18th World Cup Goal, One Shy Of All-Time
@@ -647,8 +662,23 @@ def _sentence_is_vague_reference(sentence: str) -> bool:
 # signal: the sentence explicitly names the number as a "ratio", not a
 # price/count. A narrow, targeted guard, not a substitute for that larger
 # feature.
+#
+# Second real bug, same shape, found live (2026-09-02): the real World
+# Cup most-player-goals-record market (asks about ONE player's tally,
+# threshold 14) wrongly resolved YES off "FIFA's biggest global showpiece
+# saw 1,039 players from 48 nations play across 16 venues and score 308
+# goals." -- an AGGREGATE tournament-wide total (every player's combined
+# goals), not any single player's count, extracted as 308 and wrongly
+# compared against the 14-goal individual threshold. Generalizable
+# signal, not overfit to this one tournament: any "N players/teams/
+# athletes from M nations/countries" phrasing is boilerplate describing
+# the FIELD's scale, never an individual subject's own statistic --
+# applies equally to the Olympics, a World Championship, or any other
+# many-competitor event a market might ask about a single entrant's tally.
 _DIFFERENT_METRIC_HEDGE_WORDS = [
     "ratio", "multiple of", "times over", "times higher", "times outweigh",
+    "players from", "teams from", "athletes from", "competitors from",
+    "nations play", "countries play",
 ]
 
 
