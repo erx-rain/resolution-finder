@@ -84,6 +84,24 @@ not duplicated here, just cross-referenced since it's the same class of
 page. Deliberately deprioritized behind sports/politics per standing
 directive.
 
+**Scope correction (2026-09-02, found during the 14-market audit):**
+this item was tracked as covering only the 2 markets with an explicit
+"(HIGH)"/"(LOW)" title marker (SPCX, XAUUSD -- window high/low over a
+date range). Re-reading `will-the-price-of-ethereum-be-less-than-1400`'s
+real description shows the SAME underlying problem on a market with NO
+such marker: it resolves on one exact Binance 1-minute-candle close
+price at a specific timestamp, not a window -- but that's just as
+unanswerable from ordinary news-article text as the window case is; a
+news article reporting "ETH trading around $1,150" is not the same
+number as "Binance's exact ETH/USDT close at 12:00 ET on this date."
+`bitcoin-above-64k-on-august-17-2026` is the same shape. Both currently
+get NO guard at all and fall through to ordinary numeric-threshold text
+search, which can only ever be coincidentally right, not reliably so.
+The real fix (a historical-price API) covers all 4 of these markets,
+not just the 2 with the marker -- worth re-scoping the eventual design
+to "any market whose resolution source is a named exchange/price feed",
+not "any market with a HIGH/LOW window."
+
 ## 5. Box-office weekend-gross tracking (confirmed real, in current dataset)
 
 `will-the-odyssey-5th-weekend-box-office-be-at-least-21m` (title asks
@@ -127,9 +145,32 @@ may be a market whose real question is narrower than its title suggests
 round), which no amount of multi-outcome guard-tuning can address
 without knowing the actual rule.
 
-## Not yet checked
+## Audit pass (2026-09-02)
 
-The remaining 14 markets in `data/markets.json` were not individually
-re-audited for shape-mismatch during this pass — this list reflects what
-surfaced during today's test-find-fix-retest loop, not an exhaustive
-audit. Worth a dedicated pass once the current loop concludes.
+Ran a heuristic text-pattern sweep (bracket language, between-X-and-Y,
+named price-feed sources, classification/category resolution, multi-
+team-qualify language, cumulative-date shape) over all 42 current
+markets (the original 30 minus the 5 already-tracked gaps above, plus
+the 12 newly pulled). Two hits beyond the already-tracked gaps:
+
+- `world-series-champion-2025` matched "bracket" -- false positive, its
+  description says "playoff bracket" (baseball elimination format), not
+  a resolution bracket. No new gap.
+- `will-the-price-of-ethereum-be-less-than-1400...` matched "bracket"
+  and a named price source -- real finding, folded into item 4 above
+  (scope correction) rather than listed as a separate new item.
+
+Everything else the heuristic flagged (mostly "cumulative/multi-date-
+option shape" and "qualify" hits) was pattern noise from ordinary
+deadline phrasing ("by June 30") or unrelated uses of "qualify" in
+prose, not real shape mismatches -- checked by reading each flagged
+market's actual description, not just trusting the regex.
+
+This was a heuristic pattern sweep, not a from-scratch structural
+re-read of every market's actual resolution logic -- it can only catch
+gaps that show up in recognizable phrasing. Worth treating as a first
+pass, not a guarantee nothing else is hiding, especially for markets
+whose real resolution criteria diverge from their title's plain
+English (the same way epl-team-to-qualify's and Todd Blanche's real
+shapes only became clear once their full descriptions were read
+directly).
