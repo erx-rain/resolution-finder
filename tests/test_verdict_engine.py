@@ -774,6 +774,50 @@ def test_multi_outcome_market_ignores_head_to_head_result_from_a_different_year(
     assert all(v.outcome != "YES" for v in verdicts)
 
 
+IOWA_LSU_MARKET = Market(
+    id="womens-march-madness-iowa-vs-lsu",
+    title="Women's March Madness: Iowa vs. LSU",
+    description="",
+    options=["Iowa", "LSU"],
+    close_date=None,
+)
+
+
+def test_multi_outcome_market_ignores_last_years_result_as_a_winner_confirmation():
+    # Real bug found live (2026-09-07, 97-market eval): the real women's
+    # March Madness Iowa-vs-LSU (Elite Eight) market wrongly crowned LSU
+    # off "The contest marked a rematch of last year's title game, which
+    # LSU won 102-85 over Iowa to claim its first national championship."
+    # -- explicitly the PRIOR year's championship, not the current Elite
+    # Eight game. This market has no year in its title and no close_date
+    # (real pulled data, verbatim), so the existing year-conflict guards
+    # (which all need an expected_year to compare against) can never
+    # fire here -- there's nothing to compare. The real confirming
+    # evidence for the CURRENT game ("Iowa beat LSU in Elite 8 to advance
+    # to Final 4") is genuinely present in the same batch; the bug is
+    # that the stale "last year's" sentence got checked and confirmed
+    # LSU first.
+    evidence = [
+        make_ranked(
+            "March Madness: Iowa and LSU meet again, this time in Elite "
+            "Eight. The contest marked a rematch of last year's title "
+            "game, which LSU won 102-85 over Iowa to claim its first "
+            "national championship.",
+            url="https://a.com/1", source_type="credible_backup",
+        ),
+        make_ranked(
+            "How Caitlin Clark, Iowa beat LSU in Elite 8 to advance to Final 4.",
+            url="https://b.com/2", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Iowa prevailed over LSU on Monday night to reach the Final Four.",
+            url="https://c.com/3", source_type="credible_backup_secondary",
+        ),
+    ]
+    verdicts = decide(IOWA_LSU_MARKET, evidence)
+    assert {v.option: v.outcome for v in verdicts} == {"Iowa": "YES", "LSU": "NO"}
+
+
 def test_multi_outcome_market_ignores_elimination_phrased_as_a_relative_recurring_range():
     # Real bug found live (2026-08-23, discovered via a from-scratch NLI-
     # only experiment with no keyword gates at all -- confirmed to

@@ -1099,6 +1099,37 @@ def _sentence_mentions_conflicting_relative_season(
     return False
 
 
+# Sibling gap, same failure shape as "last season" above but for a
+# specific PAST INSTANCE of an event. Real bug found live (2026-09-07,
+# 97-market eval): the real women's March Madness Iowa-vs-LSU (Elite
+# Eight) market wrongly crowned LSU off "The contest marked a rematch of
+# last year's title game, which LSU won 102-85 over Iowa to claim its
+# first national championship." -- explicitly about the PRIOR year's
+# championship game, a different result from the current Elite Eight
+# matchup this market asks about. This market has no stated year in its
+# title and no close_date, so a year-comparison check (like the season
+# one above) can never fire here -- there's nothing to compare against.
+#
+# Deliberately UNCONDITIONAL on year/date info being available, unlike
+# the season check -- and deliberately NOT folded into
+# _sentence_mentions_relative_recency's vague-RANGE phrases either,
+# since "last year's X" is a specific single instance, not a range.
+# The reasoning for treating it as always-conflicting regardless: unlike
+# "last night" (almost always part of the CURRENT event's own recent
+# narrative -- a market about this year's tournament citing last
+# night's game IN that same tournament), "last year's [recurring event]"
+# almost always names a DIFFERENT annual edition of the event, not the
+# one currently being asked about. Under a minimize-wrong objective,
+# treating it as an unconditional conflict signal can only ever turn a
+# potential wrong into an unresolved one, never introduce a new wrong.
+_LAST_YEAR_PHRASES = ["last year's", "last year "]
+
+
+def _sentence_mentions_last_year_reference(sentence: str) -> bool:
+    lowered = sentence.lower()
+    return any(phrase in lowered for phrase in _LAST_YEAR_PHRASES)
+
+
 # Different failure shape again: not a wrong TIME, a wrong COMPETITION.
 # Real bug found live (2026-08-26): the real epl-team-to-qualify-for-uefa-
 # champions-league market (real winner Manchester United) wrongly crowned
@@ -1846,6 +1877,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 or _sentence_mentions_conflicting_year(article_lead_sentence, expected_year)
                 or _sentence_mentions_conflicting_relative_season(
                     sentence, expected_year, item.article.published_date)
+                or _sentence_mentions_last_year_reference(sentence)
                 or _sentence_mentions_conflicting_phase(sentence, market_is_playoff)
                 or _sentence_mentions_relative_recency(sentence)
                 or _sentence_mentions_conflicting_competition(sentence, expected_competition)
