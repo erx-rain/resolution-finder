@@ -372,3 +372,15 @@ one.
   matched sentence was tried first and was too aggressive (two independent
   outlets confirming the same simple fact in one sentence each measured
   0.978 similarity, indistinguishable from real syndication).
+
+## 8. Final 97-market batch result (completed after this doc was mostly written)
+
+`correct=18 wrong=1 unresolved=74 no_ground_truth=4`. The single wrong:
+`womens-march-madness-iowa-vs-lsu` (truth=Iowa, got=YES for LSU) — NOT
+investigated this session, flagged only so it isn't lost. `unresolved`
+is very high (74/93 with ground truth) on this batch — consistent with
+most of the +55 newly-merged markets being narrow single-game/tournament
+questions with thinner news coverage than the original 30, which is
+itself a small, accidental preview of the niche-market coverage
+question in section -1 above, worth Opus noting as a data point even
+though it wasn't deliberately designed as a niche-market test.
