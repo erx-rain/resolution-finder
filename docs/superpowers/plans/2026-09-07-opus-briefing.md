@@ -1,5 +1,39 @@
 # Briefing for Opus: corroboration rollout results, open bugs, structural gaps
 
+## 0. HEADLINE FINDING — the embedding model silently truncates long descriptions at 256 tokens
+
+Confirmed live (2026-09-07): `EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"`
+(`resolution_finder/config.py`) has `max_seq_length = 256`. `sentence-
+transformers` truncates silently past that — no exception, just an
+easy-to-miss debug warning. Checked real token counts for `title +
+description` across the current dataset: **13 markets exceed 256
+tokens**, worst case `will-typhoon-dolphin-be-a-very-strong-typhoon...`
+at **736 tokens (only the first ~35% is ever embedded)**. Others over
+the limit: both FDA approval markets, SPCX, XAUUSD, several SCOTUS
+markets, Todd Blanche, the Odyssey box-office market, a couple of the
+newly-pulled tariff/SCOTUS markets.
+
+**Why this matters more than it might look:** this hits
+`relevance_ranker.py`'s query embedding (`f"{market.title} {market.
+description}"`), which decides which candidate articles even clear
+`SIMILARITY_THRESHOLD=0.35` to become candidates at all. It does NOT
+affect keyword/regex matching or entity extraction (those read the raw
+string, no model involved) — only embedding-based ranking. Given this
+session's own repeated finding that a market's REAL resolution criteria
+is often in the back half of a long description (the "Note:" preamble
+bug, Sanofi/Viridian's exclusion lists, Todd Blanche's bracket language,
+the (HIGH)/(LOW) price-window markers) — exactly the content most likely
+to sit past token 256 — a genuinely relevant article can plausibly score
+BELOW threshold and never surface as a candidate purely because the
+query embedding was built from a truncated, less-specific slice. This
+is mechanistically real, not yet proven to be the direct cause of any
+one specific wrong/unresolved verdict in the log — worth Opus deciding
+whether to chase down specific cases or treat this as a structural fix
+regardless (options include: chunk the description and take max
+similarity across chunks; keep the full description for keyword-based
+retrieval and only use a bounded slice for embedding ranking; a longer-
+context embedding model at some compute cost). NOT fixed this session.
+
 Compiled 2026-09-07 on Sonnet, per explicit user request, ahead of an Opus
 planning session to sequence remaining work against a 2-week deadline. Every
 claim below is either a git commit, a real eval-log trace, or a live

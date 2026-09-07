@@ -166,12 +166,22 @@ def _run_one_market(market: Market, ground_truth: str | None) -> dict:
     print(f"  ranked candidates above SIMILARITY_THRESHOLD={SIMILARITY_THRESHOLD}: {len(ranked)}")
     ranked_detail = []
     for r in ranked[:5]:
-        snippet = r.text[:160].replace("\n", " ")
+        # Console print stays short for a human skimming the terminal;
+        # the JSONL field below keeps much more (still capped, not the
+        # full article) so a later session can see the REAL surrounding
+        # context a verdict came from, not just a 160-char fragment --
+        # real gap found live (2026-09-07): that fragment was too short
+        # to tell a genuine confirmation from a truncated one, and the
+        # verdict's own evidence/source were never persisted to the
+        # JSONL at all (console-only), so the eval history couldn't
+        # answer "why" on its own.
+        console_snippet = r.text[:160].replace("\n", " ")
+        json_snippet = r.text[:1000].replace("\n", " ")
         print(f"    sim={r.similarity:.3f} [{r.article.source_type}] {r.article.url}")
-        print(f"      text: {snippet!r}")
+        print(f"      text: {console_snippet!r}")
         ranked_detail.append({
             "similarity": round(r.similarity, 3), "source_type": r.article.source_type,
-            "url": r.article.url, "text_snippet": snippet,
+            "url": r.article.url, "text_snippet": json_snippet,
         })
 
     verdicts = decide(market, ranked)
@@ -190,7 +200,11 @@ def _run_one_market(market: Market, ground_truth: str | None) -> dict:
         "market_id": market.id,
         "ground_truth": ground_truth,
         "verdicts": [
-            {"outcome": v.outcome, "option": v.option, "confidence": round(v.confidence, 3)}
+            {
+                "outcome": v.outcome, "option": v.option, "confidence": round(v.confidence, 3),
+                "evidence_snippet": v.evidence_snippet, "source_url": v.source_url,
+                "source_type": v.source_type,
+            }
             for v in verdicts
         ],
         "verdict_class": verdict_class,
