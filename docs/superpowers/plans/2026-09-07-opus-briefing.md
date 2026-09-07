@@ -36,6 +36,18 @@ differently (likely harder to satisfy 2+ independent domains) on a
 low-coverage niche market; worth keeping in mind as a known unknown,
 not something to solve now.
 
+**User-acknowledged difficulty:** "it'll be hard to actually measure
+niche-ness and actually come up with markets" — there's no simple
+metric; low Polymarket volume/liquidity is only a rough proxy, not the
+real signal (the real target has no Polymarket listing at all).
+Concrete example patterns given: (1) player-level individual stat props
+("this player will get a yellow card"), and (2) narrower cross-entity
+subset framings of a mainstream event ("will a CANADIAN team win the
+Stanley Cup" rather than "who wins the Stanley Cup"). Pattern (2) is
+already represented once in the current eval set —
+`will-a-canadian-team-win-nhl-stanley-cup-782` — a real anchor example
+for sourcing more like it later.
+
 ## 0. HEADLINE FINDING — the embedding model silently truncates long descriptions at 256 tokens
 
 Confirmed live (2026-09-07): `EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"`
