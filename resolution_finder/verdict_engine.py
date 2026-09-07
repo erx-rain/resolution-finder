@@ -610,6 +610,20 @@ NEGATION_HEDGE_WORDS = [
     "on course for", "on course to win", "mrp model", "polling model",
     "opinion poll suggests", "polls suggest", "projected to win",
     "forecast to win",
+    # Second real bug found in the SAME market, same eval round (a
+    # different retrieval run surfaced different evidence): "the far-
+    # right AfD doubled its share of votes in [the election]" is a TRUE,
+    # PAST-TENSE fact about AfD's growth -- but doubling (or growing)
+    # vote share describes CHANGE/PERFORMANCE, not the final decided
+    # outcome. AfD genuinely doubled its share and still came SECOND,
+    # not first (CDU/CSU won). Same "describes standing/trajectory, not
+    # a decided outcome" shape as "raring to"/"made the playoffs" above,
+    # just past tense instead of future/present -- a party can gain
+    # significant ground and still lose, so vote-share-change language
+    # alone can never confirm a win.
+    "doubled its share", "increased its share of the vote",
+    "grew its share of the vote", "gained vote share",
+    "share of the votes in",
     # Real bug found live (2026-09-02, corroboration re-verification run):
     # real evidence for the World Cup most-goals-record market -- "Watch
     # Out, Messi: Mbappe Scores 18th World Cup Goal, One Shy Of All-Time

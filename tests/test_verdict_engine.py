@@ -828,6 +828,31 @@ def test_multi_outcome_market_ignores_pre_election_polling_projection():
     assert not any(v.option == "AfD" and v.outcome == "YES" for v in verdicts)
 
 
+def test_multi_outcome_market_ignores_vote_share_growth_as_a_winner_confirmation():
+    # Real bug found live (2026-09-02, 42-market eval, a different
+    # retrieval run of the SAME real Germany election market than the
+    # polling-projection test above): "the far-right AfD doubled its
+    # share of votes in the election" is a TRUE, past-tense fact about
+    # AfD's growth -- but doubling vote share describes CHANGE, not the
+    # final decided outcome. AfD genuinely doubled its share and still
+    # came second; CDU/CSU won.
+    evidence = [
+        make_ranked(
+            "The current German Foreign Minister said a strong Europe "
+            "and government were needed after the far-right AfD doubled "
+            "its share of votes in the election.",
+            url="https://www.dw.com/x", source_type="credible_backup",
+        ),
+        make_ranked(
+            "AfD doubled its share of the vote compared to the last "
+            "election, according to preliminary results.",
+            url="https://www.reuters.com/x", source_type="credible_backup",
+        ),
+    ]
+    verdicts = decide(GERMANY_ELECTION_MARKET, evidence)
+    assert not any(v.option == "AfD" and v.outcome == "YES" for v in verdicts)
+
+
 def test_multi_outcome_market_ignores_pre_tournament_preview_as_a_winner_confirmation():
     # Real bug found live (2026-08-23): real evidence for the real
     # International 2026 market, "Defending champions Team Falcons are
