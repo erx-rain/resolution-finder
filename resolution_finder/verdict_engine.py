@@ -58,6 +58,18 @@ BINARY_YES_KEYWORDS = [
     # purely a missing keyword, not a verification weakness.
     "fda approves", "fda approved", "fda approval", "approved by the fda",
     "first approved treatment", "receives fda approval", "gains fda approval",
+    # Real bug found live (2026-09-02, 42-market eval): the real
+    # congress-passes-bill-banning-tiktok market (truth: Yes) never
+    # matched off "TikTok Ban Bill Passed by Congress. What Happens
+    # Next. - Barron's" -- bicameral-bill headlines routinely say "passed
+    # by Congress" as a whole, not naming the Senate/House specifically
+    # the way every existing phrase here requires. Deliberately NOT
+    # adding bare "congress passed" alongside it -- that also substring-
+    # matches "Congress passed ON the opportunity/bill" (a real, common
+    # idiom meaning DECLINED, the opposite claim), while "passed by
+    # congress" (passive voice) has no such collision and already covers
+    # the real headline.
+    "passed by congress",
 ]
 
 # ANNOUNCEMENT_KEYWORDS / ELIMINATION_KEYWORDS / the directional

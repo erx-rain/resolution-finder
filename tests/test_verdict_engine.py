@@ -285,6 +285,27 @@ def test_binary_market_resolves_yes_on_house_passage_for_a_resolution_market():
     assert verdict.outcome == "YES"
 
 
+def test_binary_market_resolves_yes_on_passed_by_congress_phrasing():
+    # Real bug found live (2026-09-02, 42-market eval): the real
+    # congress-passes-bill-banning-tiktok market (truth: Yes) never
+    # matched off "TikTok Ban Bill Passed by Congress. What Happens
+    # Next. - Barron's" -- bicameral-bill headlines routinely say "passed
+    # by Congress" as a whole, without naming the Senate/House
+    # specifically.
+    evidence = [
+        make_ranked(
+            "Iran War Powers Resolution Bill Passed by Congress. What Happens Next.",
+            url="https://www.barrons.com/x", source_type="credible_backup_secondary",
+        ),
+        make_ranked(
+            "The Iran war powers resolution cleared both chambers of Congress on Wednesday.",
+            url="https://apnews.com/x", source_type="credible_backup",
+        ),
+    ]
+    verdict = decide(WAR_POWERS_MARKET, evidence)
+    assert verdict.outcome == "YES"
+
+
 def test_binary_market_resolves_yes_on_both_chambers_passage_phrasing():
     evidence = [
         make_ranked("The measure cleared both chambers after months of negotiation."),
