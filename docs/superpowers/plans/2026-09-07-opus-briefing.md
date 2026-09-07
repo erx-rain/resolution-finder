@@ -48,6 +48,26 @@ already represented once in the current eval set —
 `will-a-canadian-team-win-nhl-stanley-cup-782` — a real anchor example
 for sourcing more like it later.
 
+**Reframe, same conversation — this is the actual operative strategy:**
+NOT "go hunt for niche markets specifically" — instead, "cover all
+market TYPES/shapes comprehensively, and niche markets fall into place
+naturally as a side effect," since a niche market is usually a
+mainstream shape with less news coverage, not a fundamentally different
+kind of question. Concrete edge case the user raised, illustrating why
+comprehensive-shape coverage is genuinely hard: a "will a Canadian team
+win X" market gets ambiguous when a Canadian-born player plays for a
+DIFFERENT country's national team — is that player's team "Canadian"
+for the market's purposes? Current entity-matching has no concept of
+"represents nation X" vs. "is nationality X but plays for someone
+else" — it would just pattern-match the literal word "Canadian" in
+evidence text. **This is explicitly why the user wants AI/LLM reasoning
+available in some form** — this class of nuanced semantic judgment is
+exactly what keyword/NLI-entailment logic struggles with. This connects
+directly to the local-LLM-final-gate idea raised earlier the same
+session (deliberately deferred behind corroboration) — treat this
+nationality-ambiguity case as a concrete test case for whether/how that
+idea should be revisited, not a generic "just add an LLM somewhere" ask.
+
 ## 0. HEADLINE FINDING — the embedding model silently truncates long descriptions at 256 tokens
 
 Confirmed live (2026-09-07): `EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"`
