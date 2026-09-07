@@ -34,6 +34,46 @@ similarity across chunks; keep the full description for keyword-based
 retrieval and only use a bounded slice for embedding ranking; a longer-
 context embedding model at some compute cost). NOT fixed this session.
 
+**Scope is bigger than the market side alone (found in follow-up,
+2026-09-07, prompted by a direct user question — worth checking for
+this class of bug elsewhere before assuming it's contained):**
+`grep -rn "\.encode(" resolution_finder/*.py` surfaces the SAME
+256-token limit hit on:
+- **`relevance_ranker.py` also embeds the full ARTICLE text**, not just
+  the market query, on both `rank_by_relevance` and `best_below_
+  threshold`. 256 tokens ≈ 192 words (confirmed via the real tokenizer)
+  — a typical news article runs 400-1000+ words, so this plausibly
+  truncates the MAJORITY of articles processed all session, not a
+  13-market edge case. This is likely the bigger version of the same
+  problem, not a separate minor one.
+- **This session's OWN new corroboration wire-duplicate check**
+  (`verdict_engine.py`'s `_corroborating_domain_count`, `model.encode
+  (by_domain[d].text, ...)`) embeds full article text with the same
+  limit — for long articles, the duplicate-vs-independent judgment
+  only ever sees the first ~192 words of each side. Could merge two
+  genuinely different long articles that happen to share a lead-
+  paragraph structure, or fail to merge two truly duplicate long
+  articles with different framing before the same wire text.
+- `peer_market.py` (`our_full_text`, `peer_text`) has the identical
+  `.encode()` pattern — flagged, NOT investigated this session (this
+  module was never touched in this session's work at all).
+- `_semantic_yes_signal` (verdict_engine.py) is NOT at meaningful risk
+  — it embeds one sentence plus a short template, essentially always
+  under 256 tokens.
+
+**On predicted impact — explicitly do NOT treat this as measured.**
+Asked directly and answered honestly in-session: this most directly
+affects which articles clear `SIMILARITY_THRESHOLD` at all, so the more
+predictable effect is on the UNRESOLVED count (a real match scores just
+below threshold and never becomes a candidate — correctly abstains,
+doesn't assert wrong). But it is NOT guaranteed wrong-answer-neutral: a
+truncated, less-specific embedding on either side could also make an
+irrelevant article look relevant, potentially feeding a keyword match
+into a confident wrong verdict downstream. No number should be quoted
+for "how much this would help" without an actual before/after
+re-ranking measurement, which was not done this session (would have
+competed for CPU with a time-boxed eval batch the user was waiting on).
+
 Compiled 2026-09-07 on Sonnet, per explicit user request, ahead of an Opus
 planning session to sequence remaining work against a 2-week deadline. Every
 claim below is either a git commit, a real eval-log trace, or a live
