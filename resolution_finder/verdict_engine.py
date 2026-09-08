@@ -7,30 +7,9 @@ from sentence_transformers import util
 from resolution_finder.models import Market, RankedArticle, Verdict
 from resolution_finder.query_builder import extract_entities
 from resolution_finder.relevance_ranker import _get_model
+from resolution_finder.resolution_spec import extract_default_outcome as _extract_default_outcome
 
 logger = logging.getLogger(__name__)
-
-# Generalized: captures a plain Yes/No default (CLARITY Act, Nobel Prize) OR a
-# specific named option default (Vinicius Junior -> "Real Madrid") OR a named
-# outcome outside the option list (Osun -> "Other"). The trigger phrases
-# anchor on deadline-miss language so this doesn't match an unrelated
-# "resolves to X" sentence describing the normal win condition. "not known"
-# was added after a real market ("are not known definitively by [date] ...
-# resolve to 'Other'") didn't match any of the original trigger phrases.
-# "otherwise" was added after finding 9 of 18 real markets in the current
-# dataset (2026-08-25) state their default purely as "Otherwise, this
-# market will resolve to 'No'." -- no negation word at all, so none of the
-# original triggers matched it, silently disabling the deadline-passed
-# default for roughly half the dataset. The quote character class also
-# now accepts curly quotes (“/”), not just straight ones -- real
-# markets.json descriptions use curly quotes around the resolved value,
-# which the old \"? literal never matched, so even an "otherwise" trigger
-# alone wouldn't have captured the value.
-DEFAULT_OUTCOME_PATTERN = re.compile(
-    r"(?:not met|has not|have not|not officially|not been|not known|otherwise)[^.]{0,150}?"
-    r"resolve[s]?\s+to\s+[\"“]?([A-Za-z][A-Za-z0-9 .&'-]*?)[\"”]?[.\n]",
-    re.IGNORECASE | re.DOTALL,
-)
 
 # Originally entirely bill-SIGNING vocabulary. Broadened 2026-08-18 (real
 # gap confirmed live, first time real evidence reached the verdict engine
@@ -89,7 +68,7 @@ BINARY_YES_KEYWORDS = [
 # Trigger phrases confirming a multi-outcome market's date-shaped options
 # are CUMULATIVE thresholds ("by August 1" also satisfies "by September 1")
 # rather than independent exact-date guesses. Same small-phrase-list style
-# as DEFAULT_OUTCOME_PATTERN's trigger list above.
+# as resolution_spec.py's DEFAULT_OUTCOME_PATTERN trigger list.
 CUMULATIVE_DATE_TRIGGER_PHRASES = [
     "by ", "no later than", "before ", "on or before", "prior to",
 ]
@@ -1592,18 +1571,6 @@ def _deadline_default_note(market: Market) -> str:
         f"This market's own stated default is {stated_default} -- shown "
         f"as context for review, NOT asserted as a verdict.]"
     )
-
-
-def _extract_default_outcome(description: str) -> Optional[str]:
-    match = DEFAULT_OUTCOME_PATTERN.search(description)
-    if not match:
-        return None
-    candidate = match.group(1).strip()
-    if candidate.lower() == "yes":
-        return "YES"
-    if candidate.lower() == "no":
-        return "NO"
-    return candidate
 
 
 # Real bug found live (2026-08-23): a BINARY_YES_KEYWORDS match used to
