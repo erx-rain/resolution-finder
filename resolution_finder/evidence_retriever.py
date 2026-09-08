@@ -19,6 +19,33 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 
+# Real bug found live (2026-09-08), and by far the most consequential one
+# measured so far: feedparser sends no User-Agent by default, and Bing's
+# news RSS endpoint answers such requests with HTTP 200 and an EMPTY feed
+# -- no error, no bozo flag, just zero entries. So every Bing search has
+# been silently returning nothing, for every market, since this was
+# written.
+#
+# That is not a small loss, because the two feeds are NOT interchangeable:
+# search_bing_news_rss decodes each result to the REAL publisher URL
+# (_bing_target_url), which article_extractor can then fetch for full
+# article text. Google News RSS keeps its own news.google.com/rss/articles
+# wrapper URL, which is an unfetchable JS redirect -- so those candidates
+# fall back to `summary or title`, i.e. a ~15-word HEADLINE, and the
+# verdict engine then has to decide a market from headlines alone.
+# Losing Bing therefore didn't just cost some results, it silently
+# downgraded nearly the whole evidence base from articles to headlines.
+#
+# Deliberately a truthful, self-identifying agent rather than a browser
+# impersonation string: measured side by side, an honest descriptive UA
+# unblocks this endpoint exactly as well as a spoofed Chrome UA does
+# (both returned entries where the default returned zero), so there is
+# no reason to misrepresent what we are.
+FEED_USER_AGENT = (
+    "ResolutionFinder/1.0 (prediction-market resolution scanner; "
+    "contact via project repository)"
+)
+
 # Hosts that count as "the X/Twitter platform" and "the Instagram platform"
 # when validating a site-scoped social search result.
 SOCIAL_PLATFORM_HOSTS = {
@@ -159,7 +186,7 @@ def search_bing_news_rss(query: str) -> list[ArticleRef]:
     here instead of trying to unwrap Google's link.
     """
     url = BING_NEWS_RSS.format(query=quote_plus(query))
-    feed = feedparser.parse(url)
+    feed = feedparser.parse(url, agent=FEED_USER_AGENT)
     _warn_if_feed_fetch_failed(feed, "Bing News", query)
     results = []
     for entry in feed.entries:
@@ -187,7 +214,7 @@ def search_bing_news_rss(query: str) -> list[ArticleRef]:
 def search_google_news_rss(query: str, site: Optional[str] = None) -> list[ArticleRef]:
     full_query = f"{query} site:{site}" if site else query
     url = GOOGLE_NEWS_RSS.format(query=quote_plus(full_query))
-    feed = feedparser.parse(url)
+    feed = feedparser.parse(url, agent=FEED_USER_AGENT)
     _warn_if_feed_fetch_failed(feed, "Google News", full_query)
     results = []
     for entry in feed.entries:
@@ -267,7 +294,7 @@ def search_google_news_archive(query: str, close_date: date) -> list[ArticleRef]
     unscoped passes already found."""
     scoped = _date_scoped_query(query, close_date)
     url = GOOGLE_NEWS_RSS.format(query=quote_plus(scoped))
-    feed = feedparser.parse(url)
+    feed = feedparser.parse(url, agent=FEED_USER_AGENT)
     _warn_if_feed_fetch_failed(feed, "Google News archive", scoped)
     results = []
     for entry in feed.entries:
