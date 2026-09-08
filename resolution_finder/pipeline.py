@@ -11,6 +11,7 @@ from resolution_finder.article_extractor import extract_article_text, is_known_u
 from resolution_finder.relevance_ranker import rank_by_relevance, best_below_threshold
 from resolution_finder.verdict_engine import decide
 from resolution_finder.peer_market import find_polymarket_match
+from resolution_finder.resolution_spec import check_availability
 from resolution_finder.storage import init_db, save_finding
 from resolution_finder.config import REQUEST_DELAY_SECONDS, PEER_MARKET_ENABLED
 
@@ -97,9 +98,25 @@ def _scan_market(
     verdict_engine: VerdictEngine,
     peer_checker: PeerChecker,
 ) -> None:
+    # Computed once per market, independent of everything below -- pure
+    # date arithmetic against the market's close_date and its own
+    # description (see resolution_spec.py), no retrieval or model calls.
+    # Deliberately NOT a gate on any of the retrieval/verdict work that
+    # follows: an early triggering event (Path B in the design doc) is
+    # exactly what that work exists to catch BEFORE the deadline, so
+    # availability=False must never skip it. It is attached to every
+    # finding this market produces below as independent context for a
+    # reviewer -- "is this worth a look" is a different question from
+    # "what does the evidence say", per the 2026-09-08 availability/
+    # outcome split (docs/superpowers/plans/2026-09-08-resolution-
+    # availability-design.md): a false "available" costs one wasted
+    # glance, a wrong outcome resolves a market incorrectly, so this can
+    # ship at a much lower bar without touching verdict_engine's own.
+    availability = check_availability(market)
+
     peer_verdict = peer_checker(market)
     if peer_verdict is not None:
-        save_finding(db_path, market.id, run_timestamp, peer_verdict)
+        save_finding(db_path, market.id, run_timestamp, peer_verdict, availability)
         return
 
     queries = build_queries(market)
@@ -136,4 +153,4 @@ def _scan_market(
         verdicts = [verdicts]
     verdicts = _promote_best_below_threshold(verdicts, market, articles_with_text)
     for verdict in verdicts:
-        save_finding(db_path, market.id, run_timestamp, verdict)
+        save_finding(db_path, market.id, run_timestamp, verdict, availability)

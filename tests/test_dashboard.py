@@ -1,9 +1,12 @@
 # tests/test_dashboard.py
 import os
 import tempfile
+from datetime import date
 from resolution_finder.storage import init_db, save_finding, get_setting, set_setting
 from resolution_finder.models import Verdict
+from resolution_finder.resolution_spec import check_availability
 from resolution_finder.dashboard import create_app
+from tests.test_pipeline import make_market
 
 
 def make_temp_db_with_finding():
@@ -203,6 +206,49 @@ def test_settings_page_shows_no_usage_data_message_when_unavailable():
 
     assert response.status_code == 200
     assert b"No usage data yet" in response.data
+
+
+def test_index_shows_available_flag_and_reason():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    market = make_market(close_date=date(2020, 1, 1))
+    availability = check_availability(market)
+    assert availability.available is True
+    assert availability.reason == "close_date_passed"
+
+    verdict = Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                       source_url=None, source_type=None)
+    save_finding(db_path, "clarity-act-2026", "2026-08-10T00:00:00", verdict, availability)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"close date has passed" in response.data
+
+
+def test_index_shows_dash_when_not_yet_available():
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.remove(db_path)
+    init_db(db_path)
+    market = make_market(close_date=date(2099, 1, 1))
+    availability = check_availability(market)
+    assert availability.available is False
+
+    verdict = Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                       source_url=None, source_type=None)
+    save_finding(db_path, "clarity-act-2026", "2026-08-10T00:00:00", verdict, availability)
+
+    app = create_app(db_path)
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"close date has passed" not in response.data
 
 
 def test_index_shows_option_for_multi_outcome_finding():

@@ -19,13 +19,13 @@ from resolution_finder.storage import get_latest_findings
 NO_PEER_MATCH = lambda market: None
 
 
-def make_market(market_id="clarity-act-2026"):
+def make_market(market_id="clarity-act-2026", close_date=None):
     return Market(
         id=market_id,
         title="Will the CLARITY act be signed into law in 2026?",
         description="If these conditions are not met by the deadline, the market resolves to \"No\".",
         options=[],
-        close_date=date.today() + timedelta(days=365),
+        close_date=close_date if close_date is not None else date.today() + timedelta(days=365),
     )
 
 
@@ -301,6 +301,98 @@ def test_run_pipeline_promotes_best_below_threshold_article_when_no_evidence_ran
     assert findings[0]["outcome"] == "UNCLEAR"
     assert findings[0]["evidence_snippet"] == "A relevant but below-threshold sentence."
     assert findings[0]["source_url"] == "https://sports.example.com/x"
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_attaches_availability_to_every_finding(
+    mock_retrieve, mock_extract, mock_rank, mock_sleep
+):
+    """check_availability is computed once per market and attached to
+    every finding it produces -- not gated behind evidence being found,
+    since a market with NO_EVIDENCE past its close_date is exactly the
+    case a reviewer most needs the availability flag for."""
+    mock_retrieve.return_value = []
+    mock_rank.return_value = []
+
+    # Past close_date -> resolution_available must be True.
+    market = make_market(close_date=date.today() - timedelta(days=1))
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider([market]), db_path, peer_checker=NO_PEER_MATCH)
+
+    findings = get_latest_findings(db_path)
+    assert findings[0]["outcome"] == "NO_EVIDENCE"
+    assert findings[0]["resolution_available"] is True
+    assert findings[0]["availability_reason"] == "close_date_passed"
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_availability_false_before_close_date(
+    mock_retrieve, mock_extract, mock_rank, mock_sleep
+):
+    mock_retrieve.return_value = []
+    mock_rank.return_value = []
+
+    market = make_market(close_date=date.today() + timedelta(days=365))
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider([market]), db_path, peer_checker=NO_PEER_MATCH)
+
+    findings = get_latest_findings(db_path)
+    assert findings[0]["resolution_available"] is False
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_still_retrieves_evidence_when_not_yet_available(
+    mock_retrieve, mock_extract, mock_rank, mock_sleep
+):
+    """Availability must never gate retrieval -- an early triggering
+    event (Path B) is exactly what retrieval exists to catch BEFORE the
+    close date, so a not-yet-available market still gets scanned."""
+    mock_retrieve.return_value = []
+    mock_rank.return_value = []
+
+    market = make_market(close_date=date.today() + timedelta(days=365))
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider([market]), db_path, peer_checker=NO_PEER_MATCH)
+
+    mock_retrieve.assert_called_once()
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_attaches_availability_to_a_peer_market_finding(
+    mock_retrieve, mock_extract, mock_rank, mock_sleep
+):
+    """The peer-market fast path returns before the news pipeline runs
+    at all -- availability must still be attached there too, not only on
+    the news path."""
+    def fake_peer_checker(market):
+        return Verdict(
+            outcome="YES", confidence=0.85, evidence_snippet="Resolved on a peer market",
+            source_url="https://polymarket.com/event/x", source_type="peer_market",
+        )
+
+    market = make_market(close_date=date.today() - timedelta(days=1))
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider([market]), db_path, peer_checker=fake_peer_checker)
+
+    findings = get_latest_findings(db_path)
+    assert findings[0]["resolution_available"] is True
+    mock_retrieve.assert_not_called()
     os.remove(db_path)
 
 
