@@ -75,6 +75,60 @@ carries the cost of an autonomous wrong resolution -- which is why this
 can ship at a far lower evidence bar than the verdict engine, without
 weakening any existing guard.
 
+## Measured: Path A coverage on the real 97-market batch
+
+Sized before writing any parser (`scratchpad/size_path_a.py`,
+`size_path_a2.py` -- read-only, nothing authored):
+
+| | count | share |
+|---|---|---|
+| has `close_date` | 94 | 96% |
+| has a deadline in the description | 43 | 44% |
+| **has EITHER -- availability-ready** | **94** | **96%** |
+| has a parseable stated default | 35 | 36% |
+| **already past `close_date` today** | **87** | **90%** |
+
+Three conclusions:
+
+1. **Availability needs only a deadline, not a default.** "Is a
+   resolution available" is answered by the deadline passing; the
+   default only affects what we *suggest* it resolved to. Measured that
+   way, coverage is 96%, not the 20% that a stricter both-fields test
+   reports. Only three markets have no deadline from either source (the
+   known `close_date=None` March Madness cases).
+
+2. **87 of 97 markets are already past their close date.** Path A flags
+   a resolution as available for every one of them, with zero retrieval
+   and zero model calls. That is the entire main goal, for 90% of the
+   batch, from a date comparison.
+
+3. **The outcome half is genuinely thinner** (36% with a parseable
+   default), which is exactly why availability and outcome must be
+   reported separately. Gating the cheap signal on the expensive one
+   would discard most of the coverage.
+
+### `close_date` and the description deadline are different things
+
+In 8 markets the two disagree on the year, and the pattern is
+consistent -- the description deadline is *later*:
+
+    world-series-champion-2025   close=2025-10-31  desc=February 28, 2026
+    f1-constructors-champion-2025 close=2025-12-07 desc=February 28, 2026
+    mlb-2025-will-a-1-seed...    close=2025-10-31  desc=February 28, 2026
+
+They are not competing values for one field. `close_date` is when
+trading stops, around when the event is expected; the description
+deadline is the **backstop** after which the stated default applies.
+That yields a natural two-tier signal:
+
+- **past `close_date`** -> resolution *probably* available, go and look
+  (flag for review)
+- **past the description backstop** -> resolution *definitely*
+  available, and the stated default applies if nothing was found
+
+Use `close_date` as the availability trigger and the description
+deadline as the default-assertion trigger. Do not collapse them.
+
 ## What to build
 
 ### 1. Description -> spec parser
