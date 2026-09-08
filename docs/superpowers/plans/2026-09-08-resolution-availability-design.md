@@ -107,6 +107,52 @@ Three conclusions:
    reported separately. Gating the cheap signal on the expensive one
    would discard most of the coverage.
 
+### Third signal: the description often states WHEN the event is scheduled
+
+Measured (`scratchpad/size_scheduled_event.py`): **17 of 97 (17%)**
+descriptions state a scheduled event time, 7 of them with a clock time.
+
+    womens-march-madness-iowa-vs-lsu   scheduled for April 1 at 7:15 PM ET
+    australian-open-final-medvedev...  at twilight on January 28, 2024
+    us-open-sinner-vs-alcaraz          scheduled for September 7, 2025
+    ny-3-special-election-suozzi       was scheduled for February 13, 2024
+    trump-biden-debate-june-27         scheduled for June 27, 2024
+    fl-6-special-election              scheduled to take place on April 1, 2025
+
+Two things make this more valuable than its 17% suggests:
+
+1. **It fills the gap the other signals leave.**
+   `womens-march-madness-iowa-vs-lsu` is one of the only three markets
+   with neither a `close_date` nor a description deadline -- and it
+   states a scheduled time. The three signals are complementary, taking
+   combined coverage to 95-96 of 97.
+
+2. **It is concentrated in exactly the markets that matter most.** The
+   hits are single-event markets -- one game, one debate, one election,
+   one final. That is the "timely sports" population the user says the
+   platform mainly runs, and it is where the other two signals are worst:
+   for a game at 7:15 PM on April 1, the scheduled time fires the same
+   night, while the backstop deadline (May 31) would not fire for eight
+   weeks after the market was already resolvable.
+
+**A scheduled time that has passed means "go and look", not "it
+happened."** Events get postponed, and the descriptions themselves
+encode that contingency -- the Lakers/Rockets market reads *"is played
+and not completed by May 31, 2026, 11:59 PM ET, this market will
+resolve..."*, carrying both the scheduled game and its postponement
+backstop in one description. This is the availability/outcome split
+again: the schedule triggers the check, it does not decide the answer.
+
+### The three tiers
+
+| Signal | Coverage | Fires | Means |
+|---|---|---|---|
+| scheduled event time | 17% | hours after the event | **go look now** (most precise) |
+| `close_date` | 96% | trading stops | probably resolvable, go look |
+| description backstop deadline | 44% | months later | assert the stated default |
+
+Check them in that order of precision, not of coverage.
+
 ### `close_date` and the description deadline are different things
 
 In 8 markets the two disagree on the year, and the pattern is
