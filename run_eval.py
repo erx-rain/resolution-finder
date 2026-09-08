@@ -176,6 +176,17 @@ def _run_one_market(market: Market, ground_truth: str | None, cache: dict, live:
     else:
         candidates, article_text, queries = _fetch_live(market)
         store_market_snapshot(cache, market.id, queries, candidates, article_text)
+        # Persist after EVERY live market, not once at the end of the run.
+        # Real fragility found live (2026-09-08): a cold-cache full-batch
+        # run is ~90 minutes of real network fetching, and the single
+        # end-of-run save meant an interruption at minute 85 -- a Ctrl+C,
+        # a crash, a laptop sleeping -- discarded every snapshot it had
+        # just spent that time fetching, with nothing to resume from. The
+        # whole point of the cache is that retrieval is the expensive,
+        # non-deterministic part; losing all of it to a late interrupt
+        # defeats that. One JSON write per market is negligible next to
+        # the network round-trips it protects.
+        save_cache(cache)
 
     print(f"  queries built ({len(queries)}): {queries}")
     print(f"  candidate refs retrieved: {len(candidates)}")
