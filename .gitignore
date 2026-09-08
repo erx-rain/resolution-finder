@@ -9,3 +9,10 @@ data/resolution_finder.db
 # (full article text per candidate, per market) and is trivially
 # regenerated with `python run_eval.py --live`.
 data/eval_cache.json
+
+# Local diagnostic and calibration scripts. Deliberately untracked --
+# these are one-off probes written to answer a specific question during
+# a session (NLI score dumps, retrieval traces, coverage measurements),
+# not maintained code. Their findings belong in commit messages, code
+# comments and the plan docs; the scripts themselves are disposable.
+scratchpad/
