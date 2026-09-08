@@ -2448,3 +2448,149 @@ def test_numeric_threshold_ignores_a_bare_may_hedge_and_unrelated_number():
     )]
     verdict = decide(WORLD_CUP_REAL_MARKET, evidence)
     assert verdict.outcome != "YES"
+
+
+# Opus plan (2026-09-07), Priority 1: _decide_binary had no elimination/NO
+# path at all -- measured on the real 97-market eval, 0 of 19 binary
+# markets whose real answer is "No" were ever resolved, versus 53% for
+# 2-option head-to-head markets asking the structurally identical
+# question. These tests cover the new binary_subject extraction and the
+# NO-confirmation path built on top of it (reusing _verify_elimination_
+# candidate, already calibrated for _decide_multi_outcome).
+
+DJOKOVIC_MARKET = Market(
+    id="will-novak-djokovic-win-the-australian-open-2024",
+    title="Will Novak Djokovic win the Australian Open 2024?",
+    description="",
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+CANADIAN_STANLEY_CUP_MARKET = Market(
+    id="will-a-canadian-team-win-nhl-stanley-cup",
+    title="Will a Canadian team win NHL Stanley Cup?",
+    description="",
+    options=[],
+    close_date=date.today() + timedelta(days=30),
+)
+
+
+def test_market_binary_subject_extracts_competitor_from_win_beat_title():
+    from resolution_finder.verdict_engine import _market_binary_subject
+    assert _market_binary_subject(DJOKOVIC_MARKET) == "Novak Djokovic"
+    assert _market_binary_subject(CANADIAN_STANLEY_CUP_MARKET) == "a Canadian team"
+    beat_market = Market(
+        id="man-city-beat-arsenal", title="Will Manchester City beat Arsenal?",
+        description="", options=[], close_date=date.today() + timedelta(days=30),
+    )
+    assert _market_binary_subject(beat_market) == "Manchester City"
+
+
+def test_market_binary_subject_extracts_from_object_less_title():
+    from resolution_finder.verdict_engine import _market_binary_subject
+    qualify_market = Market(
+        id="messi-qualify", title="Will Messi qualify?",
+        description="", options=[], close_date=date.today() + timedelta(days=30),
+    )
+    assert _market_binary_subject(qualify_market) == "Messi"
+    advance_market = Market(
+        id="aston-martin-advance", title="Will Aston Martin advance?",
+        description="", options=[], close_date=date.today() + timedelta(days=30),
+    )
+    assert _market_binary_subject(advance_market) == "Aston Martin"
+
+
+def test_market_binary_subject_returns_none_for_unsupported_title_shapes():
+    # The other ~80% of real binary markets use verb shapes this
+    # deliberately narrow pass doesn't cover (passes/approves/rules/
+    # impeached/signed) -- None means "no NO-path for this market", not
+    # an error; the market still gets the existing YES-only behavior.
+    from resolution_finder.verdict_engine import _market_binary_subject
+    assert _market_binary_subject(CLARITY_MARKET) is None
+    assert _market_binary_subject(WAR_POWERS_MARKET) is None
+
+
+def test_binary_no_hedge_gate_does_not_block_literal_negation_but_still_blocks_genuine_uncertainty():
+    # Real bug found live (2026-09-07) while calibrating this feature:
+    # reusing _sentence_has_hedge verbatim to gate NO-candidate sentences
+    # filtered out almost every natural negation phrasing ("has not won",
+    # "never won") before it ever reached the NLI elimination check,
+    # since NEGATION_HEDGE_WORDS' job is keeping negation OUT of a YES
+    # confirmation -- exactly backwards for a NO confirmation, where
+    # negation is the signal. _sentence_has_hedge_for_negative_claim is
+    # NEGATION_HEDGE_WORDS with only the literal-negation-of-the-verb
+    # words removed; genuine uncertainty ("might be", "reportedly") must
+    # still gate NO-candidates too.
+    from resolution_finder.verdict_engine import (
+        _sentence_has_hedge, _sentence_has_hedge_for_negative_claim,
+    )
+    negation_sentence = "A Canadian team has not won the Stanley Cup since 1993."
+    assert _sentence_has_hedge(negation_sentence) is True
+    assert _sentence_has_hedge_for_negative_claim(negation_sentence) is False
+
+    genuine_hedge_sentence = "A Canadian team might be eliminated from playoff contention."
+    assert _sentence_has_hedge_for_negative_claim(genuine_hedge_sentence) is True
+
+
+def test_binary_market_resolves_no_on_corroborated_negation_evidence():
+    # The real motivating case: this market was one of the 19 stuck at
+    # 0% before this fix (the answer was "No", but _decide_binary could
+    # only ever produce YES). Two independent sources -- see
+    # CORROBORATION_MIN_DOMAINS' own comment for why one is not enough.
+    evidence = [
+        make_ranked(
+            "Jannik Sinner ends Novak Djokovic's hunt for an 11th Australian "
+            "Open title, beating him in straight sets in the semifinal.",
+            url="https://www.olympics.com/x", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Sinner reached the Australian Open final by beating Novak "
+            "Djokovic in the semifinals on Friday night.",
+            url="https://www.espn.com/x", source_type="credible_backup_secondary",
+        ),
+    ]
+    verdict = decide(DJOKOVIC_MARKET, evidence)
+    assert verdict.outcome == "NO"
+
+
+def test_binary_market_resolves_no_on_historical_drought_phrasing():
+    # Second real motivating case, different phrasing shape than the
+    # single-event Djokovic case above -- a HISTORICAL/statistical
+    # drought claim rather than "X was just eliminated". Article bodies
+    # are realistic multi-sentence text (not bare headlines): a real bug
+    # found calibrating this test showed bare one-sentence "text" fields
+    # made two independently-worded paraphrases of the same fact look
+    # like wire-service duplication to _corroborating_domain_count
+    # (which compares full item.text) purely because a short sentence
+    # has little room to differ -- see that function's own comment for
+    # the FDA-approval case this was originally found in.
+    evidence = [
+        make_ranked(
+            "No Canadian hockey team has won the Stanley Cup Final since "
+            "1993 - NBC News. The Edmonton Oilers fell in five games to "
+            "the Florida Panthers on Tuesday night, extending the "
+            "country's championship drought into a fourth consecutive "
+            "decade.",
+            url="https://www.nbcnews.com/x", source_type="credible_backup",
+        ),
+        make_ranked(
+            "A Canadian team has not won the Stanley Cup since 1993. "
+            "Florida closed out the series at home with a 3-1 victory, "
+            "sending the trophy back to South Florida for the second "
+            "time in three years.",
+            url="https://www.espn.com/x", source_type="credible_backup_secondary",
+        ),
+    ]
+    verdict = decide(CANADIAN_STANLEY_CUP_MARKET, evidence)
+    assert verdict.outcome == "NO"
+
+
+def test_binary_market_no_path_stays_unclear_on_a_single_uncorroborated_source():
+    evidence = [make_ranked(
+        "Jannik Sinner ends Novak Djokovic's hunt for an 11th Australian "
+        "Open title, beating him in straight sets in the semifinal.",
+        url="https://www.olympics.com/x", source_type="credible_backup",
+    )]
+    verdict = decide(DJOKOVIC_MARKET, evidence)
+    assert verdict.outcome == "UNCLEAR"
+    assert "Only 1 independent source" in verdict.evidence_snippet

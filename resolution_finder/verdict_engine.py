@@ -639,6 +639,35 @@ NEGATION_HEDGE_WORDS = [
     "one behind the record", "one behind the all-time record",
 ]
 
+# Real bug found live (2026-09-07, calibrating the binary-NO path): every
+# NEGATION_HEDGE_WORDS check up to this point exists to keep genuine
+# NEGATION out of a POSITIVE (YES/winner) confirmation -- "X has not won"
+# should never count as confirming X won, so "not "/"n't "/"never "/
+# "without "/"fails to"/"failed to"/"yet to"/"has yet" are correctly
+# treated as hedges there. But those exact words are the PRIMARY way a
+# negative outcome gets stated in real prose ("A Canadian team has not
+# won the Stanley Cup since 1993.") -- reusing _sentence_has_hedge
+# verbatim to gate NO/elimination-candidate sentences filters out almost
+# every natural negation phrasing before it ever reaches the NLI
+# elimination check, since bare "not "/"never " match constantly. Real
+# calibration case: this exact sentence scores 0.942 for "eliminated from
+# the competition" once it reaches the NLI check, but never got there.
+#
+# This list is NEGATION_HEDGE_WORDS with only that literal-negation-of-
+# the-verb subset removed -- everything else (speculation: "reportedly",
+# "rumored"; standing/trajectory-not-outcome: "raring to", "nominated
+# for", "made the playoffs", "on course for", "doubled its share"; near-
+# miss framing: "one shy of") still describes genuine non-decided
+# uncertainty regardless of which direction (YES or NO) is being
+# checked, so it still belongs on both lists.
+BINARY_NO_HEDGE_WORDS = [
+    word for word in NEGATION_HEDGE_WORDS
+    if word not in (
+        "not ", "n't ", "never ", "without ",
+        "fails to", "failed to", "yet to", "has yet",
+    )
+]
+
 # Generic quantifier+"other" hedges of SPECIFICITY -- e.g. "numerous other
 # records have been broken" -- distinct from NEGATION_HEDGE_WORDS (hedges
 # on certainty) and _sentence_mentions_other_entity (hedges on subject
@@ -806,6 +835,14 @@ def _split_sentences(text: str) -> list[str]:
 def _sentence_has_hedge(sentence: str) -> bool:
     lowered = sentence.lower()
     return any(word in lowered for word in NEGATION_HEDGE_WORDS)
+
+
+def _sentence_has_hedge_for_negative_claim(sentence: str) -> bool:
+    """Like _sentence_has_hedge, but for gating NO/elimination-candidate
+    sentences -- see BINARY_NO_HEDGE_WORDS's own comment for why literal
+    negation words must NOT be treated as hedges in this direction."""
+    lowered = sentence.lower()
+    return any(word in lowered for word in BINARY_NO_HEDGE_WORDS)
 
 
 def _sentence_is_interrogative(sentence: str) -> bool:
@@ -1468,6 +1505,77 @@ def _verify_elimination_candidate(sentence: str, option: str, market: Market) ->
     return _verify_candidate_semantically(sentence, positive, negative)
 
 
+# Opus plan (2026-09-07), Priority 1: measured on the real 97-market eval,
+# 0 of 19 binary markets whose ANSWER is "No" were ever resolved -- 0%,
+# versus 53% for 2-option head-to-head markets asking the structurally
+# identical question. Root cause: _decide_binary has no elimination path
+# at all -- it can only ever produce YES. _decide_multi_outcome already
+# has one (_verify_elimination_candidate, immediately above), and this
+# reuses it verbatim rather than building something new.
+#
+# The real difficulty wasn't the verification call -- it was WHICH
+# subject to hand it. A generic, subject-agnostic hypothesis (mirroring
+# _binary_yes_hypotheses' "This has been confirmed / has not happened
+# yet" pair) was tried first and calibrated badly: real motivating
+# sentences ("Jannik Sinner ends Novak Djokovic's hunt for 11th title")
+# scored 0.02-0.10 against several worded attempts, nowhere near
+# NLI_VERIFICATION_THRESHOLD, and one attempt scored a plainly-irrelevant
+# neutral sentence HIGHER than the real positive cases -- the model has
+# nothing concrete to check the sentence against without a named subject.
+#
+# _distinctive_subject_terms' own first entry doesn't work either: for
+# "Will a Canadian team win NHL Stanley Cup?" its first entry is "NHL
+# Stanley Cup" (the EVENT), not "a Canadian team" (the actual subject) --
+# a bag of extracted entities has no signal to tell competitor from
+# event apart. The title's own "Will X win/beat Y" word order gives it
+# directly, the same way _extract_threshold_condition already parses a
+# title's own grammatical structure elsewhere in this file. Once handed
+# the real subject this way, the SAME elimination hypothesis calibrated
+# for multi-outcome scores the real cases at 0.898-0.982 -- no new
+# calibration needed at all.
+#
+# Deliberately narrow: real coverage measured against data/markets.json
+# is 10 of 51 binary markets (Djokovic, Medvedev, Man City, "a Canadian
+# team", Messi, Aston Martin, "a #1 Seed", el-Sisi, Suozzi...). The
+# remaining ~80% (SCOTUS rulings, Congress passing bills, FDA approvals,
+# impeachments, attendance/confirmation questions) use a different verb
+# shape entirely ("passes", "approves", "rules", "impeached", "confirm")
+# and are explicitly OUT of scope here -- they stay UNCLEAR rather than
+# guessed at, exactly as before this change. Extending coverage to those
+# shapes is real future work, not attempted in this pass.
+_BINARY_SUBJECT_PATTERN_WITH_OBJECT = re.compile(r"Will (.+?) (win|beat|defeat)s? (.+?)\?$", re.I)
+_BINARY_SUBJECT_PATTERN_NO_OBJECT = re.compile(r"Will (.+?) (win|advance|qualify)s?\?$", re.I)
+
+
+def _market_binary_subject(market: Market) -> Optional[str]:
+    """The market's own competing SUBJECT, parsed from its title's own
+    "Will {subject} win/beat {object}?" (or object-less "Will {subject}
+    win?") grammatical structure -- the entity whose displacement this
+    market's own NO condition is actually about. Returns None for any
+    other title shape (see this section's own comment for why that's a
+    deliberate scope boundary, not a gap)."""
+    match = _BINARY_SUBJECT_PATTERN_WITH_OBJECT.search(market.title)
+    if match:
+        return match.group(1).strip()
+    match = _BINARY_SUBJECT_PATTERN_NO_OBJECT.search(market.title)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+# Same cap concept and reasoning as MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_
+# OPTION (below): _decide_binary's NO-collection has no cheap keyword
+# pre-filter the way YES-collection does (BINARY_YES_KEYWORDS) -- the
+# real motivating evidence routinely doesn't contain the subject's own
+# name as a literal substring ("No Canadian hockey team has won..." vs.
+# subject "a Canadian team"), so every sentence that clears the existing
+# hedge/other-entity gates gets an NLI call, same as the semantic-YES
+# fallback already does. Capped so a market with many ranked candidates
+# doesn't multiply that cost unboundedly -- once enough confirmations
+# exist to settle corroboration either way, further calls add nothing.
+BINARY_NO_MAX_CONFIRMATIONS = 3
+
+
 def _deadline_default_note(market: Market) -> str:
     """Reviewer-facing CONTEXT for a market whose close date has passed
     with nothing confirmed -- never a verdict. See _decide_binary's own
@@ -1695,6 +1803,7 @@ def _uncorroborated_note(confirmations: list[tuple[str, RankedArticle]]) -> str:
 def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
     subject_terms = _subject_terms(market)
     distinctive_terms = _distinctive_subject_terms(market)
+    binary_subject = _market_binary_subject(market)
 
     # Collects every confirming (sentence, item) pair instead of
     # returning on the first match -- see the corroboration comment
@@ -1745,20 +1854,76 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
             if semantic_score is not None:
                 confirmations.append((sentence, item))
 
-    if confirmations:
+    # NO-collection (Opus plan, 2026-09-07, Priority 1): see
+    # _market_binary_subject's own comment above for the full reasoning
+    # and measured scope (10 of 51 real binary markets). Only attempted
+    # when the title actually parses into a "Will X win/beat Y?" shape --
+    # None for every other shape, so this is a no-op there, same as
+    # before this change. No cheap keyword pre-filter exists for this
+    # (unlike BINARY_YES_KEYWORDS), so every sentence that clears the
+    # existing hedge/other-entity gates gets an NLI call, capped at
+    # BINARY_NO_MAX_CONFIRMATIONS per market to bound the added cost.
+    # Uses _sentence_has_hedge_for_negative_claim, NOT _sentence_has_hedge
+    # -- see BINARY_NO_HEDGE_WORDS's comment for why (literal negation
+    # words are the NO signal here, not noise to filter).
+    no_confirmations: list[tuple[str, RankedArticle]] = []
+    if binary_subject:
+        for item in ranked_evidence:
+            if len(no_confirmations) >= BINARY_NO_MAX_CONFIRMATIONS:
+                break
+            for sentence in _split_sentences(item.text):
+                if len(no_confirmations) >= BINARY_NO_MAX_CONFIRMATIONS:
+                    break
+                if _sentence_has_hedge_for_negative_claim(sentence) or _sentence_is_interrogative(sentence):
+                    continue
+                if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
+                    continue
+                if _sentence_is_vague_reference(sentence):
+                    continue
+                if _verify_elimination_candidate(sentence, binary_subject, market):
+                    no_confirmations.append((sentence, item))
+
+    # Same corroboration-symmetric structure as _decide_numeric_threshold's
+    # met/not-met split (see its own comment): both sides corroborated is
+    # genuine disagreement, not a coin flip to resolve -- abstain. Either
+    # side alone still needs CORROBORATION_MIN_DOMAINS to actually assert,
+    # exactly like YES already required before this change; NO is held to
+    # the identical bar, not a looser one.
+    yes_corroborated = bool(confirmations) and _corroborating_domain_count(confirmations) >= CORROBORATION_MIN_DOMAINS
+    no_corroborated = bool(no_confirmations) and _corroborating_domain_count(no_confirmations) >= CORROBORATION_MIN_DOMAINS
+
+    if yes_corroborated and no_corroborated:
         sentence, item = confirmations[0]
-        if _corroborating_domain_count(confirmations) >= CORROBORATION_MIN_DOMAINS:
-            return Verdict(
-                outcome="YES",
-                confidence=item.similarity,
-                evidence_snippet=sentence.strip()[:280],
-                source_url=item.article.url,
-                source_type=item.article.source_type,
-            )
         return Verdict(
             outcome="UNCLEAR",
             confidence=item.similarity,
-            evidence_snippet=(sentence.strip()[:280] + _uncorroborated_note(confirmations)),
+            evidence_snippet=(
+                "Conflicting evidence: independently corroborated sources "
+                "disagree on whether this happened -- flagged for review "
+                "rather than guessed."
+            ),
+            source_url=item.article.url,
+            source_type=item.article.source_type,
+        )
+
+    if yes_corroborated or no_corroborated:
+        bucket, outcome = (confirmations, "YES") if yes_corroborated else (no_confirmations, "NO")
+        sentence, item = bucket[0]
+        return Verdict(
+            outcome=outcome,
+            confidence=item.similarity,
+            evidence_snippet=sentence.strip()[:280],
+            source_url=item.article.url,
+            source_type=item.article.source_type,
+        )
+
+    if confirmations or no_confirmations:
+        bucket = confirmations or no_confirmations
+        sentence, item = bucket[0]
+        return Verdict(
+            outcome="UNCLEAR",
+            confidence=item.similarity,
+            evidence_snippet=(sentence.strip()[:280] + _uncorroborated_note(bucket)),
             source_url=item.article.url,
             source_type=item.article.source_type,
         )
