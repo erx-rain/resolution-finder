@@ -1693,6 +1693,15 @@ CORROBORATION_WIRE_DUPLICATE_SIMILARITY = 0.95
 # in exhaustively verifying every remaining sentence against it too.
 MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION = 3
 
+# Opus plan (2026-09-08 followup notes, answer to open question #1):
+# elimination confirmations get the same per-option cap as winner
+# confirmations, for the same reason -- broadening the hedge gate below
+# (BINARY_NO_HEDGE_WORDS-style, negation-permissive) means many more
+# sentences now reach the elimination NLI check per option on a
+# many-option market, and once an option has enough confirmations to
+# settle corroboration, more add nothing but cost.
+MULTI_OUTCOME_MAX_ELIMINATION_CONFIRMATIONS_PER_OPTION = 3
+
 
 def _confirmation_domain(item: RankedArticle) -> str:
     """A stable identity for 'which source' a confirmation came from --
@@ -1964,7 +1973,7 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
     # way, further matching sentences for that option stop being
     # verified) instead of stopping at the first.
     winner_confirmations: dict[str, list[tuple[str, RankedArticle]]] = {}
-    eliminated: dict[str, Verdict] = {}
+    elimination_confirmations: dict[str, list[tuple[str, RankedArticle]]] = {}
     expected_year = _market_expected_year(market)
     market_is_playoff = _market_is_playoff_context(market)
     expected_competition = _market_named_competition(market)
@@ -1987,7 +1996,20 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
         # to compare against on that specific sentence.
         article_lead_sentence = _first_sentence(item.text)
         for sentence in _split_sentences(item.text):
-            if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
+            # Opus plan (2026-09-08 followup notes, answer to open question
+            # #1): this shared gate used to run the STRICT, negation-
+            # inclusive _sentence_has_hedge -- correct for keeping negation
+            # out of a WINNER confirmation, but backwards for an
+            # ELIMINATION confirmation, where negation ("has not won",
+            # "never advanced") is the actual signal, not noise. Same root
+            # cause the binary-NO path found and fixed (commit a7840eb) --
+            # see BINARY_NO_HEDGE_WORDS's own comment. Switched to the
+            # negation-permissive check here; the winner and head-to-head
+            # branches below re-apply the STRICT check themselves, so their
+            # calibrated behavior is unchanged -- any sentence this shared
+            # gate used to filter for them is still filtered, just one
+            # level down instead of here.
+            if _sentence_has_hedge_for_negative_claim(sentence) or _sentence_is_interrogative(sentence):
                 continue
             lowered = sentence.lower()
             # Gate winner/elimination matches on this sentence not naming a
@@ -2050,8 +2072,13 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 option_mentioned = _option_mentioned(lowered, option)
 
                 other_mentioned_options = [opt for opt in mentioned_options if opt != option]
+                # _sentence_has_hedge (the STRICT, negation-inclusive check)
+                # re-applied here -- see the shared gate's own comment above
+                # for why: this branch needs negation treated as a hedge,
+                # unlike the elimination branch below.
                 if (len(winner_confirmations.get(option, [])) < MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION
                         and not context_conflict and option_mentioned
+                        and not _sentence_has_hedge(sentence)
                         and _verify_winner_candidate(sentence, option, market, other_mentioned_options)):
                     winner_confirmations.setdefault(option, []).append((sentence, item))
 
@@ -2070,7 +2097,8 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 # applying "won one head-to-head" as "won the market" was.
                 if (len(market.options) == 2
                         and len(winner_confirmations.get(option, [])) < MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION
-                        and not context_conflict and option_mentioned):
+                        and not context_conflict and option_mentioned
+                        and not _sentence_has_hedge(sentence)):
                     for other_option in market.options:
                         if other_option == option:
                             continue
@@ -2082,13 +2110,35 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                             winner_confirmations.setdefault(option, []).append((sentence, item))
                             break
 
-                if (option not in eliminated and not context_conflict and option_mentioned
+                # Opus plan (2026-09-08 followup notes, answer to open
+                # question #1): this used to assert a "NO" Verdict straight
+                # from a SINGLE matching sentence -- the one corroboration
+                # gap phase 2 (2026-09-02) never closed, because winner
+                # detection got CORROBORATION_MIN_DOMAINS and this didn't.
+                # Now collects confirmations the same way winner_confirmations
+                # does; corroboration is applied once, after the loop, before
+                # `eliminated` is ever built or returned.
+                if (len(elimination_confirmations.get(option, [])) < MULTI_OUTCOME_MAX_ELIMINATION_CONFIRMATIONS_PER_OPTION
+                        and not context_conflict and option_mentioned
                         and _verify_elimination_candidate(sentence, option, market)):
-                    eliminated[option] = Verdict(
-                        outcome="NO", option=option, confidence=item.similarity,
-                        evidence_snippet=sentence.strip()[:280],
-                        source_url=item.article.url, source_type=item.article.source_type,
-                    )
+                    elimination_confirmations.setdefault(option, []).append((sentence, item))
+
+    # Corroboration applied AFTER the loop, same bar as winner_confirmations
+    # (CORROBORATION_MIN_DOMAINS) -- see the comment on
+    # elimination_confirmations' collection above. `eliminated` keeps the
+    # exact dict[str, Verdict] shape it always had, so both downstream uses
+    # (the corroborated-winner branch's per-option NO lookup, and the
+    # standalone partial-resolution branch below) are unchanged other than
+    # now only ever containing corroborated options.
+    eliminated: dict[str, Verdict] = {
+        option: Verdict(
+            outcome="NO", option=option, confidence=confirmations[0][1].similarity,
+            evidence_snippet=confirmations[0][0].strip()[:280],
+            source_url=confirmations[0][1].article.url, source_type=confirmations[0][1].article.source_type,
+        )
+        for option, confirmations in elimination_confirmations.items()
+        if _corroborating_domain_count(confirmations) >= CORROBORATION_MIN_DOMAINS
+    }
 
     # Conflict is judged on CORROBORATED options only, not on any option
     # that merely matched once. Real bug found live (2026-09-02, measured
@@ -2170,6 +2220,22 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
         # rest of the market stays unreported (still genuinely pending) --
         # not spammed with an UNCLEAR row for every remaining option.
         return list(eliminated.values())
+
+    if elimination_confirmations:
+        # Mirrors the winner-side uncorroborated check above: an option
+        # matched an elimination-shaped sentence, but no option reached
+        # CORROBORATION_MIN_DOMAINS -- a single source is a candidate, not
+        # a verdict, same reasoning as _uncorroborated_note everywhere else
+        # in this file.
+        option, confirmations = next(iter(elimination_confirmations.items()))
+        sentence, item = confirmations[0]
+        return [Verdict(
+            outcome="UNCLEAR", option=None, confidence=item.similarity,
+            evidence_snippet=(
+                f"{option}: " + sentence.strip()[:280] + _uncorroborated_note(confirmations)
+            ),
+            source_url=item.article.url, source_type=item.article.source_type,
+        )]
 
     # The stated default is no longer emitted as a verdict here either --
     # same reasoning as _decide_binary (see its comment): it asserts an

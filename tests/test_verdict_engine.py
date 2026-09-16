@@ -1426,15 +1426,72 @@ def test_multi_outcome_market_ignores_last_seasons_result_via_publish_date():
 def test_multi_outcome_market_option_independently_resolves_no_on_elimination():
     # Real scenario: The International 2026 -- Aurora Gaming eliminated,
     # tournament champion still undecided. Must resolve just that option,
-    # not force a whole-market guess.
+    # not force a whole-market guess. Two independent sources -- see
+    # CORROBORATION_MIN_DOMAINS' own comment: elimination now needs the
+    # same 2-domain bar as a winner confirmation does (Opus plan,
+    # 2026-09-08 followup notes, answer to open question #1 -- this path
+    # used to assert NO from a single source with no corroboration at
+    # all, the one place phase 2's corroboration rollout missed).
+    evidence = [
+        make_ranked(
+            "Aurora Gaming was eliminated from The International 2026 in the lower bracket.",
+            url="https://www.dexerto.com/dota2/1", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Aurora Gaming's TI2026 run ended today after a lower-bracket loss knocked "
+            "them out of the tournament.",
+            url="https://win.gg/dota2/2", source_type="credible_backup_secondary",
+        ),
+    ]
+    verdicts = decide(INTERNATIONAL_MARKET, evidence)
+    assert len(verdicts) == 1
+    assert verdicts[0].option == "Aurora Gaming"
+    assert verdicts[0].outcome == "NO"
+
+
+def test_multi_outcome_market_resolves_no_on_negation_phrased_elimination():
+    # Real bug found live (2026-09-08, Opus followup notes): the shared
+    # sentence gate used _sentence_has_hedge (the strict, negation-
+    # inclusive check) for EVERY branch, including elimination -- correct
+    # for keeping negation out of a winner confirmation, backwards for an
+    # elimination one, where negation ("never advanced", "has not won")
+    # IS the signal. Same root cause the binary-NO path found and fixed
+    # (commit a7840eb). Both sentences below score hedge=True under the
+    # strict check (would have been silently dropped before this fix)
+    # and hedge=False under the negation-permissive one used here.
+    evidence = [
+        make_ranked(
+            "Aurora Gaming never advanced past the lower bracket of The "
+            "International 2026.",
+            url="https://www.dexerto.com/dota2/1", source_type="credible_backup",
+        ),
+        make_ranked(
+            "Aurora Gaming has not won a single series since the group "
+            "stage of TI2026 ended.",
+            url="https://win.gg/dota2/2", source_type="credible_backup_secondary",
+        ),
+    ]
+    verdicts = decide(INTERNATIONAL_MARKET, evidence)
+    assert len(verdicts) == 1
+    assert verdicts[0].option == "Aurora Gaming"
+    assert verdicts[0].outcome == "NO"
+
+
+def test_multi_outcome_market_elimination_from_a_single_source_stays_unclear():
+    # Real bug found live (2026-09-08, Opus followup notes): the
+    # elimination path used to assert NO straight from ONE matching
+    # sentence -- no corroboration requirement at all, unlike winner
+    # detection, which has required CORROBORATION_MIN_DOMAINS since
+    # phase 2 (2026-09-02). A single source is a candidate, not a
+    # verdict, same as everywhere else in this file.
     evidence = [make_ranked(
         "Aurora Gaming was eliminated from The International 2026 in the lower bracket.",
         url="https://www.dexerto.com/dota2/1", source_type="credible_backup",
     )]
     verdicts = decide(INTERNATIONAL_MARKET, evidence)
     assert len(verdicts) == 1
-    assert verdicts[0].option == "Aurora Gaming"
-    assert verdicts[0].outcome == "NO"
+    assert verdicts[0].outcome == "UNCLEAR"
+    assert "Only 1 independent source" in verdicts[0].evidence_snippet
 
 
 def test_multi_outcome_market_ignores_single_game_loss_as_elimination():
