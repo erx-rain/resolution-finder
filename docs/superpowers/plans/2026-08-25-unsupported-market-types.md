@@ -174,3 +174,37 @@ whose real resolution criteria diverge from their title's plain
 English (the same way epl-team-to-qualify's and Todd Blanche's real
 shapes only became clear once their full descriptions were read
 directly).
+
+## User input captured 2026-09-16, for Opus to design (not designed here)
+
+Two additions to already-tracked gaps, captured verbatim in intent per
+the user's explicit instruction to defer planning to the next Opus
+session -- nothing below is a design decision, just requirements.
+
+**On item 4 (structured price-feed markets, crypto/gold/currencies):**
+the system needs to determine the resolution instrument and threshold
+ITSELF -- "get what he should be taking as measurement" -- by reading
+BOTH the description and the title, with the user's specific note that
+the TITLE may be the more useful field for this market type
+specifically ("maybe title because it's most worth it"). Worth flagging
+explicitly: this is a narrower, market-type-scoped exception to the
+project's general rule that the description is authoritative over the
+title (see memory: description-stronger-than-title) -- crypto/price
+titles tend to state the ticker and threshold plainly ("Will Bitcoin be
+above $64,000 on August 17?"), while the description mostly adds
+mechanism detail (which exchange, which candle). Opus should decide
+whether/how to special-case this market type rather than applying the
+general rule uniformly.
+
+**New: structured sports-data source, sports-market-scoped.** ESPN
+proposed by the user as a scrape target specifically for yellow
+cards, goals, and match times -- i.e. the same class of gap as the
+"Structured sports data adapters" work already outlined in
+docs/superpowers/plans/2026-09-08-description-first-strategy.md
+(Ordering step 4) and the resolution-availability design doc, now with
+a concrete first candidate source. Per-sport schema design (soccer's
+yellow/red cards don't apply to the NBA, etc.), ToS/scraping-risk
+verification (see memory: scraping-tos-risk-practice -- the existing
+discipline throughout source_config.py of a live robots.txt + real
+fetch check before adding any source applies here too), and how this
+plugs into resolution_spec.py are all open, for Opus.
