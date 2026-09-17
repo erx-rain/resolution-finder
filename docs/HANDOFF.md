@@ -83,9 +83,10 @@ tighten a gate, not as bad luck.
 
 ## 2. Status at handoff
 
-- **156 commits** on branch `resolution-finder-scanner` (in the zip, it's
-  the checked-out branch). `master` holds only the first 4 commits (design
-  spec + plan); all real work is on the branch.
+- **161 commits** in total. All real work is on branch
+  `resolution-finder-scanner` (in the zip, it's the checked-out branch);
+  `master` holds only the first 4 commits (design spec + plan). The branch
+  was never merged — merging it into `master` is a fine first step.
 - **360 tests passing** (~3 minutes; loads the real ML models).
 - **Two resolution tiers exist:**
   1. **Structured resolvers** — read an official source directly. One is
