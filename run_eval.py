@@ -53,7 +53,10 @@ from resolution_finder.article_extractor import extract_article_text, is_known_u
 from resolution_finder.relevance_ranker import rank_by_relevance
 from resolution_finder.verdict_engine import decide
 from resolution_finder.config import SIMILARITY_THRESHOLD, MARKETS_JSON_PATH
-from resolution_finder.eval_cache import load_cache, save_cache, load_market_snapshot, store_market_snapshot
+from resolution_finder.eval_cache import (
+    CachedPageFetcher, load_cache, save_cache, load_market_snapshot, store_market_snapshot,
+)
+from resolution_finder.structured_resolvers import resolve_structured
 
 logging.basicConfig(level=logging.WARNING)  # quiet; this prints its own trace
 
@@ -162,12 +165,57 @@ def _fetch_live(market: Market) -> tuple[list, dict, list[str]]:
     return candidates, article_text, queries
 
 
+def _print_verdicts(verdicts: list) -> None:
+    for v in verdicts:
+        print(f"  VERDICT: outcome={v.outcome} option={v.option} confidence={v.confidence:.3f}")
+        if v.evidence_snippet:
+            print(f"    evidence: {v.evidence_snippet[:200]!r}")
+        if v.source_url:
+            print(f"    source: {v.source_url}")
+
+
+def _result_record(market: Market, ground_truth: str | None, verdicts: list,
+                   from_cache: bool, trace: dict) -> dict:
+    return {
+        "market_id": market.id,
+        "ground_truth": ground_truth,
+        "from_cache": from_cache,
+        "verdicts": [
+            {
+                "outcome": v.outcome, "option": v.option, "confidence": round(v.confidence, 3),
+                "evidence_snippet": v.evidence_snippet, "source_url": v.source_url,
+                "source_type": v.source_type,
+            }
+            for v in verdicts
+        ],
+        "verdict_class": _score(verdicts, ground_truth, market.options),
+        "trace": trace,
+    }
+
+
 def _run_one_market(market: Market, ground_truth: str | None, cache: dict, live: bool) -> dict:
     print("\n" + "=" * 100)
     print(f"MARKET: {market.id}")
     print(f"  title: {market.title}")
     print(f"  close_date: {market.close_date}")
     print(f"  ground_truth resolved_to: {ground_truth}")
+
+    # Same order as pipeline._scan_market: a market a structured resolver
+    # claims (Fed rate decisions today) is answered from its official pages
+    # and never reaches news retrieval. Its pages are cached in the eval
+    # cache -- eval harness only, never in production.
+    page_fetcher = CachedPageFetcher(cache, live)
+    structured_verdicts = resolve_structured(market, fetch=page_fetcher)
+    if structured_verdicts is not None:
+        if page_fetcher.fetched_live:
+            save_cache(cache)
+        print(f"  [structured resolver; pages: {page_fetcher.urls}]")
+        _print_verdicts(structured_verdicts)
+        return _result_record(
+            market, ground_truth, structured_verdicts,
+            from_cache=not page_fetcher.fetched_live,
+            trace={"structured_resolver": True, "fetched_urls": page_fetcher.urls},
+        )
 
     snapshot = None if live else load_market_snapshot(cache, market.id)
     if snapshot is not None:
@@ -237,42 +285,24 @@ def _run_one_market(market: Market, ground_truth: str | None, cache: dict, live:
     verdicts = decide(market, ranked)
     if not isinstance(verdicts, list):
         verdicts = [verdicts]
-    for v in verdicts:
-        print(f"  VERDICT: outcome={v.outcome} option={v.option} confidence={v.confidence:.3f}")
-        if v.evidence_snippet:
-            print(f"    evidence: {v.evidence_snippet[:200]!r}")
-        if v.source_url:
-            print(f"    source: {v.source_url}")
+    _print_verdicts(verdicts)
 
-    verdict_class = _score(verdicts, ground_truth, market.options)
-
-    return {
-        "market_id": market.id,
-        "ground_truth": ground_truth,
-        "from_cache": snapshot is not None,
-        "verdicts": [
-            {
-                "outcome": v.outcome, "option": v.option, "confidence": round(v.confidence, 3),
-                "evidence_snippet": v.evidence_snippet, "source_url": v.source_url,
-                "source_type": v.source_type,
-            }
-            for v in verdicts
-        ],
-        "verdict_class": verdict_class,
+    return _result_record(
+        market, ground_truth, verdicts, from_cache=snapshot is not None,
         # Pipeline-stage detail, not just the final outcome -- so a later
         # debugging session can see WHERE a market got stuck (no
         # candidates? candidates but extraction failed? extracted but
         # ranked below threshold? ranked but no verdict-engine match?)
         # straight from this saved record, without re-running any
         # network calls.
-        "trace": {
+        trace={
             "queries": queries,
             "candidates_by_type": candidates_by_type,
             "articles_with_text_count": len(articles_with_text),
             "fetch_failure_urls": fetch_failure_urls,
             "ranked_above_threshold": ranked_detail,
         },
-    }
+    )
 
 
 def run_eval(market_ids: set[str], live: bool = False) -> None:

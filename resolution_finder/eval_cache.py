@@ -32,6 +32,7 @@ from datetime import date
 from typing import Optional
 
 from resolution_finder.models import ArticleRef
+from resolution_finder.page_fetch import Fetcher, http_fetch
 
 CACHE_PATH = "data/eval_cache.json"
 
@@ -102,3 +103,33 @@ def load_market_snapshot(cache: dict, market_id: str) -> Optional[dict]:
         "candidates": [_deserialize_ref(d) for d in entry["candidates"]],
         "article_text": entry["article_text"],
     }
+
+
+# Structured resolvers (resolution_finder/structured_resolvers.py) read
+# official pages, not news. Their pages are cached under this reserved
+# top-level key -- never a market id -- so replays are deterministic and
+# offline like retrieval snapshots are. Eval harness only: production
+# fetching (page_fetch.http_fetch) never caches.
+STRUCTURED_PAGES_KEY = "__structured_pages__"
+
+
+class CachedPageFetcher:
+    """A `Fetcher` for run_eval.py: serves a page from the cache when it has
+    it (unless `live`), otherwise fetches and stores it. A FetchError
+    propagates and stores nothing, so a failed fetch is retried next run."""
+
+    def __init__(self, cache: dict, live: bool, fetch: Fetcher = http_fetch):
+        self._pages = cache.setdefault(STRUCTURED_PAGES_KEY, {})
+        self._live = live
+        self._fetch = fetch
+        self.urls: list[str] = []
+        self.fetched_live = False
+
+    def __call__(self, url: str) -> str:
+        self.urls.append(url)
+        if not self._live and url in self._pages:
+            return self._pages[url]
+        page = self._fetch(url)
+        self._pages[url] = page
+        self.fetched_live = True
+        return page

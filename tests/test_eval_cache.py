@@ -1,7 +1,10 @@
 # tests/test_eval_cache.py
 from datetime import date
 
+import pytest
+
 from resolution_finder.models import ArticleRef
+from resolution_finder.page_fetch import FetchError
 from resolution_finder import eval_cache
 
 
@@ -81,3 +84,44 @@ def test_store_and_load_market_snapshot_survives_a_real_json_round_trip(tmp_path
     snapshot = eval_cache.load_market_snapshot(reloaded, "m1")
     assert snapshot["candidates"] == [ref]
     assert snapshot["article_text"] == {ref.url: "text"}
+
+
+def test_cached_page_fetcher_replays_a_cached_page_without_fetching():
+    cache = {eval_cache.STRUCTURED_PAGES_KEY: {"https://x/a.htm": "cached"}}
+    calls = []
+    fetcher = eval_cache.CachedPageFetcher(cache, live=False, fetch=lambda url: calls.append(url) or "live")
+    assert fetcher("https://x/a.htm") == "cached"
+    assert calls == []
+    assert fetcher.fetched_live is False
+    assert fetcher.urls == ["https://x/a.htm"]
+
+
+def test_cached_page_fetcher_fetches_and_stores_a_miss():
+    cache = {}
+    fetcher = eval_cache.CachedPageFetcher(cache, live=False, fetch=lambda url: "live")
+    assert fetcher("https://x/a.htm") == "live"
+    assert cache[eval_cache.STRUCTURED_PAGES_KEY] == {"https://x/a.htm": "live"}
+    assert fetcher.fetched_live is True
+
+
+def test_cached_page_fetcher_live_mode_refetches_and_overwrites():
+    cache = {eval_cache.STRUCTURED_PAGES_KEY: {"https://x/a.htm": "old"}}
+    fetcher = eval_cache.CachedPageFetcher(cache, live=True, fetch=lambda url: "new")
+    assert fetcher("https://x/a.htm") == "new"
+    assert cache[eval_cache.STRUCTURED_PAGES_KEY]["https://x/a.htm"] == "new"
+
+
+def test_cached_page_fetcher_caches_nothing_on_fetch_failure():
+    def failing(url):
+        raise FetchError("down")
+
+    cache = {}
+    fetcher = eval_cache.CachedPageFetcher(cache, live=False, fetch=failing)
+    with pytest.raises(FetchError):
+        fetcher("https://x/a.htm")
+    assert cache[eval_cache.STRUCTURED_PAGES_KEY] == {}
+
+
+def test_structured_pages_key_never_collides_with_a_market_snapshot_lookup():
+    cache = {eval_cache.STRUCTURED_PAGES_KEY: {"https://x/a.htm": "page"}}
+    assert eval_cache.load_market_snapshot(cache, "fed-decision-in-december") is None
