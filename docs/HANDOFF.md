@@ -83,7 +83,7 @@ tighten a gate, not as bad luck.
 
 ## 2. Status at handoff
 
-- **161 commits** in total. All real work is on branch
+- **160+ commits** in total. All real work is on branch
   `resolution-finder-scanner` (in the zip, it's the checked-out branch);
   `master` holds only the first 4 commits (design spec + plan). The branch
   was never merged — merging it into `master` is a fine first step.
