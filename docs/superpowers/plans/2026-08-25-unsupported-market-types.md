@@ -246,7 +246,10 @@ separately):** large multi-outcome markets are extremely slow in
 `_decide_multi_outcome`'s NLI verification -- `international-2026-
 champion` (8 options, 28 ranked sentences) ran 38+ CPU-minutes without
 finishing on a cached retrieval snapshot (confirmed via `/proc` as
-genuine CPU-bound work, not a hang). Likely cause: `_classify_scores`
+genuine CPU-bound work, not a hang). **Correction, same day:** that is CPU
+time summed across ~8 threads, roughly 5 minutes of wall time -- slow, not
+pathological. Measured diagnosis and the one output-safe fix (memoizing
+repeated calls) are in 2026-09-17-remaining-work-triage.md. Likely cause: `_classify_scores`
 calls the HuggingFace `pipeline("zero-shot-classification", ...)`
 object once per (sentence, option) pair rather than batching, and this
 market's option x sentence count runs into the hundreds. Unrelated to
