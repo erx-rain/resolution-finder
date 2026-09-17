@@ -7,31 +7,2086 @@
     "close_date": "2026-12-31"
   },
   {
-    "id": "nobel-peace-2026",
-    "title": "Who will win the 2026 Nobel Peace Prize?",
-    "description": "This market will be settled based on the recipient of the 2026 Nobel Peace Prize officially announced by the Norwegian Nobel Committee. The listed person or entity that receives the 2026 Nobel Peace Prize will resolve to \"Yes\", and all other listed outcomes will resolve to \"No\". If multiple listed individuals or entities jointly receive the prize, the listed individual whose last name, or the entity whose name, comes first alphabetically will resolve to \"Yes\", and all other listed recipients will resolve to \"No\". If none of the listed individuals or entities receive the prize, all listed outcomes will resolve to \"No\". If the 2026 Nobel Peace Prize has not been officially announced by March 31, 2027, 11:59 PM ET, all listed outcomes will resolve to \"No\". The market will use the first official announcement issued by the Norwegian Nobel Committee as its resolution source.",
-    "options": ["Yulia Navalnaya", "Volodymyr Zelenskyy", "UNRWA", "Pope Leo XIV", "Donald Trump"],
-    "close_date": "2027-03-31"
-  },
-  {
-    "id": "vinicius-transfer-2026",
-    "title": "Which team will Vinicius Junior join next?",
-    "description": "This market will settle based on the next team Vinicius Junior officially joins by September 1, 2026, at 11:59 PM ET. If he has not officially joined a new team by that deadline, the market will resolve to \"Real Madrid\". If he joins a team that is not included among the listed options, all listed teams on this market will resolve to \"No\". The market will also resolve to \"No\" if Vinicius Junior is released, retires, or is not under contract with any professional team by September 1, 2026, at 11:59 PM ET. An official transfer announcement made before the market closes will immediately resolve the market to the matching option. Official announcements from Real Madrid and/or the team acquiring Vinicius Junior will be the primary resolution sources. A consensus of credible media reporting may also be used.",
-    "options": ["Real Madrid", "Arsenal"],
-    "close_date": "2026-09-01"
-  },
-  {
     "id": "international-2026-champion",
     "title": "The International 2026 Champion",
     "description": "This market will resolve based on the team officially recognized as the champion of The International 2026. The winning team's market will resolve to \"Yes\". All other team markets will resolve to \"No\". If multiple teams are officially recognized as champions, the team whose listed name appears first alphabetically will have its market resolve to \"Yes\", and all remaining team markets will resolve to \"No\". If The International 2026 champion has not been officially determined by September 6, 2026, 11:59 PM ET, or if the champion is not one of the listed teams, all markets will resolve to \"No\". The resolution source for this market will be official information from Dotabuff (https://www.dotabuff.com). However, a consensus of credible reporting may also be used.",
-    "options": ["Team Yandex", "Team Vision", "Team Falcons", "BoomBoys", "Team Spirit", "Team Liquid", "1w Team", "Aurora Gaming"],
+    "options": [
+      "Team Yandex",
+      "Team Vision",
+      "Team Falcons",
+      "BoomBoys",
+      "Team Spirit",
+      "Team Liquid",
+      "1w Team",
+      "Aurora Gaming"
+    ],
     "close_date": "2026-09-06"
   },
   {
-    "id": "osun-state-governor-2026",
-    "title": "Osun State Gubernatorial Election Winner",
-    "description": "Gubernatorial elections are currently scheduled to be held in Osun State, Nigeria on August 15, 2026. This market will resolve according to the listed candidate who wins the 2026 Osun State gubernatorial elections. Any interim or caretaker Governor will not qualify. This market includes any potential second round. If the results are not known definitively by June 30, 2027, 11:59 PM ET, this market will resolve to \"Other\". This market will resolve based on the results of this election, as indicated by a consensus of credible reporting. If there is ambiguity, this market will resolve solely based on official results as reported by government sources of Osun State and Nigeria, including the Independent National Electoral Commission (https://inecnigeria.org).",
-    "options": ["Ademola Adeleke", "Farinloye Olarenwaju", "Esan Olajide", "Najeem Salam", "Adeagbo Opawoye", "Bola Oyebamiji", "Adesina Adeyemi-Doro", "Adewale Adebayo", "Taofeek Adeleke", "Saliu Oyelami", "Adefemi Adesuyi"],
-    "close_date": "2027-06-30"
+    "id": "nobel-peace-2026",
+    "title": "Who will win the 2026 Nobel Peace Prize?",
+    "description": "This market will be settled based on the recipient of the 2026 Nobel Peace Prize officially announced by the Norwegian Nobel Committee. The listed person or entity that receives the 2026 Nobel Peace Prize will resolve to \"Yes\", and all other listed outcomes will resolve to \"No\". If multiple listed individuals or entities jointly receive the prize, the listed individual whose last name, or the entity whose name, comes first alphabetically will resolve to \"Yes\", and all other listed recipients will resolve to \"No\". If none of the listed individuals or entities receive the prize, all listed outcomes will resolve to \"No\". If the 2026 Nobel Peace Prize has not been officially announced by March 31, 2027, 11:59 PM ET, all listed outcomes will resolve to \"No\". The market will use the first official announcement issued by the Norwegian Nobel Committee as its resolution source.",
+    "options": [
+      "Yulia Navalnaya",
+      "Volodymyr Zelenskyy",
+      "UNRWA",
+      "Pope Leo XIV",
+      "Donald Trump"
+    ],
+    "close_date": "2027-03-31"
+  },
+  {
+    "id": "bitcoin-above-64k-on-august-17-2026",
+    "title": "Will the price of Bitcoin be above $64,000 on August 17?",
+    "description": "This market will resolve to \"Yes\" if the Binance 1 minute candle for BTC/USDT 12:00 in the ET timezone (noon) on the date specified in the title has a final \"Close\" price higher than the price specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the BTC/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/BTC_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nPlease note that this market is about the price according to Binance BTC/USDT, not according to other exchanges or trading pairs.\n\nPrice precision is determined by the number of decimal places in the source.",
+    "options": [],
+    "close_date": "2026-08-17",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-spcx-reach-145-in-august-2026",
+    "title": "Will SpaceX (SPCX) hit (HIGH) $145 in August?",
+    "description": "This market will resolve to \"Yes\" if, at any point during August 2026, any 1-minute candle for SpaceX (SPCX) has a final \"High\" price equal to or above the listed price. Otherwise, this market will resolve to \"No\".\n\nOnly prices achieved during the regular trading hours of the primary exchange on which the listed security trades (typically 9:30 AM – 4:00 PM ET) will be considered. Prices occurring during pre-market or after-hours trading will not qualify.\n\nPrices will be used exactly as published by Pyth, without rounding.\n\nIn the event of a stock split, reverse stock split, or similar corporate action affecting the listed company during the listed time frame, this market will resolve based on split-adjusted prices as displayed on Pyth.\n\nThe target price will be adjusted proportionally to reflect any stock splits. Resolution will be based on the historical price data as shown on Pyth after any adjustments have been applied.\n\nThe resolution source for this market is Pyth — specifically, the SpaceX (SPCX) \"High\" prices available at https://pythdata.app/explore/Equity.US.SPCX%2FUSD, with the chart settings configured for 1-minute candles.\n\nHistorical 1-minute candles may be accessed by appending a Unix timestamp (seconds) to the Pyth chart URL using the \"t=\" parameter. Any timestamp within the listed market time frame may be used to view the relevant candle data (e.g., https://pythdata.app/explore/Equity.US.SPCX%2FUSD?t=1773432000)\n\nIf the relevant Pyth data is unavailable due to a system outage, data failure, or other technical disruption that prevents verification of the required 1-minute candle data, the official daily high price published by the primary exchange on which the listed security trades will be used to determine whether the listed price was reached during the applicable trading session.",
+    "options": [],
+    "close_date": "2026-09-01",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-trump-try-to-fire-powell-as-fed-board-member-by-july-31-2026-20260626181928589",
+    "title": "Will Trump try to fire Powell as Fed Board Member by July 31, 2026?",
+    "description": "This market will resolve to \"Yes\" if Donald Trump publicly and unequivocally announces that he is removing Jerome Powell as a member of the Federal Reserve Board of Governors, or takes formal action toward doing so, such as issuing a directive or formal request, by the listed date, 11:59 PM ET. Otherwise, this market will resolve to “No”.\n\nStatements which are contingent (e.g. “Powell must step down”), statements of intent (e.g.“I am planning to fire Powell”) or other informal statements which are not unequivocal will not qualify.\n\nIf Jerome Powell resigns or otherwise formally departs his role as a member of the Federal Reserve Board of Governors prior to a qualifying action, this market will immediately resolve to \"No\".\n\nAttempts to remove Powell from his role as chair of the Federal Reserve Board of Governors, which do not include removing Powell as a member of the Federal Reserve Board of Governors, will not alone qualify.\n\nThe resolution source will be official information from Donald Trump; however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-07-31",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-the-odyssey-5th-weekend-box-office-be-at-least-21m-20260812164924139",
+    "title": "Will \"The Odyssey\" 5th Weekend Box Office be at least 21m?",
+    "description": "This market will resolve according to how much \"The Odyssey\" Weekend Box Office will gross domestically on its fifth weekend. The \"Daily Box Office Performance\" figures found on the “Box Office” tab on this movie's The Numbers (https://www.the-numbers.com/) page will be used to resolve this market once the values for the 3-day weekend (August 14 - August 16) are final (i.e., not studio estimates).\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note, this market will resolve according to the The Numbers figures provided under Weekend Box Office Performance for the 3-day weekend (which typically includes Thursday's previews), regardless of whether domestic refers to only the USA, or to USA and Canada, etc.\n\nIf there is ambiguity as to whether the resolution source's figures are final, this market will remain open until both https://www.boxofficemojo.com/ and https://www.the-numbers.com/ have confirmed their finalized figures.\n\nIf there is no final data available by August 21, 2026, 11:59 PM ET, another credible resolution source will be chosen.",
+    "options": [],
+    "close_date": "2026-08-16",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-typhoon-dolphin-be-a-very-strong-typhoon-at-japan-landfall-20260804170510870",
+    "title": "Will Typhoon Dolphin be a \"Very Strong Typhoon\" at Japan landfall?",
+    "description": "This market resolves to the intensity category corresponding to the maximum sustained wind speed (10-minute average) shown in the applicable JMA advisory as defined below. The outcome categories are: \"Tropical Storm\" (34–47 kt), \"Severe Tropical Storm\" (48–63 kt), \"Typhoon\" (64–84 kt), \"Very Strong Typhoon\" (85–104 kt), and \"Violent Typhoon\" (105+ kt). Landfall is defined as the center of Dolphin's circulation physically crossing the coastline of any Japanese territory (including Okinawa, the Ryukyu Islands, and all main islands) on or before August 15, 2026.\n\nResolution is determined by the Japan Meteorological Agency's (JMA) position advisories placing the storm over Japanese land (https://www.jma.go.jp/bosai/map.html#contents=typhoon&lang=en), or by credible international news reporting confirming the storm hitting Japanese territory. The applicable advisory is selected as follows: if a JMA advisory plots the center on Japanese land, that advisory's wind speed resolves the market; if no JMA advisory plots the center on land but credible reporting confirms a crossing occurred between discrete advisory fixes, the intensity is taken from the most recently issued JMA advisory prior to the confirmed crossing time. Once the applicable advisory is identified, its intensity fixes the outcome; no subsequent real-time advisory, reclassification, or post-season best-track reanalysis may retroactively change the outcome.\n\nArchival evidence of JMA advisory data is maintained by the Digital Typhoon database (National Institute of Informatics, Japan) at its Typhoon Images and Charts page for Typhoon 202613 (DOLPHIN). In the event of a resolution dispute, the intensity value recorded by Digital Typhoon for the applicable advisory fix shall be treated as conclusive evidence of what JMA reported.\n\nJMA position advisories are the primary resolution source. If a JMA advisory plots the center on Japanese land, the market resolves based on that advisory's wind speed regardless of what other sources say. If no JMA advisory plots the center on land but credible reporting confirms a crossing occurred between discrete advisory fixes, the market still resolves, with intensity taken from the most recently issued JMA advisory prior to the confirmed crossing time. A disagreement exists only when a JMA advisory and credible reporting make contradictory claims about the storm's position at the same point in time; in that case, JMA is the default resolution source. Only the first qualifying landfall on Japanese territory resolves the market; subsequent landfalls are disregarded.\n\nThis is a purely geographic criterion: the storm's center must pass over Japanese land, regardless of whether JMA formally designates the event as \"landfall\" or \"passage.\" The applicable JMA advisory (as selected above) must show maximum sustained winds of 34 knots or higher, classifying Dolphin as a tropical storm or above. If the applicable advisory classifies the system as a tropical depression (below 34 kt), extratropical, dissipated, or absorbed, the crossing does not count and the market resolves to \"No Qualifying Landfall.\"\n\nThis market resolves \"No Qualifying Landfall\" if Dolphin has been declared extratropical, dissipated, or absorbed on or before August 15 without having made landfall on Japanese territory, if the applicable advisory at the time of crossing shows winds below 34 knots, or if no landfall has physically occurred by the close of August 15, 2026.",
+    "options": [],
+    "close_date": "2026-08-15",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-50-senators-vote-yea-for-todd-blanche-as-attorney-general-20260608212508880",
+    "title": "Will 50 senators vote \"Yea\" for Todd Blanche as Attorney General?",
+    "description": "This market will resolve to the number of senators who vote “Yea” on the first final U.S. Senate confirmation vote on the nomination of Todd Blanche to be United States Attorney General by December 31, 2026, 11:59 PM ET.\n\nThe vote count refers to the first final confirmation vote on the nomination in the full chamber, not including committee votes or procedural motions.\n\nIf the nomination passes unanimously or without a specified vote count, this market will resolve to the highest bracket. If the nomination is rejected by vote without a specified vote count, this market will resolve to the lowest bracket.\n\nIf no qualifying vote is held by December 31, 2026, 11:59 PM ET, this market will resolve to “No vote by December 31/Withdrawn”. If a formally submitted nomination is withdrawn or returned to the President before reaching a final confirmation vote, this market will resolve immediately to “No vote by December 31/Withdrawn”.\n\nVotes cast by the Vice President, if any, will not be considered for this market.\n\nNo attempts by a legislator to change their vote after the vote has been closed shall be considered for this market. \n\nThe resolution sources will be official Senate voting records and a consensus of credible reporting.",
+    "options": [],
+    "close_date": "2027-01-01",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-xauusd-reach-4400-in-august-2026",
+    "title": "Will Gold (XAUUSD) hit (HIGH) $4,400 in August?",
+    "description": "This market will resolve to \"Yes\" if, at any point after market creation and during a trading session of August 2026, any 1-minute candle for Gold (XAUUSD) has a final \"High\" or \"Low\" price equal to or beyond (above for ↑ High Prices, below for ↓ Low Prices) the listed price. Otherwise, this market will resolve to \"No\".\n\nOnly prices achieved during an applicable trading session of the specified timeframe's business days will be considered. The trading session for a given business day typically begins at 6:00 PM ET on the prior calendar date. Under the standard schedule, trading is open from 6:00:00 PM ET Sunday through 5:00:00 PM ET Friday, with a daily break from 5:00:00 PM ET to 6:00:00 PM ET, except where modified by holiday or special-session hours.\n\nPrices will be used exactly as published by Pyth, without rounding.\n\nIf Gold (XAUUSD) does not trade at all during the listed time frame, this market will resolve to \"No\".\n\nIn the event of a contract specification change, feed change, or similar structural modification affecting the market during the listed time frame, this market will resolve based on adjusted prices as displayed on Pyth.\n\nThe resolution source for this market is Pyth — specifically, the Gold (XAUUSD) \"High\" and \"Low\" prices available at https://pythdata.app/explore/Metal.XAU%2FUSD, with the chart settings configured for 1-minute candles.\n\nHistorical 1-minute candles may be accessed by appending a Unix timestamp (seconds) to the Pyth chart URL using the \"t=\" parameter.\n\nIf the relevant Pyth data is unavailable due to a system outage, data failure, or other technical disruption that prevents verification of the required 1-minute candle data, the official daily high/low price published for the relevant CME COMEX futures contract for the underlying metal—COMEX Gold Futures (GC)—may be used to determine whether the listed price was reached during the applicable trading session.",
+    "options": [],
+    "close_date": "2026-09-01",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-the-price-of-ethereum-be-less-than-1400-on-august-17-2026",
+    "title": "Will the price of Ethereum be less than $1,400 on August 17?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for ETH/USDT 12:00 in the ET timezone (noon) on the date specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the ETH/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/ETH_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance ETH/USDT, not according to other exchanges or trading pairs.",
+    "options": [],
+    "close_date": "2026-08-17",
+    "resolved_to": "No"
+  },
+  {
+    "id": "congress-passes-iran-war-powers-resolution-by-june-30",
+    "title": "Congress passes Iran war powers resolution by June 30?",
+    "description": "This market will resolve to \"Yes\" if both the U.S. House of Representatives and the U.S. Senate pass the same bill, measure, or resolution that seeks to limit U.S. armed forces military action in the recent US/Israel-Iran conflict by June 30, 2026, 11:59 PM ET. Otherwise, this market will resolve to \"No.\"\n\nLegislation will qualify as seeking to limit U.S. armed forces military action in the recent US/Israel–Iran conflict if it explicitly seeks to restrict, terminate, or require congressional approval for U.S. armed forces’ hostilities, strikes, deployments, or other military operations against Iran or its proxy forces. Non-binding statements or measures that express disapproval, call for investigation, or otherwise relate to the US/Israel-Iran conflict without seeking to limit military action will not qualify.\n\nA measure amended by either chamber will only qualify if the amended version is subsequently finally passed by both chambers in identical form.\n\nThe resolution sources will be official congressional voting records and a consensus of credible reporting.",
+    "options": [],
+    "close_date": "2026-06-30",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "world-cup-most-goals-record-broken-20260608192914170",
+    "title": "World Cup: Most Player Goals Record Broken?",
+    "description": " Note: Current record 13 goals (Just Fontaine, France, 1958).\n\nThis market will resolve “Yes” if any player scores 14 or more goals across the entire 2026 FIFA World Cup, including extra time. Otherwise, this market will resolve to “No”.\n\nPenalty shootout goals do not count toward a player's total.\n\nIf the 2026 FIFA World Cup is cancelled, postponed after August 2, 2026, 11:59 PM ET, or it cannot be determined whether the record was broken within that timeframe, this market will resolve to “No”.\n\nThe resolution source for this market will be official information from FIFA; however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-07-20",
+    "resolved_to": "No"
+  },
+  {
+    "id": "world-cup-highest-scoring-match-record-broken-20260608191032772",
+    "title": "World Cup: Highest Scoring Match Record Broken?",
+    "description": "Note: Current record 12 goals (Austria 7-5 Switzerland, 1954).\n\nThis market will resolve “Yes” if any single match across the 2026 FIFA World Cup produces 13 or more goals in 90 minutes or extra time combined. Otherwise, this market will resolve to “No”.\n\nPenalty shootout goals do not count.\n\nIf the 2026 FIFA World Cup is cancelled, postponed after August 2, 2026, 11:59 PM ET, or it cannot be determined whether the record was broken within that timeframe, this market will resolve to “No”.\n\nThe resolution source for this market will be official information from FIFA; however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-07-20",
+    "resolved_to": "No"
+  },
+  {
+    "id": "fda-approves-viridian-therapeutics-veligrotug-06-30-2026",
+    "title": "FDA approves Viridian Therapeutics' Veligrotug?",
+    "description": "As of market creation, the FDA's expected decision date for the specified application is June 30, 2026.\n\nThis market will resolve to \"Yes\" if the U.S. Food and Drug Administration (FDA) grants full or conditional approval for Viridian Therapeutics's Veligrotug as a treatment for thyroid eye disease by July 14, 2026, 11:59 PM ET. Otherwise, this market will resolve to \"No.\"\n\nAn approval is defined as:\nFor new drugs: FDA issuance of an approval letter for a New Drug Application (NDA) or Biologics License Application (BLA)\nFor already-marketed drugs seeking new indications: FDA approval of a supplemental NDA (sNDA) or supplemental BLA (sBLA) for the specific indication referenced\nFor generic drugs: FDA approval of an Abbreviated New Drug Application (ANDA)\nFor biosimilars: FDA approval of a 351(k) application\n\nThe following constitute qualifying approvals:\nStandard approval (traditional approval based on clinical benefit), Accelerated approval (based on surrogate endpoints), Approval with Risk Evaluation and Mitigation Strategy (REMS), Approval with restricted distribution or indication limitations, except compassionate use/expanded access programs\n\nThe following do not constitute qualifying approvals:\nApprovable letters that require additional actions before approval\nTentative approvals pending patent or exclusivity expiration\nFDA requests for additional information or studies\nExtension of Prescription Drug User Fee Amendments dates\nApproval for compassionate use or expanded access programs only\nApproval only for export or for use outside the United States\nEmergency Use Authorization (EUA) without full approval\nComplete Response Letters (CRLs) indicating the application cannot be approved in its current form\n\nThis market will immediately resolve to \"No\" if the FDA issues a Complete Response Letter (CRL) or explicitly declines to approve the application. If the drug sponsor withdraws the application before the end of the specified period, the market will resolve to \"No\" immediately.\n\nIf the listed drug is approved before the end of the specified period, the market will resolve to \"Yes,\" regardless of potential Advisory Committee votes against approval or later withdrawal of approval.\n\nConditional approvals may include post-marketing requirements or commitments and still qualify.\n\nThe primary resolution source will be official information from the FDA; however, a consensus of credible reporting will also be used.",
+    "options": [],
+    "close_date": "2026-06-30",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "fda-approves-sanofi-subcutaneous-sarclisa-07-23-2026",
+    "title": "FDA approves Sanofi's Subcutaneous Sarclisa?",
+    "description": "As of market creation, the FDA's expected decision date for the specified application is July 23, 2026.\n\nThis market will resolve to \"Yes\" if the U.S. Food and Drug Administration (FDA) grants full or conditional approval for Sanofi's Subcutaneous Sarclisa in combination with approved standard-of-care regimens for the treatment of multiple myeloma across currently approved Sarclisa IV indications by August 6, 2026, 11:59 PM ET. Otherwise, this market will resolve to \"No.\"\n\nAn approval is defined as:\nFor new drugs: FDA issuance of an approval letter for a New Drug Application (NDA) or Biologics License Application (BLA)\nFor already-marketed drugs seeking new indications: FDA approval of a supplemental NDA (sNDA) or supplemental BLA (sBLA) for the specific indication referenced\nFor generic drugs: FDA approval of an Abbreviated New Drug Application (ANDA)\nFor biosimilars: FDA approval of a 351(k) application\n\nThe following constitute qualifying approvals:\nStandard approval (traditional approval based on clinical benefit), Accelerated approval (based on surrogate endpoints), Approval with Risk Evaluation and Mitigation Strategy (REMS), Approval with restricted distribution or indication limitations, except compassionate use/expanded access programs\n\nThe following do not constitute qualifying approvals:\nApprovable letters that require additional actions before approval\nTentative approvals pending patent or exclusivity expiration\nFDA requests for additional information or studies\nExtension of Prescription Drug User Fee Amendments dates\nApproval for compassionate use or expanded access programs only\nApproval only for export or for use outside the United States\nEmergency Use Authorization (EUA) without full approval\nComplete Response Letters (CRLs) indicating the application cannot be approved in its current form\n\nThis market will immediately resolve to \"No\" if the FDA issues a Complete Response Letter (CRL) or explicitly declines to approve the application. If the drug sponsor withdraws the application before the end of the specified period, the market will resolve to \"No\" immediately.\n\nIf the listed drug is approved before the end of the specified period, the market will resolve to \"Yes,\" regardless of potential Advisory Committee votes against approval or later withdrawal of approval.\n\nConditional approvals may include post-marketing requirements or commitments and still qualify.\n\nThe primary resolution source will be official information from the FDA; however, a consensus of credible reporting will also be used.",
+    "options": [],
+    "close_date": "2026-07-23",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "anthropic-ipo-by",
+    "title": "Anthropic IPO by __?",
+    "description": "This market will resolve to \"Yes\" if Anthropic shares are listed on a public securities exchange and open for trading by 11:59 PM ET on the listed date. Otherwise, this market will resolve to \"No.\"\n\nIf Anthropic is acquired by another company that is already public, this market will immediately resolve to \"No.\"\n\nThe primary resolution source for this market is official filings and announcements from Anthropic and the relevant securities exchange on which the shares are listed, including SEC filings (e.g., Form S-1, Form 8-A), exchange listing confirmations, and official press releases from Anthropic; however a consensus of credible reporting may also be used. ",
+    "options": [
+      "June 30, 2026",
+      "July 31, 2026"
+    ],
+    "close_date": "2027-07-01",
+    "resolved_to": null
+  },
+  {
+    "id": "nba-playoffs-who-will-win-series-lakers-vs-rockets",
+    "title": "NBA Playoffs: Who Will Win Series? - Lakers vs. Rockets",
+    "description": "This market will resolve to “Lakers” if the Los Angeles Lakers win the 2026 NBA Playoffs First Round series between the Los Angeles Lakers and Houston Rockets. This market will resolve to “Rockets” if the Houston Rockets win the 2026 NBA Playoffs First Round series between the Los Angeles Lakers and Houston Rockets.\n\nIf a partial series is played and not completed by May 31, 2026, 11:59 PM ET, this market will resolve to 50-50.\n\nIf the 2026 NBA Playoffs are cancelled, postponed after May 31, 2026, 11:59 PM ET, or there is otherwise no winner declared within that timeframe, this market will resolve to 50-50.\n\nThe resolution source for this market will be official information from the NBA; however, a consensus of credible reporting may also be used.",
+    "options": [
+      "Lakers",
+      "Rockets"
+    ],
+    "close_date": "2026-05-04",
+    "resolved_to": "Lakers"
+  },
+  {
+    "id": "egypt-presidential-election-will-abdel-fattah-el-sisi-win",
+    "title": "Egypt Presidential Election: Will Abdel Fattah el-Sisi win?",
+    "description": "Egypt’s 2023 presidential election is currently scheduled to take place on December 10-12, 2023.\n\nThis market will resolve to \"Yes\" if Incumbent President Abdel Fattah el-Sisi wins the 2023 Egyptian presidential election. Otherwise, this market will resolve to \"No\".\n\nThis market includes any potential second round. If the result of this election isn't known by October 31, 2024, 11:59:59 PM ET, the market will resolve to 50-50.\n\nThe primary resolution source for this market will be official information from the Egyptian government, however a consensus of credible reporting will also suffice.",
+    "options": [],
+    "close_date": "2023-12-12",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "democratic-nominee-2024",
+    "title": "Democratic Nominee 2024",
+    "description": "This is a market on who will be the Democratic nominee for the 2024 presidential election.",
+    "options": [
+      "Joe Biden",
+      "Gavin Newsom",
+      "Robert F. Kennedy Jr.",
+      "Kamala Harris",
+      "Hillary Clinton",
+      "Michelle Obama",
+      "Elizabeth Warren",
+      "Other (Incl. Whitmer)",
+      "Dean Phillips"
+    ],
+    "close_date": "2024-08-21",
+    "resolved_to": "Kamala Harris"
+  },
+  {
+    "id": "congress-passes-bill-banning-tiktok-by-april-30",
+    "title": "Congress passes bill banning TikTok by April 30?",
+    "description": "This market will resolve to \"Yes\" if any bill is passed by both the US House and Senate by April 30, 2024, 11:59 PM ET, that has the effect of banning use of TikTok under its present ownership (ByteDance) by at least a majority of Americans. Otherwise, this market will resolve to \"No\".\n\nIf the bill in question requires TikTok to be sold, and effectively bans the app if it is not sold in the future, this will suffice to resolve the market to \"Yes\".\n\nThe primary resolution source for this market will be information from the US government, however a consensus of credible reporting will also be used.",
+    "options": [],
+    "close_date": "2024-04-30",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "congress-passes-epstein-disclosure-billresolution-in-2025",
+    "title": "Congress passes Epstein disclosure bill/resolution in 2025?",
+    "description": "This market will resolve to \"Yes\" if both the U.S. House of Representatives and the U.S. Senate pass the same bill, measure, or resolution that explicitly mandates, compels, or formally calls for the public release of documents related to Jeffrey Epstein by December 31, 2025, at 11:59 PM ET. Otherwise, this market will resolve to \"No.\"\n\nA measure amended by either chamber will only qualify if the amended version is subsequently passed by both chambers in identical form.\n\nThe resolution source will be official congressional voting records and a consensus of credible reporting.",
+    "options": [],
+    "close_date": "2025-12-31",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "pennsylvania-presidential-election-winner",
+    "title": "Who will win Pennsylvania?",
+    "description": "This is a market on predicting the winner of the Pennsylvania presidential election.",
+    "options": [
+      "Kamala Harris",
+      "Donald Trump",
+      "Other"
+    ],
+    "close_date": "2024-11-04",
+    "resolved_to": "Donald Trump"
+  },
+  {
+    "id": "premier-league-winner-24-25",
+    "title": "Premier League Winner",
+    "description": "This is a market on who will win the Premier League in the 2024-25 season.",
+    "options": [
+      "Manchester City",
+      "Arsenal",
+      "Aston Villa",
+      "Bournemouth",
+      "Brentford",
+      "Brighton",
+      "Chelsea",
+      "Crystal Palace",
+      "Everton",
+      "Fulham",
+      "Ipswich Town",
+      "Leicester City",
+      "Manchester United",
+      "Newcastle United",
+      "Nottingham Forest ",
+      "Southampton",
+      "Tottenham",
+      "West Ham United",
+      "Wolverhampton",
+      "Liverpool"
+    ],
+    "close_date": "2025-05-25",
+    "resolved_to": "Liverpool"
+  },
+  {
+    "id": "epl-team-to-qualify-for-uefa-champions-league",
+    "title": "EPL: Team to qualify for UEFA Champions League",
+    "description": "This market will resolve to \"Yes\" if the listed team clinches a league phase spot in the 2026-27 Champions League per UEFA rules. Otherwise, the associated market will resolve to \"No\".\n\nIf at any point it becomes impossible for the listed team to clinch a league phase spot in the 2026-27 Champions League (e.g. they cannot mathematically achieve a Champions League place, cannot qualify through play in European or cup competitions, etc.), the associated market will resolve to \"No\".\n\nIf the 2025-26 English Premier League season is cancelled, postponed after August 31, 2026 11:59 PM ET, or it cannot be determined whether the listed team qualified for the league phase of the 2026-27 Champions League per UEFA rules within that timeframe, this market will resolve to \"No\".\n\nThe resolution source for this market will be official information from UEFA and/or the EPL; however, a consensus of credible reporting may also be used.",
+    "options": [
+      "Arsenal",
+      "Aston Villa",
+      "Bournemouth",
+      "Brentford",
+      "Brighton & Hove Albion",
+      "Chelsea",
+      "Crystal Palace",
+      "Everton",
+      "Fulham",
+      "Sunderland",
+      "Leeds United",
+      "Liverpool",
+      "Manchester City",
+      "Manchester United",
+      "Newcastle United",
+      "Nottingham Forest",
+      "Burnley",
+      "Tottenham Hotspur",
+      "West Ham United",
+      "Wolverhampton Wanderers"
+    ],
+    "close_date": "2026-09-01",
+    "resolved_to": "Manchester United"
+  },
+  {
+    "id": "world-series-champion-2025",
+    "title": "World Series Champion 2025",
+    "description": "This market will resolve according to the team that wins the 2025 MLB World Series. \n\nIf at any point it becomes impossible for this team to win the World Series based on the rules of the MLB (e.g., they are eliminated in the playoff bracket), this market will resolve immediately to “No”.\n\nIf the 2025  MLB season is permanently canceled or has not been completed by February 28, 2026, 11:59 PM this market will resolve to “Other”.\n",
+    "options": [
+      "New York Yankees",
+      "Toronto Blue Jays",
+      "Tampa Bay Rays",
+      "Baltimore Orioles",
+      "Boston Red Sox",
+      "Cleveland Guardians",
+      "Chicago White Sox",
+      "Minnesota Twins",
+      "Detroit Tigers",
+      "Kansas City Royals",
+      "Houston Astros",
+      "Seattle Mariners",
+      "Los Angeles Angels",
+      "Texas Rangers",
+      "Athletics",
+      "Atlanta Braves",
+      "New York Mets",
+      "Philadelphia Phillies",
+      "Miami Marlins",
+      "Washington Nationals",
+      "St. Louis Cardinals",
+      "Milwaukee Brewers",
+      "Chicago Cubs",
+      "Cincinnati Reds",
+      "Pittsburgh Pirates",
+      "Los Angeles Dodgers",
+      "San Diego Padres",
+      "San Francisco Giants",
+      "Arizona Diamondbacks",
+      "Colorado Rockies",
+      "Other"
+    ],
+    "close_date": "2025-10-31",
+    "resolved_to": "Los Angeles Dodgers"
+  },
+  {
+    "id": "2026-nhl-stanley-cup-champion",
+    "title": "2026 NHL Stanley Cup Champion ",
+    "description": "This market is to predict the winner of the 2025–26 NHL Stanley Cup championship.",
+    "options": [
+      "Carolina Hurricanes",
+      "Florida Panthers",
+      "Edmonton Oilers",
+      "Dallas Stars",
+      "Colorado Avalanche",
+      "Vegas Golden Knights",
+      "Tampa Bay Lightning",
+      "Los Angeles Kings",
+      "New Jersey Devils",
+      "Winnipeg Jets",
+      "Toronto Maple Leafs",
+      "Washington Capitals",
+      "New York Rangers",
+      "Ottawa Senators",
+      "Minnesota Wild",
+      "Utah Mammoth",
+      "St. Louis Blues",
+      "Vancouver Canucks",
+      "New York Islanders",
+      "Philadelphia Flyers",
+      "Columbus Blue Jackets",
+      "Calgary Flames",
+      "Nashville Predators",
+      "Detroit Red Wings",
+      "Anaheim Ducks",
+      "Montreal Canadiens",
+      "Boston Bruins",
+      "Buffalo Sabres",
+      "Pittsburgh Penguins",
+      "Seattle Kraken",
+      "Chicago Blackhawks",
+      "San Jose Sharks"
+    ],
+    "close_date": "2026-06-30",
+    "resolved_to": "Carolina Hurricanes"
+  },
+  {
+    "id": "will-man-city-win-the-premier-league",
+    "title": "Will Man City win the Premier League?",
+    "description": "This market will resolve to \"Yes\" if Man City is the 2023-24 Premier League Champion. Otherwise the market will resolve to \"No\". \n\nIf it is a mathematical certainty Man City will win, this market will immediately resolve to \"Yes.\" Likewise, if it becomes mathematically impossible for Man City to win, this market will immediately resolve to \"No.\" Potential retroactive points deductions past these points will have no bearing on this market's resolution.",
+    "options": [],
+    "close_date": "2024-05-19",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-a-canadian-team-win-nhl-stanley-cup-782",
+    "title": "Will a Canadian team win NHL Stanley Cup?",
+    "description": "This market will resolve to \"Yes\" if a NHL team from Canada wins the NHL Stanley Cup. Otherwise, this market will resolve to \"No\".\n\nIf the NHL Playoffs have not been completed by July 24, 2025, 11:59 PM ET, this market will resolve to \"No\".\n\nThe resolution source for this market will be official information from the NHL.",
+    "options": [],
+    "close_date": "2025-06-24",
+    "resolved_to": "No"
+  },
+  {
+    "id": "world-series-winner",
+    "title": "World Series Winner",
+    "description": "In the 2025 MLB World Series between the Toronto Blue Jays and the Los Angeles Dodgers:\n\nIf the Blue Jays win, the market will resolve to “Blue Jays.”\n\nIf the Dodgers win, the market will resolve to “Dodgers.”\n\nIf the series is postponed, this market will remain open until the World Series has been completed.\n\nIf the series is canceled entirely, with no champion declared, this market will resolve 50-50.",
+    "options": [
+      "Blue Jays",
+      "Dodgers"
+    ],
+    "close_date": "2025-11-01",
+    "resolved_to": "Dodgers"
+  },
+  {
+    "id": "will-messi-win-ballon-dor-23",
+    "title": "Will Messi win Ballon d'Or?",
+    "description": "This market will resolve to \"Yes\" if Lionel Messi wins the Ballon d'Or for 2023. Otherwise, this market will resolve to \"No\".\n\nThe primary resolution source for this market is France Football’s website: https://www.francefootball.fr/ballon-d-or/palmares/, however live footage of the ceremony and a consensus of credible reporting may also be used.\n\nIf the award isn't announced by December 31, 2023, 11:59 PM ET, this market will resolve 50-50.",
+    "options": [],
+    "close_date": "2023-10-30",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "f1-2024-season-winner",
+    "title": "F1 2024 Drivers Champion",
+    "description": "This is a market on predicting the winner of the 2024 Formula 1 Drivers Championship.",
+    "options": [
+      "Max Verstappen",
+      "Lando Norris",
+      "Charles Leclerc",
+      "Carlos Sainz",
+      "Oscar Piastri",
+      "Lewis Hamilton",
+      "Other"
+    ],
+    "close_date": "2024-12-08",
+    "resolved_to": "Max Verstappen"
+  },
+  {
+    "id": "f1-constructors-champion-2025",
+    "title": "F1 Constructors Champion",
+    "description": "This market will resolve according to the Constructor’s Championship for the 2025 F1 season. \n\nIn the case of a tie between two teams, this market will resolve in favor of the team whose listed name comes first alphabetically.\n\nAs soon as the results for the final scheduled race of the 2025 F1 season are known this market will resolve.\n\nIf at any point it becomes impossible for this team to win the 2025 F1 Constructor's Championship based on the rules of F1 (e.g., they are mathematically eliminated from contention), this market will resolve to “No.”\n\nIf the F1 season is permanently canceled or has not been completed by February 28, 2026, 11:59 PM this market will resolve to “Other”.\n\nThe resolution source for this market will be information from F1.",
+    "options": [
+      "Ferrari",
+      "Red Bull Racing",
+      "Mercedes",
+      "McLaren",
+      "Aston Martin",
+      "Alpine",
+      "Haas",
+      "Racing Bulls",
+      "Williams",
+      "Sauber",
+      "Other"
+    ],
+    "close_date": "2025-12-07",
+    "resolved_to": "McLaren"
+  },
+  {
+    "id": "champions-league-final-psg-vs-inter-milan",
+    "title": "Champions League Final: PSG vs. Inter Milan",
+    "description": "The market will resolve to \"PSG\" if Paris Saint-Germain wins the 2025 Champions League Final.\n\nThe market will resolve to \"Inter\" if inter Milan wins the 2025 Champions League Final.\n\nIf the Champions League Final has not been completed by December 31, 2025, 11:59 PM ET, this market will resolve to \"50-50\". \n\nThe resolution source for this market will be Champions League (https://www.uefa.com/uefachampionsleague/).",
+    "options": [
+      " PSG",
+      "Inter"
+    ],
+    "close_date": "2025-05-31",
+    "resolved_to": " PSG"
+  },
+  {
+    "id": "nba-finals-thunder-vs-pacers",
+    "title": "NBA Finals: Thunder vs. Pacers ",
+    "description": "This market refers to the 2025 NBA Finals matchup between the Oklahoma City Thunder and Indiana Pacers. \n\nIf the Oklahoma City Thunder win the NBA Finals, this market will resolve to “Thunder”.\n\nIf the Indiana Pacers win the NBA Finals, this market will resolve to “Pacers”.\n\nIf the series is canceled or postponed beyond July 22, 2025, 11:59 PM ET, this market will resolve 50-50.\n\nThe resolution source for this market will be official information from the NBA.",
+    "options": [
+      "Thunder",
+      "Pacers "
+    ],
+    "close_date": "2025-06-22",
+    "resolved_to": "Thunder"
+  },
+  {
+    "id": "will-aston-martin-beat-mercedes-in-the-2023-f1-season",
+    "title": "Will Aston Martin beat Mercedes in the 2023 F1 season?",
+    "description": "This market will resolve to “Yes” if, at the conclusion of the 2023 F1 season, the Aston Martin Aramco Cognizant F1 Team has collected more points than the Mercedes-AMG PETRONAS F1 Team. Otherwise, this market will resolve to \"No\".\n\nConstructor teams are awarded the same points won by the drivers who race in their cars. If, for example, the drivers earn 25 and 18 points, respectively, their constructor team will be awarded 43 points, which are the points won by both drivers combined.\n\nIf for any reason the 2023 F1 season is rescheduled to end at a different time and date on or before December 31, 2023, the same market conditions will apply. If the season is cancelled or rescheduled to a time and date after December 31, 2023, this market will resolve according to already-available data.\n\nOfficial constructor team standings provided by F1 may be found here: https://www.formula1.com/en/results.html/2023/team.html\n",
+    "options": [],
+    "close_date": "2023-11-26",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-there-be-a-us-government-shutdown-by-jan-20",
+    "title": "Will there be a US government shutdown by Jan 20?",
+    "description": "This market will resolve to \"Yes\" if is a US government shutdown occurs between January 9 and January 20, 2024, 12:00 PM ET. Otherwise, this market will resolve to \"No\".\n\nFor this market to resolve to \"Yes\" it is only necessary a US government shutdown occurs, whether it is a partial shutdown, or a full shutdown.\n\nIf the US federal government goes unfunded for any period of time before a new budget/stopgap can be signed into law, it will be considered a government shutdown.\n\nThe primary resolution for this source will be official information from the US government, however a consensus of credible reporting may also be used.\n",
+    "options": [],
+    "close_date": "2024-01-20",
+    "resolved_to": "No"
+  },
+  {
+    "id": "which-party-wins-the-most-seats-in-french-election",
+    "title": "Which party wins the most seats in French Election?",
+    "description": "asd",
+    "options": [
+      "National Rally",
+      "Renaissance",
+      "The Republicans",
+      "Socialist Party",
+      "La France Insoumise",
+      "Other"
+    ],
+    "close_date": "2024-07-07",
+    "resolved_to": "National Rally"
+  },
+  {
+    "id": "germany-parliamentary-election",
+    "title": "Germany Parliamentary Election Winner",
+    "description": "This is a market on the outcomes and results of the upcoming Germany Parliamentary Election.",
+    "options": [
+      "SPD",
+      "CDU/CSU",
+      "AfD",
+      "Greens",
+      "BSW",
+      "Other",
+      "FDP"
+    ],
+    "close_date": "2025-02-23",
+    "resolved_to": "CDU/CSU"
+  },
+  {
+    "id": "trump-found-guilty-in-hush-money-case-before-election-day",
+    "title": "Trump found guilty in hush money case?",
+    "description": "This market will resolve to \"Yes\" if Donald Trump is found guilty of \"falsifying business records in the first degree in violation of Penal Law §175.10” in the case of The People of the State of New York v. Donald J. Trump by November 5, 2024, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nIf Donald Trump’s case is dismissed, or ends due to a plea agreement without an admission of guilt, this market will resolve to \"No\". If there is a mistrial, this market will stay open to consider further retrials - if by election day Trump has not yet been found guilty or has not entered a guilty plea, this market will resolve to \"No.\"\n\nThis market will resolve according to the initial judgment rendered in this case. Any appeals will have no bearing on the resolution of this market.\n\nThe primary resolution source will be an official judgment delivered by the ruling court; however, other credible reporting may be used.",
+    "options": [],
+    "close_date": "2024-11-05",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "supreme-court-vacancy-in-2024",
+    "title": "Supreme Court vacancy in 2024?",
+    "description": "This market will resolve to \"Yes\" if at least one seat on the United States Supreme Court becomes vacant between April 7 and December 31, 2024, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nThe primary resolution source for this market will be official announcements from the U.S. Government. However, a consensus of credible reporting may also be used.  \n",
+    "options": [],
+    "close_date": "2024-12-31",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-the-senate-confirm-ed-martin-before-july",
+    "title": "Will the Senate confirm Ed Martin before July?",
+    "description": "This market will resolve to “Yes” if Ed Martin is confirmed as United States Attorney for the District of Columbia at Department of Justice by June 30, 2025, 11:59 PM ET. Otherwise, this market will resolve to “No”.\n\nIf Martin's nomination is formally withdrawn, or if the Senate rejects their nomination this market will immediately resolve to “No”.\n\nThe Senate must confirm this nominee for this market to resolve to \"Yes\". Recess appointments without Senate confirmation will not count toward a \"Yes\" resolution.\n\nThe resolution source for this market is information from the U.S. Senate, however a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2025-06-30",
+    "resolved_to": "No"
+  },
+  {
+    "id": "world-series-outcome",
+    "title": "World Series Outcome",
+    "description": "This is a market on the outcome of the World Series in Major League Baseball.",
+    "options": [
+      "Dodgers win 4-0",
+      "Dodgers win 4-1",
+      "Dodgers win 4-2",
+      "Dodgers win 4-3",
+      "Yankees win 4-0",
+      "Yankees win 4-1",
+      "Yankees win 4-2",
+      "Yankees win 4-3"
+    ],
+    "close_date": "2024-11-02",
+    "resolved_to": "Dodgers win 4-1"
+  },
+  {
+    "id": "will-trump-attend-the-2025-mlb-world-series-finals",
+    "title": "Will Trump attend the 2025 MLB World Series Finals?",
+    "description": "This market will resolve to \"Yes\" if Donald Trump attends 2025 MLB World Series Finals. Otherwise, this market will resolve to \"No\".\n\nIf the event is canceled, postponed beyond or otherwise doesn't take place by December 31, 2025, 11:59 PM ET, this market will resolve to \"No\".\n\nAttending the event is defined as being in physical attendance within the stadium during any part of any of the games in the series.\n\nThe resolution source will be a consensus of credible reporting.",
+    "options": [],
+    "close_date": "2025-10-24",
+    "resolved_to": "No"
+  },
+  {
+    "id": "mlb-2025-will-a-1-seed-win-the-world-series",
+    "title": "MLB 2025: Will a #1 Seed Win the World Series?",
+    "description": "This market will resolve to “Yes” if a #1 seed — the Toronto Blue Jays (American League) or the Milwaukee Brewers (National League) — wins the 2025 MLB World Series. Otherwise, this market will resolve to “No.”\n\nIf at any point it becomes impossible for either #1 seed to win the World Series based on the rules of MLB (e.g., both are eliminated in the playoff bracket), this market will resolve immediately to “No.”\n\nIf the 2025 MLB season is permanently canceled or has not been completed by February 28, 2026, 11:59 PM ET, this market will resolve to “No.”",
+    "options": [],
+    "close_date": "2025-10-31",
+    "resolved_to": "No"
+  },
+  {
+    "id": "mlb-world-series-tv-viewership",
+    "title": "MLB World Series TV Viewership",
+    "description": "This market refers to the 2025 MLB World Series broadcast.\n\nThis market will resolve according to the “Viewers” figure listed for 2025 in the “World Series TV Ratings” table on Baseball Almanac: https://www.baseball-almanac.com/ws/wstv.shtml.\n\nIf the series is canceled entirely, this market will resolve to the lowest range bracket.\n\nIf Baseball Almanac does not provide a “Viewers” entry for 2025 by March 31, 2026, another credible source may be chosen.",
+    "options": [
+      "<9M",
+      "9–11M",
+      "11–13M",
+      "13–15M",
+      "15M+"
+    ],
+    "close_date": "2025-11-01",
+    "resolved_to": "15M+"
+  },
+  {
+    "id": "2024-little-league-world-series-champion",
+    "title": "2024 Little League World Series Champion",
+    "description": "2024 Little League World Series Champion",
+    "options": [
+      "Venezuela",
+      "Florida",
+      "Texas",
+      "Chinese Taipei "
+    ],
+    "close_date": "2024-08-25",
+    "resolved_to": "Florida"
+  },
+  {
+    "id": "mlb-2025-world-series-division-winner",
+    "title": "MLB 2025: World Series Division Winner",
+    "description": "This market will resolve according to the division of the team that wins the 2025 MLB World Series.\n\nIf at any point it becomes impossible for a listed division to produce the World Series champion (e.g., all teams from that division are eliminated from the playoffs), the relevant market will resolve immediately to “No.”\n\nIf the 2025 MLB season is permanently canceled or has not been completed by February 28, 2026, 11:59 PM ET, this market will resolve to “Other.”",
+    "options": [
+      "AL East",
+      "AL Central",
+      "AL West",
+      "NL East",
+      "NL Central",
+      "NL West"
+    ],
+    "close_date": "2025-10-31",
+    "resolved_to": "NL West"
+  },
+  {
+    "id": "2025-mlb-world-series-winning-seed",
+    "title": "2025 MLB World Series: Winning Seed",
+    "description": "This market will resolve according to the playoff seed of the team that wins the 2025 MLB World Series.\n\nIf, at any point, it becomes impossible for a listed seed to win the World Series (e.g., all teams holding that seed are eliminated), the respective market will resolve to “No” immediately.\n\nIf the 2025 MLB season is permanently canceled or has not been completed by February 28, 2026, 11:59 PM ET, this market will resolve to “Other.”\n\nThe primary resolution source will be the official MLB postseason records and results.",
+    "options": [
+      "#1 Seed",
+      "#2 Seed",
+      "#3 Seed",
+      "#4 Seed",
+      "#5 Seed",
+      "#6 Seed"
+    ],
+    "close_date": "2025-10-31",
+    "resolved_to": "#3 Seed"
+  },
+  {
+    "id": "mlb-world-series-outcome",
+    "title": "MLB World Series Outcome",
+    "description": "This market will resolve according to the outcome of the 2025 MLB World Series between the Toronto Blue Jays and the Los Angeles Dodgers.\n\nThe resolution source will be MLB.com.",
+    "options": [
+      "Blue Jays win 4-0",
+      "Blue Jays win 4-1",
+      "Blue Jays win 4-2",
+      "Blue Jays win 4-3",
+      "Dodgers win 4-0",
+      "Dodgers win 4-1",
+      "Dodgers win 4-2",
+      "Dodgers win 4-3"
+    ],
+    "close_date": "2025-11-01",
+    "resolved_to": "Dodgers win 4-3"
+  },
+  {
+    "id": "nhl-stanley-cup-winner-nation",
+    "title": "NHL: Stanley Cup Winner USA or Canada?",
+    "description": "This market will resolve to “USA” if a team based in the United States of America wins the 2026 Stanley Cup Finals. This market will resolve to “Canada” if a team based in Canada wins the 2026 Stanley Cup Finals.\n\nIf the 2026 NHL Playoffs are cancelled, postponed after June 30, 2026, 11:59 PM ET, or there is otherwise no winner declared within that timeframe, this market will resolve to 50-50.\n\nThe primary resolution source will be official information from the NHL; however, a consensus of credible reporting may also be used.",
+    "options": [
+      "USA",
+      "Canada"
+    ],
+    "close_date": "2026-07-01",
+    "resolved_to": "USA"
+  },
+  {
+    "id": "nhl-playoffs-stanley-cup-finals-exact-outcome",
+    "title": "NHL Playoffs: Stanley Cup Finals Exact Outcome",
+    "description": "This market will resolve according to the exact series outcome of the 2026 Stanley Cup Finals series between the Carolina Hurricanes and Vegas Golden Knights. \n\nExact series outcome is defined as the winning team and final game tally (e.g. Hurricanes 4-1 Golden Knights, Golden Knights 4-0 Hurricanes).\n\nOnly completed series outcomes will count toward a resolution for this market.\n\nIf the 2026 Stanley Cup Finals is cancelled, postponed after July 1, 2026, 11:59 PM ET, or there is no clear and defined completed series outcome within that timeframe, this market will resolve to “Other”.\nThe resolution source for this market will be official information from the NHL; however, a consensus of credible reporting may also be used.",
+    "options": [
+      "Hurricanes 4-0",
+      "Hurricanes 4-1",
+      "Hurricanes 4-2",
+      "Hurricanes 4-3",
+      "Golden Knights 4-3",
+      "Golden Knights 4-2",
+      "Golden Knights 4-1",
+      "Golden Knights 4-0",
+      "Other"
+    ],
+    "close_date": "2026-06-18",
+    "resolved_to": "Hurricanes 4-2"
+  },
+  {
+    "id": "nhl-playoffs-stanley-cup-finals-exact-matchup",
+    "title": "NHL Playoffs: Stanley Cup Finals Exact Matchup",
+    "description": "This market will resolve in favor of the 2026 Stanley Cup Finals matchup determined by the winners of the Western Conference Finals and Eastern Conference Finals of the 2026 NHL Playoffs.\n\nIf at any point it becomes impossible for a listed matchup to occur in the 2026 Stanley Cup Finals (e.g. they are mathematically eliminated), the associated market will resolve to \"No\".\n\nIf the 2026 Stanley Cup Finals are cancelled, postponed after June 14, 2026, 11:59 PM ET or the 2026 Stanley Cup Finals matchup has not been declared within that timeframe, this market will resolve to “Other”.\n\nThe resolution source for this market will be official information from the NHL; however, a consensus of credible reporting may also be used.",
+    "options": [
+      "Vegas Golden Knights vs Montreal Canadiens",
+      "Vegas Golden Knights vs Carolina Hurricanes",
+      "Colorado Avalanche vs Montreal Canadiens",
+      "Colorado Avalanche vs Carolina Hurricanes",
+      "Other"
+    ],
+    "close_date": "2026-06-01",
+    "resolved_to": "Vegas Golden Knights vs Carolina Hurricanes"
+  },
+  {
+    "id": "stanley-cup-finals-team-to-complete-3-0-comeback-20260604205913749",
+    "title": "Stanley Cup Finals: Team to Complete 3-0 Comeback?",
+    "description": "This market will resolve “Yes” if either team wins the 2026 Stanley Cup Finals after trailing by 3 losses in the series. Otherwise, this market will resolve to “No”.\n\n\nIf it becomes mathematically impossible for either team to go down by a series score of 3-0 (e.g. each team wins a game before either team wins 3 games), this market will automatically resolve to “No”.\n\n\nIf the 2026 Stanley Cup Finals is cancelled, postponed after July 3, 2026, 11:59 PM ET, or it cannot be determined if the champion completed a 3-0 comeback during the 2026 Stanley Cup Finals within that timeframe, this market will resolve to “No”.\n\n\nThe resolution source for this market will be official information from the NHL; however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-06-18",
+    "resolved_to": "No"
+  },
+  {
+    "id": "series-outcome-nba-final",
+    "title": "Series Outcome - NBA Finals",
+    "description": "asdasdad",
+    "options": [
+      "Celtics win 4-0 ",
+      "Celtics win 4-1",
+      "Celtics win 4-2",
+      "Celtics win 4-3",
+      "Mavericks win 4-3",
+      "Mavericks win 4-2",
+      "Mavericks win 4-1",
+      "Mavericks win 4-0"
+    ],
+    "close_date": "2024-06-23",
+    "resolved_to": "Celtics win 4-1"
+  },
+  {
+    "id": "will-novak-djokovic-win-the-australian-open-2024",
+    "title": "Will Novak Djokovic win the Australian Open?",
+    "description": "This market will resolve to “Yes” if Novak Djokovic wins the 2024 Australian Open in the Men’s Singles category. Otherwise this market will resolve to “No”.\n\nIf Novak Djokovic is eliminated before the finals this market will immediately resolve to \"No.\"\n\nThe resolution source for this market will be official information from the Australian Open (https://ausopen.com/)",
+    "options": [],
+    "close_date": "2024-01-28",
+    "resolved_to": "No"
+  },
+  {
+    "id": "australian-open-final-medvedev-vs-sinner",
+    "title": "Australian Open Final: Medvedev vs. Sinner",
+    "description": "The Men's Final of the Australian Open is scheduled to take place at twilight on January 28, 2024, between Daniil Medvedev and Jannik Sinner.\n\nThis market will resolve to \"Medvedev\" if Daniil Medvedev wins the Men's Final of the 2024 Australian Open. This market will resolve to \"Sinner\" if Jannik Sinner wins the Men's Final of the 2024 Australian Open.\n\nThe primary resolution source for this market will be official information from the Australian Open (ex: https://ausopen.com/) including live footage, however a consensus of credible reporting may also be used.\n",
+    "options": [
+      "Medvedev",
+      "Sinner"
+    ],
+    "close_date": "2024-01-28",
+    "resolved_to": "Sinner"
+  },
+  {
+    "id": "australian-open-final-w-sabalenka-vs-keys",
+    "title": "Australian Open Final (W): Sabalenka vs. Keys",
+    "description": "Aryna Sabalenka and Madison Keys are scheduled to play each other in the final matchup in the Australian Open Women’s Singles Tournament on January 25, 2025, at 3:30 AM ET.\n\nThis market will resolve to “Sabalenka” if Aryna Sabalenka wins her match against Madison Keys in the final of the Australian Open Women’s Singles tournament.\n\nThis market will resolve to “Keys” if Madison Keys wins her match against Aryna Sabalenka in the final of the Australian Open Women’s Singles tournament.\n\nIf the match ends in a tie, is canceled, or delayed beyond February 1, 2025, this market will resolve to 50-50.\n\nThe primary resolution source for this market will be official information from the Australian Open (https://ausopen.com/) including live footage, however a consensus of credible reporting may also be used.",
+    "options": [
+      "Sabalenka",
+      "Keys"
+    ],
+    "close_date": "2025-01-25",
+    "resolved_to": "Keys"
+  },
+  {
+    "id": "australian-open-final-m-sinner-vs-zverev",
+    "title": "Australian Open Final (M): Sinner vs. Zverev",
+    "description": "Jannik Sinner and Alexander Zverev are scheduled to play each other in the final matchup in the Australian Open Men’s Singles Tournament on January 26, 2025, at 3:30 AM ET.\n\nThis market will resolve to “Sinner” if Jannik Sinner wins his match against Alexander Zverev in the final of the Australian Open Men’s Singles tournament.\n\nThis market will resolve to “Zverev” if Alexander Zverev wins his match against Jannik Sinner in the final of the Australian Open Men’s Singles tournament.\n\nIf the match ends in a tie, is canceled, or delayed beyond February 2, 2025, this market will resolve to 50-50.\n\nThe primary resolution source for this market will be official information from the Australian Open (https://ausopen.com/) including live footage, however a consensus of credible reporting may also be used.",
+    "options": [
+      "Sinner",
+      "Zverev"
+    ],
+    "close_date": "2025-01-26",
+    "resolved_to": "Sinner"
+  },
+  {
+    "id": "australian-open-w-swiatek-vs-keys",
+    "title": "Australian Open (W): Swiatek vs. Keys",
+    "description": "Iga Swiatek and Madison Keys are scheduled to play each other in a semifinal matchup in the Australian Open Women’s Singles Tournament on January 23, 2025, at 5:00 AM ET.\n\nThis market will resolve to “Swiatek” if Iga Swiatek advances against Madison Keys in the semifinals of the Australian Open Women’s Singles tournament.\n\nThis market will resolve to “Keys” if Madison Keys advances against Iga Swiatek in the semifinals of the Australian Open Women’s Singles tournament.\n\nIf the match ends in a tie, is canceled, or delayed beyond January 25, 2025, this market will resolve to 50-50.\n\nThe primary resolution source for this market will be official information from the Australian Open (https://ausopen.com/) including live footage, however a consensus of credible reporting may also be used.",
+    "options": [
+      "Swiatek",
+      "Keys"
+    ],
+    "close_date": "2025-01-23",
+    "resolved_to": "Keys"
+  },
+  {
+    "id": "australian-open-w-sabalenka-vs-badosa",
+    "title": "Australian Open (W): Sabalenka vs. Badosa",
+    "description": "Aryna Sabalenka and Paula Badosa are scheduled to play each other in a semifinal matchup in the Australian Open Women’s Singles Tournament on January 23, 2025, at 3:30 AM ET.\n\nThis market will resolve to “Sabalenka” if Aryna Sabalenka advances against Paula Badosa in the semifinals of the Australian Open Women’s Singles tournament.\n\nThis market will resolve to “Badosa” if Paula Badosa advances against Aryna Sabalenka in the semifinals of the Australian Open Women’s Singles tournament.\n\nIf the match ends in a tie, is canceled, or delayed beyond January 25, 2025, this market will resolve to 50-50.\n\nThe primary resolution source for this market will be official information from the Australian Open (https://ausopen.com/) including live footage, however a consensus of credible reporting may also be used.",
+    "options": [
+      "Sabalenka",
+      "Badosa"
+    ],
+    "close_date": "2025-01-23",
+    "resolved_to": "Sabalenka"
+  },
+  {
+    "id": "australian-open-final-doubles-w",
+    "title": "Australian Open Final Doubles (W)",
+    "description": "Katerina Siniakova and Taylor Townsend are scheduled to play against Su-Wei Hsieh and Jelena Ostapenko in the final matchup of the Australian Open Women’s Doubles Tournament on January 26, 2025.\n\nThis market will resolve to “Siniakova/Townsend” if Katerina Siniakova and Taylor Townsend win their match in the final of the Australian Open Women’s Doubles tournament.\n\nThis market will resolve to “Hsieh/Ostapenko” if Su-Wei Hsieh and Jelena Ostapenko win their match in the final of the Australian Open Women’s Doubles tournament.\n\nIf this match ends in a tie, is canceled, or delayed beyond January 31, 2025, at 11:59 PM ET, this market will resolve to 50-50.\n\nThe primary resolution source for this market will be official information from the Australian Open (https://ausopen.com/) including live footage, however a consensus of credible reporting may also be used.",
+    "options": [
+      "Siniakova/Townsend",
+      "Hsieh/Ostapenko"
+    ],
+    "close_date": "2025-01-26",
+    "resolved_to": "Siniakova/Townsend"
+  },
+  {
+    "id": "will-daniil-medvedev-win-the-australian-open-2022",
+    "title": "Will Daniil Medvedev win the Australian Open 2022?",
+    "description": "This is a market on whether Russian tennis player Daniil Medvedev will win the 2022 Australian Open in the Men’s Singles category. This market will resolve to “Yes” if Daniil Medvedev wins the 2022 Australian Open in the Men’s Singles category. Otherwise this market will resolve to “No”. If Daniil Medvedev has not been eliminated and a tournament winner is not determined before February 14, 2022, this market will resolve to 50-50.\n\nThe resolution source for this market will be official information from the Australian Open (https://ausopen.com/)",
+    "options": [],
+    "close_date": "2022-01-31",
+    "resolved_to": "No"
+  },
+  {
+    "id": "2023-australian-open-final-djokovic-vs-tsitsipas",
+    "title": "2023 Australian Open Final: Djokovic vs. Tsitsipas",
+    "description": "The 2023 Australian Open is a Grand Slam level tennis tournament being held at Melbourne Park over January 16 - 29, 2023. It is the 111th edition of the Australian Open, and the first major of the year.\n\nThis market will resolve to \"Djokovic\" if Novak Djokovic wins the final, or to \"Tsitsipas\" if Stefanos Tsitsipas wins the final.\n\nThe primary resolution source for this market will be official information from the Australian Open (ex: https://ausopen.com/) including live footage, however a consensus of credible reporting may also be used.",
+    "options": [
+      "Djokovic",
+      "Tsitsipas"
+    ],
+    "close_date": "2023-01-29",
+    "resolved_to": "Djokovic"
+  },
+  {
+    "id": "us-open-jannik-sinner-vs-carlos-alcaraz",
+    "title": "US Open: Jannik Sinner vs Carlos Alcaraz",
+    "description": "This is a polymarket on the tennis match between Jannik Sinner and Carlos Alcaraz in the 2025 US Open men's singles final, scheduled for September 7, 2025.\n\nThis market will resolve to 'Sinner' if Jannik Sinner advances against Carlos Alcaraz.\n\nThis market will resolve to 'Alcaraz' if Carlos Alcaraz advances against Jannik Sinner.\n\nIf the match is canceled (not played at all), ends in a tie, or is delayed beyond September 14, 2025, without a winner determined, this market will resolve to 50-50.\n\nIf the match ends in a walkover (one player withdraws before the start and the other advances automatically), this market will resolve in favor of the player who officially advances to the next round.\n\nThe primary resolution source will be official information from the US Open. A consensus of credible reporting may also be used.",
+    "options": [
+      "Sinner",
+      "Alcaraz"
+    ],
+    "close_date": "2025-09-08",
+    "resolved_to": "Alcaraz"
+  },
+  {
+    "id": "us-open-winner-w",
+    "title": "US Open Winner (W)",
+    "description": "US Open Winner (W)",
+    "options": [
+      "Aryna Sabalenka",
+      "Iga Swiatek",
+      "Coco Gauff",
+      "Elena Rybakina",
+      "Jessica Pegula",
+      "Naomi Osaka",
+      "Mirra Andreeva",
+      "Qinwen Zheng",
+      "Jasmine Paolini",
+      "Karolina Muchova",
+      "Danielle Rose Collins",
+      "Other"
+    ],
+    "close_date": "2024-09-07",
+    "resolved_to": "Aryna Sabalenka"
+  },
+  {
+    "id": "march-madness-team-from-which-region-wins",
+    "title": "March Madness: Team from which region wins?",
+    "description": "qq",
+    "options": [
+      "East",
+      "West",
+      "South",
+      "Midwest"
+    ],
+    "close_date": "2024-04-08",
+    "resolved_to": "East"
+  },
+  {
+    "id": "march-madness-sum-of-final-four-seeds-105",
+    "title": "March Madness: Sum of Final Four seeds >10.5?",
+    "description": "This market will resolve to \"Yes\" if the sum of the seeds of the final four teams in the 2024 March Madness tournament add up to a number greater than 10.5. Otherwise, this market will resolve to \"No\".\n\nFor example if the final four seeds were 1, 1, 4, 5 the market would resolve to \"Yes\" since 1+1+4+5=11 is greater than 10.5.\n\nThis market may immediately resolve to \"No\" if it becomes impossible for the sum to be greater than 10.5 based on the rules of the tournament. Likewise this market may immediately resolve to \"Yes\" if it becomes guaranteed for the sum to be greater than 10.5.\n\nThe primary resolution source for this market will be official information from NCAA (https://www.ncaa.com/march-madness-live/bracket), however other credible reporting may be used.",
+    "options": [],
+    "close_date": null,
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "march-madness-will-a-1-seed-win",
+    "title": "March Madness: Will a #1 seed win?",
+    "description": "This market will resolve to \"Yes\" if any #1 seed becomes the winner of the 2024 March Madness tournament. Otherwise, this market will resolve to \"No\".\n\nThis market may immediately resolve to \"No\" if it becomes impossible for a #1 seed to win, based on the rules of the tournament.\nLikewise this market may immediately resolve to \"Yes\" if it becomes guaranteed for a #1 seed to win.\n\nThe primary resolution source for this market will be official information from NCAA (https://www.ncaa.com/march-madness-live/bracket), however other credible reporting may be used.\n",
+    "options": [],
+    "close_date": null,
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "womens-march-madness-iowa-vs-lsu",
+    "title": "Women's March Madness: Iowa vs. LSU",
+    "description": "In the upcoming Women's NCAAB game, scheduled for April 1 at 7:15 PM ET:\n\nIf the Iowa Hawkeyes win, the market will resolve to “Iowa”.\n\nIf the Louisiana State University Tigers win, the market will resolve to “LSU”. ",
+    "options": [
+      "Iowa",
+      "LSU"
+    ],
+    "close_date": null,
+    "resolved_to": "Iowa"
+  },
+  {
+    "id": "which-conference-will-win-ncaa-tournament",
+    "title": "Which Conference will win NCAA Tournament?",
+    "description": "This market will resolve to “Yes” if a team from the ACC conference wins the 2025 NCAA March Madness Tournament. Otherwise, this market will resolve to “No”.\n\nIf it is impossible for a Conference to win the 2025 NCAA Men’s Basketball Tournament according to the rules of the competition (i.e. they are eliminated) , the corresponding market will immediately resolve to “No”.\n\nIf for any reason no winner is declared by May 31, 2025, 11:59 PM ET, this market will resolve to \"Other\".\n\nThe resolution source for this market will be information from the NCAA.\n",
+    "options": [
+      "ACC",
+      "Big 12",
+      "Big East ",
+      "Big Ten",
+      "SEC",
+      "A-10",
+      "Mountain West",
+      "WCC",
+      "Other"
+    ],
+    "close_date": "2025-04-07",
+    "resolved_to": "SEC"
+  },
+  {
+    "id": "team-from-which-region-wins-the-ncaa-tournament",
+    "title": "Team from which region wins the NCAA Tournament?",
+    "description": "This market will resolve according to the region that wins the 2025 NCAA Men’s Basketball Tournament.\n\nIf for any reason no winner is declared by May 31, 2025, 11:59 PM ET, this market will resolve to \"No\".\n\nThe resolution source for this market will be information from the NCAA.",
+    "options": [
+      "Midwest",
+      "South",
+      "East",
+      "West"
+    ],
+    "close_date": "2025-04-07",
+    "resolved_to": "West"
+  },
+  {
+    "id": "march-madness-winner-women",
+    "title": "Women's March Madness Winner ",
+    "description": "asdad",
+    "options": [
+      "South Carolina",
+      "Iowa",
+      "LSU",
+      "Other",
+      "Ohio State",
+      "Uconn",
+      "Stanford",
+      "Texas"
+    ],
+    "close_date": "2024-04-08",
+    "resolved_to": "South Carolina"
+  },
+  {
+    "id": "trump-biden-debate-on-june-27-as-planned",
+    "title": "Trump + Biden debate on June 27 as planned?",
+    "description": "This market will resolve to \"Yes\" if Joe Biden and Donald Trump engage in a live, publicly-broadcast debate at any point on June 27, 2024 ET. Otherwise, this market will resolve to \"No\".\n\nIf it is announced that debate has been postponed or cancelled this market may immediately resolve to \"No\". \n\nBoth in-person debates and virtual debates will count toward a \"Yes\" resolution for this market.\n\nChanges to the June 27th debate such as a switch in the hosting network, or a debate that begins on June 27 and then ends early, will still result in a \"Yes\" resolution.",
+    "options": [],
+    "close_date": "2024-06-27",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "second-presidential-debate-happen-as-scheduled",
+    "title": "Will Trump + Biden 2nd debate happen as scheduled?",
+    "description": "The second presidential debate of the 2024 US presidential election cycle is scheduled for September 10, 2024. It will be hosted by ABC.\n\nThis market will resolve to \"Yes\" if Donald Trump and Joe Biden engage in a second live, publicly-broadcast debate for 2024 US presidential election candidates on September 10, 2024. Otherwise, this market will resolve to \"No\".\n\nBoth in-person debates and virtual debates will count toward a \"Yes\" resolution for this market.\n\nIf this debate is delayed or rescheduled for a date that is not September 10, 2024, this market will immediately resolve to \"No\".\n\nIf either candidate backs out of the debate or is otherwise rendered incapable of participating in it, this market will immediately resolve to \"No\".\n\nThe resolution source for this market will be footage of such a debate, however a consensus of credible sources will also be used.",
+    "options": [],
+    "close_date": "2024-07-05",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-biden-show-up-for-debate",
+    "title": "Will Biden show up for debate?",
+    "description": "This market will resolve to \"Yes\" if Joseph Biden appears in-person for the CNN presidential debate scheduled for June 27, 2024. Otherwise, this market will resolve to \"No\".\n\nIf this debate is cancelled or otherwise rescheduled for a date after June 27, 2024 ET, this market will resolve to \"No\".\n\nThe primary resolution source for this market will be footage of the debate, however a consensus of credible reporting will also be used.",
+    "options": [],
+    "close_date": "2024-06-27",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "biden-vs-trump-debate-winner-cnn-poll",
+    "title": "Biden vs. Trump Debate Winner - CNN Poll",
+    "description": "This market will resolve to \"Trump\" if CNN's opinion poll indicates Donald Trump won the CNN-hosted debate against Biden scheduled for June 27, 2024. This market will resolve to \"Biden\" if CNN's opinion poll indicates Joe Biden won the debate. If the results are tied, this market will resolve 50-50.\n\nIf this debate is cancelled, otherwise rescheduled, or does not take place by July 11, 2024, 11:59 PM ET, this market will resolve 50-50.\n\nThis market will resolve according to the results of CNN's first opinion poll over who won or performed better in the debate released after its conclusion. If CNN does not release a poll, Ipsos's analogous poll will be used instead. If no polling information over who won or performed better in the debate is released by either source by July 18, 2024, 11:59 PM ET, this market will resolve 50-50.",
+    "options": [
+      "Biden",
+      "Trump"
+    ],
+    "close_date": "2024-06-27",
+    "resolved_to": "Trump"
+  },
+  {
+    "id": "will-trump-show-up-for-debate",
+    "title": "Will Trump show up for debate?",
+    "description": "This market will resolve to \"Yes\" if Donald Trump appears in-person for the CNN presidential debate scheduled for June 27, 2024. Otherwise, this market will resolve to \"No\".\n\nIf this debate is cancelled or otherwise rescheduled for a date after June 27, 2024 ET, this market will resolve to \"No\".\n\nThe primary resolution source for this market will be footage of the debate, however a consensus of credible reporting will also be used.",
+    "options": [],
+    "close_date": "2024-06-27",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "ny-3-special-election-for-santos-seat-suozzi-d-vs-pilip-r",
+    "title": "NY-3 Special Election for Santos seat: Suozzi (D) vs. Pilip (R)",
+    "description": "Following the expulsion of representative elect George Santos (R), a special election was scheduled for February 13, 2024 to fill his vacant seat. The election for New York's 3rd district seat will take place between Tom Suozzi, a Democrat, and Mazi Melesa Pilip, a Republican.\n\nThis market will resolve to \"Suozzi\" if Democrat Tom Suozzi wins this special election. This market will resolve to \"Pilip\" if Republican Mazi Melesa Pilip wins this special election.\n\nIf this election does not take place by June 30, 2024, or neither candidate wins, this market will resolve 50-50.\n\nDetermination of the winner of this election will be based on a consensus of credible reporting, or if there is ambiguity, final state election authority certification or other final official determination of the election results.",
+    "options": [
+      "Suozzi",
+      "Pilip"
+    ],
+    "close_date": "2024-02-13",
+    "resolved_to": "Suozzi"
+  },
+  {
+    "id": "ny-3-special-election-will-suozzi-d-win-by-over-5",
+    "title": "NY-3 Special Election: Will Suozzi (D) win by over 5%?",
+    "description": "Following the expulsion of representative elect George Santos (R), a special election was scheduled for February 13, 2024 to fill his vacant seat. The election for New York's 3rd district seat will take place between Tom Suozzi, a Democrat, and Mazi Melesa Pilip, a Republican.\n\nThis market will resolve to \"Yes\" Tom Suozzi wins the NY-3 Special Election by a margin of over 5%. Otherwise, this market will resolve to \"No\".\n\nThe margin will be determined by taking Suozzi's percentage of the vote (# Suozzi votes / Total votes for Suozzi + Pilip) and subtracting Pilip's percentage of the vote (# Pilip votes / Total votes for Suozzi + Pilip).\n\nIf this election does not take place by June 30, 2024, this market will resolve 50-50.\n\nDetermination of whether Suozzi won by over 5% will be based on an overwhelming consensus of credible reporting, or if there is ambiguity, final state election authority certification or other final official determination of the election results.",
+    "options": [],
+    "close_date": "2024-02-13",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "fl-6-special-election-weil-d-vs-fine-r",
+    "title": "FL-6 special election: Weil (D) vs. Fine (R)",
+    "description": "A special election for Florida's 6th Congressional District is scheduled to take place on April 1, 2025.\n\nThis market will resolve to \"Weil\" if Democrat Joshua Weil wins the congressional election in  Florida's 6th Congressional District.\n\nThis market will resolve to \"Fine\" if Republican Randy Fine wins the congressional election in  Florida's 6th Congressional District.\n\nIf any other candidate wins the election, this market will resolve 50-50.\n\nThe resolution source for this market is a consensus of credible reporting.\n",
+    "options": [
+      "Weil",
+      "Fine"
+    ],
+    "close_date": "2025-04-01",
+    "resolved_to": "Fine"
+  },
+  {
+    "id": "fl-1-special-election-valimont-d-vs-patronis-r",
+    "title": "FL-1 special election: Valimont (D) vs. Patronis (R)",
+    "description": "A special election for Florida's 1st Congressional District is scheduled to take place on April 1, 2025.\n\nThis market will resolve to \"Valimont\" if Democrat Gay Valimont wins the congressional election in  Florida's 1st Congressional District.\n\nThis market will resolve to \"Patronis\" if Republican Jimmy Patronis wins the congressional election in  Florida's 1st Congressional District.\n\nIf any other candidate wins the election, this market will resolve 50-50.\n\nThe resolution source for this market is a consensus of credible reporting.\n",
+    "options": [
+      "Valimont",
+      "Patronis"
+    ],
+    "close_date": "2025-04-01",
+    "resolved_to": "Patronis"
+  },
+  {
+    "id": "nebraska-senate-special-election",
+    "title": "Nebraska Senate Special Election",
+    "description": "This is a market on the outcomes of the Nebraska Senate Special Election.",
+    "options": [
+      "Democrat",
+      "Republican",
+      "Other"
+    ],
+    "close_date": "2024-11-05",
+    "resolved_to": "Republican"
+  },
+  {
+    "id": "democratic-margin-of-victory-in-va-11-special-election-at-least-45",
+    "title": "Democratic Margin of victory in VA-11 special election at least 45%?",
+    "description": "This market will resolve to \"Yes\" if Democrat James Walkinshaw wins the 2025 special election for Virginia's 11th congressional district to replace former Representative Gerry Connolly by a 45% margin over the Republican candidate, Stewart Whitson. Otherwise, this market will resolve to \"No\". \n\nThe margin of victory is calculated as the difference betweenJames Walkinshaw and Stewart Whitson.\n\nIn the event of a runoff, this market's resolution will be based on the runoff's outcome. \n\nThe primary resolution source for this market will be information from the State of Virginia; however, a consensus of credible reporting will also be used.",
+    "options": [],
+    "close_date": "2025-09-09",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "supreme-court-unanimous-vote-in-trump-immunity-case",
+    "title": "Supreme Court unanimous vote in Trump immunity case?",
+    "description": "This market will resolve to \"Yes\" if the Supreme Court of the United States renders a unanimous verdict in the case \"Trump v. United States\" (No. 23-939) by November 4, 2024, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nIf SCOTUS declines to rule on this case, this market will immediately resolve to \"No\".\n\nIf SCOTUS remands this case, sending it back to a lower court, this market will immediately resolve to \"No\".\n\nThe resolution source for this market is official information released by SCOTUS, however a consensus of credible reporting and interpretation will also be used.",
+    "options": [],
+    "close_date": "2024-11-04",
+    "resolved_to": "No"
+  },
+  {
+    "id": "scotus-bars-counting-mail-ballots-after-election-day",
+    "title": "SCOTUS bars counting mail ballots after election day?",
+    "description": "This market will resolve to “Yes” if the United States Supreme Court, in Watson v. Republican National Committee, rules that the federal election-day statutes preempt a state law that allows ballots cast by federal Election Day to be received and counted after election day, by August 1, 2026, 11:59 PM ET. Otherwise, this market will resolve to “No”.\n\nThis market will resolve based on the Supreme Court’s decision in this case. Other related cases or legislation will not affect resolution.\n\nThe resolution source for this market will be official information from the U.S. Supreme Court; however, a consensus of credible reporting will also be used.",
+    "options": [],
+    "close_date": "2026-08-01",
+    "resolved_to": "No"
+  },
+  {
+    "id": "scotus-strikes-down-trumps-birthright-citizenship-eo",
+    "title": "SCOTUS strikes down Trump's Birthright Citizenship EO?",
+    "description": "The Supreme Court is hearing arguments on the merits of Donald Trump’s Executive Order “Protecting the Meaning and Value of American Citizenship” (https://www.whitehouse.gov/presidential-actions/2025/01/protecting-the-meaning-and-value-of-american-citizenship/) which directed that children born in the United States would not automatically receive U.S. citizenship if their parents were in the country unlawfully or on certain temporary visas.\n\nThis market will resolve to “Yes” if the Supreme Court of the United States rules that Donald Trump’s Executive Order “Protecting the Meaning and Value of American Citizenship” may not be enforced to deny citizenship to children born in the United States, by July 30, 2026, 11:59 PM ET. Otherwise, this market will resolve to “No”.\n\nA qualifying ruling must clearly and finally rule that the order, in whole, is unconstitutional or cannot lawfully take effect, or that the order cannot be enforced to deny citizenship to children born in the United States. \n\nProcedural rulings that do not clearly resolve whether the order may lawfully be enforced to deny citizenship to children born in the United States will not be sufficient to resolve this market to “Yes”.\n\nIf a Supreme Court ruling on this case clearly and finally permits the order to deny citizenship to children born in the United States, this market will resolve to “No”.\n\nIf the Executive Order is withdrawn prior to any qualifying Supreme Court ruling on the order, this market will resolve to “No”.\n\nThe resolution source for this market will be official information from the Supreme Court of the United States; however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-08-31",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "new-10-us-blanket-tariff-goes-into-effect-by-february-28",
+    "title": "New 10% US blanket tariff goes into effect by February 28?",
+    "description": "This market will resolve to “Yes” if any new general or blanket US tariff of 10% or more on imports into the United States goes into effect for any amount of time by February 28, 2026, 11:59 PM ET. Otherwise, this market will resolve to “No”.\n\nA general or blanket tariff is a tariff policy that applies a baseline tariff rate of 10% or greater to imports broadly, rather than being limited to a narrow set of products or countries. A tariff that includes item-specific, country-specific, or other limited exceptions will still qualify, as long as a baseline policy of a 10% or greater tariff on imports into the United States goes into effect.\n\n“Goes into effect\" means the effective start date for the tariff must have begun without being further delayed or suspended. Any tariff which goes into effect after February 28, 2026, 11:59 PM ET, will not count, regardless of the date on which it was ordered. Tariffs that were in effect prior to February 20, 2026 will not count.\n\nLater suspensions, reductions, or other limitations applied to a qualifying tariff after it goes into effect will have no impact on this market’s resolution.\n\nThis market's primary resolution source will be official information from the United States federal government; however, a consensus of credible information may also be used.",
+    "options": [],
+    "close_date": "2026-02-28",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-a-10-us-blanket-tariff-be-in-effect-on-march-31",
+    "title": "Will a 10% US blanket tariff be in effect on March 31?",
+    "description": "This market will resolve to “Yes” if a general or blanket US tariff of 10% or more on imports into the United States is in effect on March 31, 2026 at 12:00 PM ET. Otherwise, this market will resolve to “No”.\n\nA general or blanket tariff is a tariff policy that applies a baseline tariff rate of 10% or greater to imports broadly, rather than being limited to a narrow set of products or countries. A tariff that includes item-specific, country-specific, or other limited exceptions will still qualify, as long as a baseline policy of a 10% or greater tariff on imports into the United States is in effect at the specified time.\n\n“In effect\" means the tariff must be operational in its application to US imports at the specified time. General or blanket tariffs which go into effect, but are then blocked, injuncted, repealed, or otherwise invalidated such that a blanket tariff rate of 10% or more is not being imposed on imports into the United States at this market’s resolution time will not count.\n\nThis market's primary resolution source will be official information from the United States federal government; however, a consensus of credible information may also be used.",
+    "options": [],
+    "close_date": "2026-03-31",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "scotus-lets-trump-fire-ftc-commissioners-in-trump-v-slaughter",
+    "title": "SCOTUS lets Trump fire FTC commissioners in Trump v. Slaughter?",
+    "description": "This market will resolve to “Yes” if the Supreme Court, in Trump v. Slaughter, rules to overturn Humphrey's Executor v. United States by December 31, 2026, 11:59 PM ET. Otherwise, this market will resolve to “No”.\n\nThe Supreme Court will be considered to overturn Humphrey's Executor v. United States if they issue a decision in Trump v. Slaughter overruling or substantially limiting Humphrey's Executor v. United States (1935), including ruling that the President may remove FTC commissioners at will.\n\nIf the Supreme court ruling in Trump v. Slaughter affirms that for-cause removal protections for FTC commissioners remain constitutional or if the case is dismissed, settled, or otherwise disposed of without a merits decision within this market’s timeframe, the market will resolve to “No”. If no Supreme Court ruling on the merits of Trump v. Slaughter is issued by December 31, 2026, 11:59 PM ET, this market will resolve to “No”.\n\nThe resolution source for this market will be official information from the U.S. Supreme Court; however, a consensus of credible reporting will also be used.",
+    "options": [],
+    "close_date": "2026-12-31",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "scotus-upholds-trans-sports-bans-20260615184841389",
+    "title": "SCOTUS upholds trans sports bans?",
+    "description": "The Supreme Court has heard arguments on the merits of state laws that would limit participation in certain girls' and boys' sports teams based on biological sex at birth. \n\nThis market will resolve to “Yes” if the Supreme Court of the United States rules that states may limit inclusion in boys' or girls' sports leagues based on biological sex at birth by July 30, 2026, 11:59 PM ET. Otherwise, this market will resolve to “No”. In the event that the Supreme Court allows states to impose these limitations in some sports leagues but not others (e.g. based on age), this market will resolve to \"Yes.\"\n\nA qualifying ruling must clearly and finally rule that the challenged state laws may take effect. \n\nProcedural rulings that do not clearly resolve whether the relevant laws may lawfully be enforced will not be sufficient to resolve this market to “Yes”.\n\nIf a Supreme Court ruling on this case clearly and finally prevents states from imposing laws that limit participation in girls' and boys' sports based on biological sex at birth, this market will resolve to “No”.\n\nThe resolution source for this market will be official information from the Supreme Court of the United States; however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-07-31",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "scotus-rules-in-favor-of-monsanto",
+    "title": "SCOTUS rules in favor of Monsanto?",
+    "description": "This market will resolve to “Yes” if the Supreme Court, in Monsanto Co. v. Durnell, rules that the Federal Insecticide, Fungicide, and Rodenticide Act (FIFRA) preempts state failure-to-warn claims by December 31, 2026, 11:59 PM ET. Otherwise, this market will resolve to “No”.\n\nThe Supreme Court will be considered to rule that FIFRA preempts such claims if it issues a decision in Monsanto Co. v. Durnell holding that FIFRA preempts state failure-to-warn claims, including ruling that manufacturers cannot be held liable under state law for failing to include warnings not required or approved by the Environmental Protection Agency.\n\nIf the Supreme Court ruling in Monsanto Co. v. Durnell affirms that state-law failure-to-warn claims are not preempted, allows such claims to proceed, or otherwise declines to find federal preemption, the market will resolve to “No”. If the case is dismissed, settled, or otherwise disposed of without a merits decision within this market’s timeframe, the market will resolve to “No”. If no Supreme Court ruling on the merits of Monsanto Co. v. Durnell is issued by December 31, 2026, 11:59 PM ET, this market will resolve to “No”.\n\nThe resolution source for this market will be official information from the U.S. Supreme Court; however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-12-31",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-scotus-let-trump-build-the-white-house-ballroom-by-september-30-20260807171000966",
+    "title": "Will SCOTUS let Trump build the White House ballroom by September 30?",
+    "description": "The Supreme Court of the United States is expected to be asked to review lower-court rulings blocking construction of a new White House ballroom on the former site of the East Wing offices. As of market creation, a preliminary injunction affirmed by the D.C. Circuit blocks above-ground construction while permitting below-ground work.\n\nThis market will resolve to \"Yes\" if, by September 30, 2026, 11:59 PM ET, the Supreme Court of the United States issues any ruling or order that has the effect of permitting construction to resume on any above-ground portion of the ballroom project. Otherwise, this market will resolve to \"No.\"\n\nA qualifying ruling or order includes a merits decision, a stay of a lower-court injunction, or any other form of interim or permanent relief, so long as its effect is that above-ground construction is legally permitted to proceed. A ruling or order affecting only below-ground work will not qualify.\n\nOnce a qualifying ruling or order has been issued, this market will resolve to \"Yes\" regardless of whether the ruling or order is later vacated, reversed, or superseded, and regardless of whether construction actually resumes.\n\nThis market will resolve to \"No\" if no qualifying ruling or order is issued by the deadline, including if the Supreme Court declines to hear the case, dismisses it, or resolves it on grounds that leave the block on above-ground construction in place. Above-ground construction becoming permitted through any mechanism other than a Supreme Court ruling or order — including congressional authorization, settlement, or dismissal of the underlying lawsuit — will not qualify.\n\nThe primary resolution source for this market will be official information from the Supreme Court of the United States (including orders published at supremecourt.gov); however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-09-30",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-scotus-let-drug-users-own-guns-20260615190653355",
+    "title": "Will SCOTUS let drug users own guns? ",
+    "description": "The Supreme Court has heard arguments on the constitutionality of 18 U.S.C. § 922(g)(3), the federal statute that prohibits the possession of firearms by a person who “is an unlawful user of or addicted to any controlled substance.\" \n\nThis market will resolve to “Yes” if the Supreme Court of the United States rules that, in at least some cases, this law violates the Constitution of the United States by July 30, 2026, 11:59 PM ET. Otherwise, this market will resolve to “No”. \n\nA qualifying ruling must clearly and finally rule that the law is unconstitutional in some cases.\n\nProcedural rulings that do not clearly resolve whether the relevant law may lawfully be enforced will not be sufficient to resolve this market to “Yes”.\n\nIf a Supreme Court ruling clearly and finally upholds this law in all challenged applications, this market will resolve to 'No.'\n\nThe resolution source for this market will be official information from the Supreme Court of the United States; however, a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2026-07-31",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "mayorkas-impeached-by-feb-15",
+    "title": "Mayorkas impeached by Feb 15?",
+    "description": "On Feb 6, the House GOP failed to impeach Mayorkas over border handling, with the vote tallied at 214-216. Republican lawmakers predicted there will be another vote held in the following days once they have the votes to succeed.\n\nThis market will resolve to \"Yes\" if the House successfully votes to impeach Mayorkas by Feb 15, 2024, 11:59 PM ET. Otherwise this market will resolve to \"No.\"\n\nThe vote must be final (\"gaveled\") by the resolution time for this market to resolve to \"Yes.\"\n\nThe resolution source will be a consensus of credible reporting. ",
+    "options": [],
+    "close_date": "2024-02-15",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "joe-biden-impeached-before-2024-election",
+    "title": "Joe Biden impeached before 2024 election?",
+    "description": "If the House of Representatives of the United States approves articles of impeachment against the President of the United States before November 5, 2024, this market will resolve “Yes”, otherwise this market will resolve \"No\".\n\nIf President Joseph Biden for any reason ceases to be POTUS before being impeached by the resolution date, this market will resolve to \"No\".",
+    "options": [],
+    "close_date": "2024-11-05",
+    "resolved_to": "No"
+  },
+  {
+    "id": "judge-mcconnell-impeached-before-april",
+    "title": "Judge McConnell impeached before April?",
+    "description": "This market will resolve to “Yes“ if the US House of Representatives by simple majority vote approves or passes one or more articles of impeachment against Judge John J. McConnell, Jr., between February 1 and March 31, 2025, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nNeither trial nor conviction by the US Senate, nor removal from office, is necessary to resolve this market to “Yes“.\n\nThe primary resolution source for this market will be information from the federal government of the United States, however a consensus of credible reporting will be used",
+    "options": [],
+    "close_date": "2025-03-31",
+    "resolved_to": "No"
+  },
+  {
+    "id": "fed-decision-in-january",
+    "title": "Fed decision in January?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's January 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for January 27 - 28, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their January meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.\n",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2026-01-28",
+    "resolved_to": "No change"
+  },
+  {
+    "id": "fed-decision-in-december",
+    "title": "Fed decision in December?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's December 2025 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for December 9 - 10, 2025 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their December meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.\n",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2025-12-10",
+    "resolved_to": "25 bps decrease"
+  },
+  {
+    "id": "fed-decision-in-april",
+    "title": "Fed decision in April?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's April 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for April 28-29, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their April meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2026-04-29",
+    "resolved_to": "No change"
+  },
+  {
+    "id": "fed-decision-in-march-885",
+    "title": "Fed decision in March?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's March 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for March 17 - 18, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their March meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.\n",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2026-03-18",
+    "resolved_to": "No change"
+  },
+  {
+    "id": "fed-decision-in-october",
+    "title": "Fed decision in October?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's October 2025 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for October 28 - 29, 2025 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their October meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.\n",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2025-10-29",
+    "resolved_to": "25 bps decrease"
+  },
+  {
+    "id": "fed-decision-in-september",
+    "title": "Fed decision in September?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's September 2025 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for September 16 - 17, 2025 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their September meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.\n",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2025-09-17",
+    "resolved_to": "25 bps decrease"
+  },
+  {
+    "id": "fed-interest-rates-january-2025",
+    "title": "Fed decision in January?",
+    "description": "This is a market on predictions for the Federal Reserve's interest rates in January 2025. ",
+    "options": [
+      "75+ bps decrease",
+      "50 bps decrease",
+      "25 bps decrease",
+      "No Change",
+      "25+ bps increase"
+    ],
+    "close_date": "2025-01-29",
+    "resolved_to": "No Change"
+  },
+  {
+    "id": "fed-decision-in-june-825",
+    "title": "Fed Decision in June?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal funds range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's June 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for June 16-17, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their June meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.\n",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25 bps increase",
+      "50+ bps increase"
+    ],
+    "close_date": "2026-06-17",
+    "resolved_to": "No change"
+  },
+  {
+    "id": "fed-decision-in-july-181",
+    "title": "Fed Decision in July?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal funds range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's July 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for July 28-29, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their July meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25 bps increase",
+      "50+ bps increase"
+    ],
+    "close_date": "2026-07-29",
+    "resolved_to": "No change"
+  },
+  {
+    "id": "fed-decision-in-july",
+    "title": "Fed decision in July?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's July 2025 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for July 29 - 30, 2025 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their July meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.\n",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2025-07-30",
+    "resolved_to": "No change"
+  },
+  {
+    "id": "fed-decision-in-june",
+    "title": "Fed decision in June?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's June 2025 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for June 17 - 18, 2025 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their June meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2025-06-18",
+    "resolved_to": "No change"
+  },
+  {
+    "id": "fed-decision-in-may-2025",
+    "title": "Fed decision in May?",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal fund range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's May 2025 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for May 6 - 7, 2025 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their May meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No change",
+      "25+ bps increase"
+    ],
+    "close_date": "2025-05-07",
+    "resolved_to": "No change"
+  },
+  {
+    "id": "fed-decision-in-march",
+    "title": "Fed decision in March?",
+    "description": "This is a market on predictions for the Federal Reserve's interest rates in March 2025. ",
+    "options": [
+      "50+ bps decrease",
+      "25 bps decrease",
+      "No Change",
+      "25+ bps increase"
+    ],
+    "close_date": "2025-03-19",
+    "resolved_to": "No Change"
+  },
+  {
+    "id": "fed-interest-rates-december-2024",
+    "title": "Fed decision in December?",
+    "description": "This is a market on the anticipated Federal Reserve interest rate decision for December 2024.",
+    "options": [
+      "75+ bps decrease",
+      "50 bps decrease",
+      "25 bps decrease",
+      "No Change",
+      "25+ bps increase",
+      "Other"
+    ],
+    "close_date": "2024-12-18",
+    "resolved_to": "25 bps decrease"
+  },
+  {
+    "id": "bitcoin-price-july-15-5pm-et",
+    "title": "Bitcoin Price - July 15, 5PM ET",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for BTC/USDT on the time and date specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the BTC/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/BTC_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance BTC/USDT, not according to other sources or spot markets.",
+    "options": [
+      "<120k",
+      "120–121k",
+      "121–122k",
+      ">122k"
+    ],
+    "close_date": "2025-07-15",
+    "resolved_to": "<120k"
+  },
+  {
+    "id": "bitcoin-price-on-september-15-2026",
+    "title": "Bitcoin price on September 15?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for BTC/USDT 12:00 in the ET timezone (noon) on the date specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the BTC/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/BTC_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance BTC/USDT, not according to other exchanges or trading pairs.",
+    "options": [
+      "<70,000",
+      "70,000-72,000",
+      "72,000-74,000",
+      "74,000-76,000",
+      "76,000-78,000",
+      "78,000-80,000",
+      "80,000-82,000",
+      "82,000-84,000",
+      "84,000-86,000",
+      "86,000-88,000",
+      ">88,000"
+    ],
+    "close_date": "2026-09-15",
+    "resolved_to": "76,000-78,000"
+  },
+  {
+    "id": "bitcoin-price-on-june-21-2026",
+    "title": "Bitcoin price on June 21?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for BTC/USDT 12:00 in the ET timezone (noon) on the date specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the BTC/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/BTC_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance BTC/USDT, not according to other exchanges or trading pairs.",
+    "options": [
+      "<56,000",
+      "56,000-58,000",
+      "58,000-60,000",
+      "60,000-62,000",
+      "62,000-64,000",
+      "64,000-66,000",
+      "66,000-68,000",
+      "68,000-70,000",
+      "70,000-72,000",
+      "72,000-74,000",
+      ">74,000"
+    ],
+    "close_date": "2026-06-21",
+    "resolved_to": "64,000-66,000"
+  },
+  {
+    "id": "bitcoin-price-on-april-4",
+    "title": "Bitcoin price on April 4?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for BTCUSDT 04 Apr '25 12:00 in the ET timezone (noon). Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the BTCUSDT \"Close\" prices currently available at https://www.binance.com/en/trade/BTC_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance BTCUSDT, not according to other sources or spot markets.",
+    "options": [
+      ">90k",
+      "90-88k",
+      "88-86k",
+      "86-84k",
+      "84-82k",
+      "82-80k",
+      "<80k"
+    ],
+    "close_date": "2025-04-04",
+    "resolved_to": "84-82k"
+  },
+  {
+    "id": "bitcoin-price-on-march-14",
+    "title": "Bitcoin price on March 14?",
+    "description": "This market will resolve according to the final “Close” price of the Binance 1 minute candle for BTCUSDT 14 Mar '25 12:00 in the ET timezone (noon). Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the BTCUSDT \"Close\" prices currently available at https://www.binance.com/en/trade/BTC_USDT with “1m” and “Candles” selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance BTCUSDT, not according to other sources or spot markets.",
+    "options": [
+      "<83k",
+      "83-85k",
+      "85-87k",
+      "87-89k",
+      "89-91k",
+      "91-93k",
+      ">93k"
+    ],
+    "close_date": "2025-03-14",
+    "resolved_to": "83-85k"
+  },
+  {
+    "id": "bitcoin-price-on-june-10-267",
+    "title": "Bitcoin price on June 10?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for BTCUSDT 10 June '25 12:00 in the ET timezone (noon). Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the BTC/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/BTC_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance BTCUSDT, not according to other sources or spot markets.",
+    "options": [
+      "<103k",
+      "103-105k",
+      "105-107k",
+      "107-109k",
+      ">109k"
+    ],
+    "close_date": "2025-06-10",
+    "resolved_to": ">109k"
+  },
+  {
+    "id": "bitcoin-price-on-may-9",
+    "title": "Bitcoin price on May 9?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for BTCUSDT 09 May '25 12:00 in the ET timezone (noon). Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the BTCUSDT \"Close\" prices currently available at https://www.binance.com/en/trade/BTC_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance BTCUSDT, not according to other sources or spot markets.",
+    "options": [
+      "<93k",
+      "93-95k",
+      "95-97k",
+      "97-99k",
+      "99-101k",
+      "101-103k",
+      ">103k"
+    ],
+    "close_date": "2025-05-09",
+    "resolved_to": "101-103k"
+  },
+  {
+    "id": "ethereum-price-on-february-23",
+    "title": "Ethereum price on February 23?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for ETH/USDT 12:00 in the ET timezone (noon) on the date specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the ETH/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/ETH_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance ETH/USDT, not according to other sources or spot markets.",
+    "options": [
+      "<1,500",
+      "1,500-1,600",
+      "1,600-1,700",
+      "1,700-1,800",
+      "1,800-1,900",
+      "1,900-2,000",
+      "2,000-2,100",
+      "2,100-2,200",
+      "2,200-2,300",
+      "2,300-2,400",
+      ">2,400"
+    ],
+    "close_date": "2026-02-23",
+    "resolved_to": "1,800-1,900"
+  },
+  {
+    "id": "ethereum-price-on-march-6",
+    "title": "Ethereum price on March 6?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for ETH/USDT 12:00 in the ET timezone (noon) on the date specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the ETH/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/ETH_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance ETH/USDT, not according to other sources or spot markets.",
+    "options": [
+      "<1,500",
+      "1,500-1,600",
+      "1,600-1,700",
+      "1,700-1,800",
+      "1,800-1,900",
+      "1,900-2,000",
+      "2,000-2,100",
+      "2,100-2,200",
+      "2,200-2,300",
+      "2,300-2,400",
+      ">2,400"
+    ],
+    "close_date": "2026-03-06",
+    "resolved_to": "1,900-2,000"
+  },
+  {
+    "id": "ethereum-price-on-march-26",
+    "title": "Ethereum price on March 26?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for ETH/USDT 12:00 in the ET timezone (noon) on the date specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the ETH/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/ETH_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance ETH/USDT, not according to other exchanges or trading pairs.",
+    "options": [
+      "<1,700",
+      "1,700-1,800",
+      "1,800-1,900",
+      "1,900-2,000",
+      "2,000-2,100",
+      "2,100-2,200",
+      "2,200-2,300",
+      "2,300-2,400",
+      "2,400-2,500",
+      "2,500-2,600",
+      ">2,600"
+    ],
+    "close_date": "2026-03-26",
+    "resolved_to": "2,000-2,100"
+  },
+  {
+    "id": "ethereum-price-on-may-23",
+    "title": "Ethereum price on May 23?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for ETHUSDT 23 May '25 12:00 in the ET timezone (noon). Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the ETHUSDT \"Close\" prices currently available at https://www.binance.com/en/trade/ETH_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance ETHUSDT, not according to other sources or spot markets.",
+    "options": [
+      "<2400",
+      "2400–2500",
+      "2500–2600",
+      "2600–2700",
+      "2700–2800",
+      ">2800"
+    ],
+    "close_date": "2025-05-23",
+    "resolved_to": "2500–2600"
+  },
+  {
+    "id": "ethereum-price-on-august-18",
+    "title": "Ethereum price on August 18?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for ETH/USDT 12:00 in the ET timezone (noon) on the date specified in the title. Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the ETH/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/ETH_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance ETH/USDT, not according to other sources or spot markets.",
+    "options": [
+      "<4000",
+      "4000–4100",
+      "4100–4200",
+      "4200–4300",
+      "4300–4400",
+      ">4400"
+    ],
+    "close_date": "2025-08-18",
+    "resolved_to": "4300–4400"
+  },
+  {
+    "id": "ethereum-price-on-june-6",
+    "title": "Ethereum price on June 6?",
+    "description": "This market will resolve according to the final \"Close\" price of the Binance 1 minute candle for ETH/USDT 6 June '25 12:00 in the ET timezone (noon). Otherwise, this market will resolve to \"No\".\n\nThe resolution source for this market is Binance, specifically the ETH/USDT \"Close\" prices currently available at https://www.binance.com/en/trade/ETH_USDT with \"1m\" and \"Candles\" selected on the top bar.\n\nIf the reported value falls exactly between two brackets, then this market will resolve to the higher range bracket.\n\nPlease note that this market is about the price according to Binance ETH/USDT, not according to other sources or spot markets.",
+    "options": [
+      "<2400",
+      "2400-2500",
+      "2500-2600",
+      "2600-2700",
+      ">2700"
+    ],
+    "close_date": "2025-06-06",
+    "resolved_to": "2500-2600"
+  },
+  {
+    "id": "taiwan-presidential-election-who-will-win",
+    "title": "Taiwan Presidential Election: Who will win?",
+    "description": "qq",
+    "options": [
+      "Lai Ching-te (賴清德)",
+      "Hou Yu-ih (侯友宜)",
+      "Ko Wen-je (柯文哲)"
+    ],
+    "close_date": "2024-01-13",
+    "resolved_to": "Lai Ching-te (賴清德)"
+  },
+  {
+    "id": "argentina-presidential-election-who-will-win",
+    "title": "Argentina Presidential Election: Who will win?",
+    "description": "qq",
+    "options": [
+      "Javier Milei",
+      "Sergio Massa",
+      "Patricia Bullrich"
+    ],
+    "close_date": "2023-11-19",
+    "resolved_to": "Javier Milei"
+  },
+  {
+    "id": "margin-in-argentina-presidential-election",
+    "title": "Margin in Argentina Presidential Election?",
+    "description": "qq",
+    "options": [
+      "Milei by >5%",
+      "Massa by >5%"
+    ],
+    "close_date": "2023-11-19",
+    "resolved_to": "Milei by >5%"
+  },
+  {
+    "id": "indonesia-election-prabowo-subianto-wins",
+    "title": "Indonesia Election: Prabowo Subianto wins?",
+    "description": "The 2024 Indonesian presidential election is scheduled to take place on February 14, 2024.\n\nThis market will resolve to \"Yes\" if Prabowo Subianto wins. Otherwise, this market will resolve to \"No.\"\n\nThis market includes any potential second round. If the result of this election isn't known by November 30, 2024, 11:59:59 PM ET, the market will resolve to 50-50.\n\nThe primary resolution source for this market will be official information from the Indonesian government, however a consensus of credible reporting will also suffice.",
+    "options": [],
+    "close_date": "2024-02-14",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "slovakia-presidential-election-winner",
+    "title": "Slovakia Presidential Election Winner",
+    "description": "qqqq\n",
+    "options": [
+      "Peter Pellegrini",
+      "Ivan Korčok",
+      "Štefan Harabin",
+      "Igor Matovič",
+      "Ján Kubiš",
+      "Other"
+    ],
+    "close_date": "2024-03-23",
+    "resolved_to": "Peter Pellegrini"
+  },
+  {
+    "id": "senegal-presidential-election-winner",
+    "title": "Senegal Presidential Election Winner",
+    "description": "qqqqq\n",
+    "options": [
+      "Amadou Ba",
+      "Idrissa Seck",
+      "Khalifa Sall",
+      "Other",
+      "Bassirou Diomaye Faye",
+      "Anta Babacar Ngom",
+      "Mahammed Dionne",
+      "Aly Ngouille Ndiaye"
+    ],
+    "close_date": "2024-03-24",
+    "resolved_to": "Bassirou Diomaye Faye"
+  },
+  {
+    "id": "presidential-election-popular-vote-winner-2024",
+    "title": "Popular Vote Winner 2024",
+    "description": "This is a market on predicting the winner of the popular vote in the 2024 presidential election.",
+    "options": [
+      "Donald Trump",
+      "Joe Biden",
+      "Nikki Haley",
+      "Vivek Ramaswamy",
+      "Gavin Newsom",
+      "Robert F. Kennedy Jr.",
+      "Chris Christie",
+      "Hillary Clinton",
+      "Bernie Sanders",
+      "AOC",
+      "Elizabeth Warren",
+      "Kanye West",
+      "Other Democrat Politician",
+      "Other Republican Politician",
+      "Michelle Obama",
+      "Ron DeSantis",
+      "Kamala Harris"
+    ],
+    "close_date": "2024-11-04",
+    "resolved_to": "Donald Trump"
+  },
+  {
+    "id": "electoral-college-margin-of-victory-in-the-2024-presidential-election",
+    "title": "Electoral College Margin of Victory?",
+    "description": "This is a market on the anticipated margin of victory in the Electoral College for the upcoming presidential election.",
+    "options": [
+      "GOP by 215+",
+      "GOP by 155-214",
+      "GOP by 65-104",
+      "GOP by 5-14",
+      "GOP by 15-34",
+      "GOP by 35-64",
+      "Dems by 0-4",
+      "Dems by 15-34",
+      "Dems by 5-14",
+      "Dems by 35-64",
+      "Dems by 65-104",
+      "Dems by 105-154",
+      "Dems by 215+",
+      "GOP by 105-154",
+      "Dems by 155-214",
+      "GOP by 1-4",
+      "GOP/Dems both lose"
+    ],
+    "close_date": "2024-11-04",
+    "resolved_to": "GOP by 65-104"
+  },
+  {
+    "id": "michigan-presidential-election-winner",
+    "title": "Who will win Michigan?",
+    "description": "This is a market on predicting the winner of the presidential election in Michigan.",
+    "options": [
+      "Kamala Harris",
+      "Donald Trump",
+      "Other"
+    ],
+    "close_date": "2024-11-04",
+    "resolved_to": "Donald Trump"
+  },
+  {
+    "id": "georgia-presidential-election-winner",
+    "title": "Who will win Georgia?",
+    "description": "This is a market on the predicted winner of the presidential election in Georgia.",
+    "options": [
+      "Kamala Harris",
+      "Donald Trump",
+      "Other"
+    ],
+    "close_date": "2024-11-04",
+    "resolved_to": "Donald Trump"
+  },
+  {
+    "id": "premier-league-top-4-finishers",
+    "title": "Premier League: Top 4 finishers",
+    "description": "This is a market on which teams will finish in the top four of the Premier League this season.",
+    "options": [
+      "Liverpool",
+      "Manchester United",
+      "Tottenham",
+      "Aston Villa",
+      "Newcastle",
+      "Brighton",
+      "Chelsea",
+      "Manchester City",
+      "Arsenal",
+      "Nottingham Forest",
+      "Bournemouth",
+      "Fulham"
+    ],
+    "close_date": "2025-05-25",
+    "resolved_to": "Arsenal"
+  },
+  {
+    "id": "vail-resorts-mtn-up-or-down-after-earnings",
+    "title": "Vail Resorts (MTN) Up or Down After Earnings?",
+    "description": "This market will resolve to “Up” if the first official NYSE closing price for Vail Resorts (MTN) after the next earnings release is higher than the official NYSE closing price for MTN prior to the earnings release.\n\nThis market will resolve to “Down” if the official NYSE closing price for Vail Resorts (MTN) after the next earnings release is lower than the official NYSE closing price for MTN prior to the earnings release.\n\nThis market resolves based on the exact timing of the company’s first public release of earnings figures, regardless of whether they appear in a press release, earnings call, SEC filing, or similar. If the earnings figures are released before the close of regular trading hours, the same day’s closing price will be compared to the most recent prior closing price. If the numbers are released after the market has closed, the following day’s closing price will be compared to the most recent prior closing price.\n\nThe ‘most recent prior closing price’ always refers to the latest regular session close preceding the earnings release. Only official closing prices from regular trading days will be used.\n\nIf the two specified closing prices are exactly equal, this market will resolve 50-50. Note that all figures will be rounded to the nearest cent using standard rounding.\n\nIf MTN does not trade at all during the specified regular session, or if the company does not release earnings within 60 calendar days of this market's creation, this market will resolve 50-50.\n\nIf either of the relevant days is shortened (for example, due to a market holiday), the official closing price published by the NYSE for that shortened session will still be used for resolution.\n\nIf either of the relevant days has no official closing price (for example, due to a trading halt into the market close, system issue, delisting, or other disruption), the market will use the last valid on-exchange trade price of the regular session as the effective closing price.\n\nThe resolution source for this market is the NYSE Historic Prices page (nyse.com), specifically the Close values for MTN.",
+    "options": [
+      "Up",
+      "Down"
+    ],
+    "close_date": "2025-12-11",
+    "resolved_to": "Up"
+  },
+  {
+    "id": "how-many-dissent-at-the-next-fed-meeting-113",
+    "title": "How many dissent at the next Fed meeting?",
+    "description": "The next Federal Open Market Committee (FOMC) meeting is scheduled for April 28-29, 2026. The policy decision will be announced at 2:00 PM Eastern Time on April 29, followed by the Fed Chair’s press conference at around 2:30 PM ET.\n\nThis market will resolve according to the number of dissenting votes recorded at the next Federal Reserve Open Market Committee monetary policy meeting, specifically those dissenting on the Fed Funds Rate decision.\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for April 28-29, 2026, according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their April meeting with relevant data is issued; however, a consensus of credible reporting will also be used.",
+    "options": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4+"
+    ],
+    "close_date": "2026-04-29",
+    "resolved_to": "1"
+  },
+  {
+    "id": "will-it-rain-during-the-dutch-grand-prix-20260803152238319",
+    "title": "Will it rain during the Dutch Grand Prix?",
+    "description": "This market resolves \"Yes\" if the RAINFALL trace on the FIA Race Weather Report for the 2026 F1 Dutch Grand Prix registers 'Wet' at any point during the Race session for the 2026 F1 Dutch Grand Prix taking place on August 23, 2026. This market will resolve \"No\" if the RAINFALL trace on the FIA Race Weather Report for the 2026 F1 Dutch Grand Prix does not register 'Wet' at any point.\n\nThe FIA Weather Report will be available on the Event&Timing Information page: https://www.fia.com/events/fia-formula-one-world-championship/season-2026/formula-one. If this link is unavailable, the report will be located via FIA's official F1 season hub at fia.com.\n\nThis market covers the Race session only. Rain during Free Practice, Qualifying, Sprint or any other session does not affect this market's resolution. If the Race is suspended or restarted, the FIA Race Weather Report covering the complete, final classified running of the Race is the resolution source. If the 2026 F1 Dutch Grand Prix is canceled or postponed to a date after August 31, 2026, this market resolves 50-50.\n\nDeclarations by Race Control that \"the track is wet\", broadcast commentary, news reporting, or any other secondary sources do not qualify for resolution, only the FIA's official Race Weather Report for the 2026 F1 Dutch Grand Prix will qualify.\n\nIf the FIA Race Weather Report has not been published by August 31, 2026, this market will resolve to \"No\".",
+    "options": [],
+    "close_date": "2026-09-01",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "mark-cuban-to-announce-presidential-run-by-eoy",
+    "title": "Mark Cuban to announce presidential run by EOY?",
+    "description": "This market will resolve to \"Yes\" if Mark Cuban announces that he is running for president of the United States of America in 2024, by December 31, 2023, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nFor the purpose of resolving this market, an announcement by Mark Cuban will be sufficient to trigger a \"Yes\" resolution, regardless of whether he actually filed to run for president of the United States, or whether he actually files to run for president in the future.\n\nThe primary resolution source for this market will be official statements by Mark Cuban (ex: via speech, social media, etc.) or his legal representation, however a consensus of credible reporting may also be used.\n",
+    "options": [],
+    "close_date": "2023-12-31",
+    "resolved_to": "No"
+  },
+  {
+    "id": "trump-and-biden-debate-before-presidential-election",
+    "title": "Trump and Biden debate before Election?",
+    "description": "This market will resolve to \"Yes\" if Donald Trump and Joe Biden engage in a live, publicly-broadcast debate for 2024 US presidential election candidates by November 4, 2024, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nBoth in-person debates and virtual debates will count toward a \"Yes\" resolution for this market.\n\nThe resolution source for this market will be footage of such a debate, however a consensus of credible sources will also be used.",
+    "options": [],
+    "close_date": "2024-11-05",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-manchin-announce-presidential-run-by-mar-5",
+    "title": "Will Manchin announce presidential run by Mar 5?",
+    "description": "This market will resolve to \"Yes\" if Joe Manchin (D-WV) announces that he is running for president of the United States of America in 2024, by March 5, 2024, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nFor the purpose of resolving this market, an announcement by Joe Manchin will be sufficient to trigger a \"Yes\" resolution, regardless of whether he actually filed to run for president of the United States, or whether he actually files to run for president in the future.\n\nThe primary resolution source for this market will be official statements by Joe Manchin (ex: via speech, social media, etc.) or his legal representation, however a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2024-03-05",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-michelle-obama-announce-presidential-run-before-august",
+    "title": "Will Michelle Obama announce presidential run before August?",
+    "description": "This market will resolve to \"Yes\" if Michelle Obama, former First Lady of the United States, announces that she is running for president of the United States of America in 2024 by July 31, 2024, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nFor the purpose of resolving this market, an announcement by Michelle Obama will be sufficient to trigger a \"Yes\" resolution, regardless of whether she actually filed to run for president of the United States, or whether she actually files to run for president in the future.\n\nThe primary resolution source for this market will be official statements by Michelle Obama (ex: via speech, social media, etc.) or her legal representation, however a consensus of credible reporting may also be used.",
+    "options": [],
+    "close_date": "2024-07-31",
+    "resolved_to": "No"
+  },
+  {
+    "id": "japan-grand-prix-winner",
+    "title": "Japan Grand Prix Winner",
+    "description": "This market will resolve according to the winner of the 2025 Japan Grand Prix scheduled for April 6, 2025. \n\nIf the 2025 Japanese Grand Prix is canceled or rescheduled to a date after April 28, 2025, this market will resolve to “Other.”\n\nThe resolution source will be the official Formula 1 website and credible sports news reporting.\n\n",
+    "options": [
+      "Lando Norris",
+      "Oscar Piastri",
+      "Max Verstappen",
+      "Charles Leclerc",
+      "George Russel ",
+      "Lewis Hamilton",
+      "Yuki Tsunoda",
+      "Kimi Antonelli",
+      "Liam Lawson",
+      "Carlos Sainz",
+      "Alex Albon",
+      "Isack Hadjar",
+      "Lance Stroll ",
+      "Pierre Gasly",
+      "Fernando Alonso",
+      "Nico Hulkenberg",
+      "Esteban Ocon",
+      "Gabriel Bortoleto",
+      "Oliver Bearman",
+      "Jack Doohan ",
+      "Other"
+    ],
+    "close_date": "2025-04-06",
+    "resolved_to": "Max Verstappen"
+  },
+  {
+    "id": "monaco-grand-prix-winner",
+    "title": "Monaco Grand Prix Winner",
+    "description": "This market will resolve according to the winner of the 2025 Monaco Grand Prix scheduled for May 25, 2025. \n\nIf the 2025 Monaco Grand Prix is canceled or rescheduled to a date after June 25, 2025, this market will resolve to “Other.”\n\nThe resolution source will be the official Formula 1 website and credible sports news reporting.",
+    "options": [
+      "Lando Norris",
+      "Oscar Piastri",
+      "Charles Leclerc",
+      "Lewis Hamilton",
+      "Max Verstappen",
+      "Liam Lawson",
+      "Andrea Antonelli",
+      "George Russell",
+      "Fernando Alonso",
+      "Lance Stroll",
+      "Jack Doohan",
+      "Pierre Gasly",
+      "Esteban Ocon",
+      "Oliver Bearman",
+      "Isack Hadjar",
+      "Yuki Tsunoda",
+      "Alex Albon",
+      "Carlos Sainz Jr.",
+      "Gabriel Bortoleto",
+      "Nico Hülkenberg",
+      "Other"
+    ],
+    "close_date": "2025-05-25",
+    "resolved_to": "Lando Norris"
+  },
+  {
+    "id": "united-states-grand-prix-winner",
+    "title": "United States Grand Prix Winner",
+    "description": "This is a polymarket on the winner of the 2025 F1 United States Grand Prix, scheduled for October 19, 2025.\n\nIf the 2025 F1 United States Grand Prix is canceled or rescheduled to a date after December 1, 2025, this market will resolve to “Other.”\n\nThis market will resolve in favor of the driver who is officially listed in first place in the \"Final Classification\" published by the FIA following the conclusion of the race. The \"Final Classification\" is typically released 30–60 minutes after the race ends and includes any applied time penalties and official adjustments.\n\nDisqualifications or changes made after the publication of the \"Final Classification\" will not affect market resolution. The timing of the podium ceremony does not determine the result for this market — only the FIA's published classification will be used to resolve this market.\n\nThe resolution source will be the official Formula 1 website and credible sports news reporting.",
+    "options": [
+      "Oscar Piastri",
+      "Lando Norris",
+      "Max Verstappen",
+      "Charles Leclerc",
+      "George Russell",
+      "Lewis Hamilton",
+      "Andrea Kimi Antonelli",
+      "Fernando Alonso",
+      "Yuki Tsunoda",
+      "Liam Lawson",
+      "Lance Stroll",
+      "Isack Hadjar",
+      "Carlos Sainz",
+      "Alexander Albon",
+      "Pierre Gasly",
+      "Oliver Bearman",
+      "Nico Hulkenberg",
+      "Gabriel Bortoleto",
+      "Franco Colapinto",
+      "Esteban Ocon",
+      "Other",
+      "Driver A",
+      "Driver B",
+      "Driver C",
+      "Driver D",
+      "Driver E",
+      "Driver F",
+      "Driver G",
+      "Driver H",
+      "Driver I",
+      "Driver J"
+    ],
+    "close_date": "2025-10-19",
+    "resolved_to": "Max Verstappen"
+  },
+  {
+    "id": "fastest-lap-at-f1-winter-testing",
+    "title": "Fastest Lap at F1 Winter Testing?",
+    "description": "This is a market on which driver will achieve the fastest lap during F1 winter testing.",
+    "options": [
+      "Alpine",
+      "Aston Martin",
+      "Ferrari",
+      "Haas",
+      "Kick Sauber",
+      "McLaren",
+      "Racing Bulls",
+      "Red Bull Racing",
+      "Delayed/Canceled",
+      "Mercedes",
+      "Williams"
+    ],
+    "close_date": "2025-02-28",
+    "resolved_to": "Williams"
+  },
+  {
+    "id": "2025-us-open-golf-winner",
+    "title": "2025 U.S. Open Winner (Golf)",
+    "description": "This market will resolve according to the player who wins The 2025 U.S. Open. \n\nIf this player is mathematically eliminated from contention for The U.S. Open based on the official rules of the tournament, the relevant market will resolve to \"No\".\n\nIn the event of a tie, this market will resolve according to the official winner based on the official rules of the tournament.\n\nIf no winner is announced by December 31, 2025, this market will resolve to \"Other\".\n\nThe primary resolution source will be the first official results published by the U.S. Open website (usopen.com).",
+    "options": [
+      "Scottie Scheffler",
+      "Xander Schauffele",
+      "Rory McIlroy",
+      "Collin Morikawa",
+      "Ludvig Aberg",
+      "Viktor Hovland",
+      "Hideki Matsuyama",
+      "Patrick Cantlay",
+      "Justin Thomas",
+      "Tom Kim",
+      "Sahith Theegala",
+      "Tony Finau",
+      "Wyndham Clark",
+      "Russell Henley",
+      "Jordan Spieth",
+      "Cameron Young",
+      "Sam Burns",
+      "Sungjae Im",
+      "Tommy Fleetwood",
+      "Bryson DeChambeau",
+      "Jon Rahm",
+      "Brooks Koepka",
+      "Joaquin Niemann",
+      "Tyrrell Hatton",
+      "J.J. Spaun",
+      "Adam Scott",
+      "Carlos Ortiz",
+      "Other",
+      "Player I"
+    ],
+    "close_date": "2026-06-15",
+    "resolved_to": "J.J. Spaun"
+  },
+  {
+    "id": "will-burnley-beat-aston-villa-8272023",
+    "title": "Will Burnley beat Aston Villa?",
+    "description": "In the upcoming Premier League soccer match scheduled for August 27, 2023:\n\nIf Burnley wins, this market will resolve to \"Yes\". Otherwise, this market will resolve to \"No\".\n\nIf the game results in a draw, the market resolves to \"No.\"\n\nIf the game is not completed by September 10, 2023, the market will resolve to 50-50.",
+    "options": [],
+    "close_date": "2023-08-27",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-manchester-city-beat-sheffield-united-8272023",
+    "title": "Will Manchester City beat Sheffield United?",
+    "description": "In the upcoming Premier League soccer match scheduled for August 27, 2023:\n\nIf Manchester City wins, this market will resolve to \"Yes\". Otherwise, this market will resolve to \"No\".\n\nIf the game results in a draw, the market resolves to \"No.\"\n\nIf the game is not completed by September 10, 2023, the market will resolve to 50-50.",
+    "options": [],
+    "close_date": "2023-08-27",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-newcastle-beat-liverpool-8272023",
+    "title": "Will Newcastle beat Liverpool?",
+    "description": "In the upcoming Premier League soccer match scheduled for August 27, 2023:\n\nIf Newcastle wins, this market will resolve to \"Yes\". Otherwise, this market will resolve to \"No\".\n\nIf the game results in a draw, the market resolves to \"No.\"\n\nIf the game is not completed by September 10, 2023, the market will resolve to 50-50.",
+    "options": [],
+    "close_date": "2023-08-27",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-everton-beat-sheffield-utd-09022023",
+    "title": "Will Everton beat Sheffield Utd?",
+    "description": "In the upcoming Premier League soccer match scheduled for September 2, 2023:\n\nIf Everton wins, this market will resolve to \"Yes\". Otherwise, this market will resolve to \"No\".\n\nIf the game results in a draw, the market resolves to \"No.\"\n\nIf the game is not completed by September 16, 2023, the market will resolve to 50-50.",
+    "options": [],
+    "close_date": "2023-08-29",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-man-city-beat-fulham-09022023",
+    "title": "Will Man City beat Fulham?",
+    "description": "In the upcoming Premier League soccer match scheduled for September 2, 2023:\n\nIf Manchester City wins, this market will resolve to \"Yes\". Otherwise, this market will resolve to \"No\".\n\nIf the game results in a draw, the market resolves to \"No.\"\n\nIf the game is not completed by September 16, 2023, the market will resolve to 50-50.",
+    "options": [],
+    "close_date": "2023-08-29",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-chelsea-beat-nottingham-forest-09022023",
+    "title": "Will Chelsea beat Nottingham Forest?",
+    "description": "In the upcoming Premier League soccer match scheduled for September 2, 2023:\n\nIf Chelsea wins, this market will resolve to \"Yes\". Otherwise, this market will resolve to \"No\".\n\nIf the game results in a draw, the market resolves to \"No.\"\n\nIf the game is not completed by September 16, 2023, the market will resolve to 50-50.",
+    "options": [],
+    "close_date": "2023-08-29",
+    "resolved_to": "No"
+  },
+  {
+    "id": "will-tottenham-beat-burnley-09022023",
+    "title": "Will Tottenham beat Burnley?",
+    "description": "In the upcoming Premier League soccer match scheduled for September 2, 2023:\n\nIf Tottenham wins, this market will resolve to \"Yes\". Otherwise, this market will resolve to \"No\".\n\nIf the game results in a draw, the market resolves to \"No.\"\n\nIf the game is not completed by September 16, 2023, the market will resolve to 50-50.",
+    "options": [],
+    "close_date": "2023-08-29",
+    "resolved_to": "Yes"
+  },
+  {
+    "id": "will-brentford-beat-bournemouth-09022023",
+    "title": "Will Brentford beat Bournemouth?",
+    "description": "In the upcoming Premier League soccer match scheduled for September 2, 2023:\n\nIf Brentford wins, this market will resolve to \"Yes\". Otherwise, this market will resolve to \"No\".\n\nIf the game results in a draw, the market resolves to \"No.\"\n\nIf the game is not completed by September 16, 2023, the market will resolve to 50-50.",
+    "options": [],
+    "close_date": "2023-08-29",
+    "resolved_to": "No"
+  },
+  {
+    "id": "nfl-wsh-bal-2023-08-21",
+    "title": "NFL: Washington Commanders vs. Baltimore Ravens 2023-08-21",
+    "description": "In the upcoming NFL game, scheduled for August 21, 8:00 PM ET:\n\nIf the Washington Commanders win, the market will resolve to “Commanders”.\n\nIf the Baltimore Ravens win, the market will resolve to “Ravens”.\n\n If the game is not completed by August 28, 2023 (11:59 PM ET) or it ends in a tie, the market will resolve 50-50.",
+    "options": [
+      "Commanders",
+      "Ravens"
+    ],
+    "close_date": "2023-08-21",
+    "resolved_to": "Commanders"
+  },
+  {
+    "id": "nfl-lac-no-2023-08-20",
+    "title": "NFL: Los Angeles Chargers vs. New Orleans Saints 2023-08-20",
+    "description": "In the upcoming NFL game, scheduled for August 20, 7:05 PM ET:\n\nIf the Los Angeles Chargers win, the market will resolve to “Chargers”.\n\nIf the New Orleans Saints win, the market will resolve to “Saints”.\n\n If the game is not completed by August 27, 2023 (11:59 PM ET) or it ends in a tie, the market will resolve 50-50.",
+    "options": [
+      "Chargers",
+      "Saints"
+    ],
+    "close_date": "2023-08-20",
+    "resolved_to": "Saints"
+  },
+  {
+    "id": "nfl-buf-pit-2024-01-14",
+    "title": "Bills vs. Steelers",
+    "description": "In the upcoming NFL game, scheduled for January 14 at 1:00 PM ET:\n\nIf the Buffalo Bills win, the market will resolve to “Bills”.\n\nIf the Pittsburgh Steelers win, the market will resolve to “Steelers”.\n\n If the game is not completed by January 21, 2024 (11:59 PM ET) or it ends in a tie, the market will resolve 50-50.",
+    "options": [
+      "Bills",
+      "Steelers"
+    ],
+    "close_date": "2024-01-14",
+    "resolved_to": "Bills"
+  },
+  {
+    "id": "nfl-dal-gb-2024-01-14",
+    "title": "Cowboys vs. Packers",
+    "description": "In the upcoming NFL game, scheduled for January 14 at 4:30 PM ET:\n\nIf the Dallas Cowboys win, the market will resolve to “Cowboys”.\n\nIf the Green Bay Packers win, the market will resolve to “Packers”.\n\n If the game is not completed by January 21, 2024 (11:59 PM ET) or it ends in a tie, the market will resolve 50-50.",
+    "options": [
+      "Cowboys",
+      "Packers"
+    ],
+    "close_date": "2024-01-14",
+    "resolved_to": "Packers"
+  },
+  {
+    "id": "nfl-det-lar-2024-01-14",
+    "title": "Lions vs. Rams",
+    "description": "In the upcoming NFL game, scheduled for January 14 at 8:00 PM ET:\n\nIf the Detroit Lions win, the market will resolve to “Lions”.\n\nIf the Los Angeles Rams win, the market will resolve to “Rams”.\n\n If the game is not completed by January 21, 2024 (11:59 PM ET) or it ends in a tie, the market will resolve 50-50.",
+    "options": [
+      "Lions",
+      "Rams"
+    ],
+    "close_date": "2024-01-14",
+    "resolved_to": "Lions"
+  },
+  {
+    "id": "nfl-hou-cle-2024-01-13",
+    "title": "Texans vs. Browns",
+    "description": "In the upcoming NFL game, scheduled for January 13 at 4:30 PM ET:\n\nIf the Houston Texans win, the market will resolve to “Texans”.\n\nIf the Cleveland Browns win, the market will resolve to “Browns”.\n\n If the game is not completed by January 20, 2024 (11:59 PM ET) or it ends in a tie, the market will resolve 50-50.",
+    "options": [
+      "Texans",
+      "Browns"
+    ],
+    "close_date": "2024-01-13",
+    "resolved_to": "Texans"
+  },
+  {
+    "id": "nba-min-dal-2024-05-30",
+    "title": "Timberwolves vs. Mavericks: Game 5",
+    "description": "This market refers to Game 5 of the NBA Playoff series between the Minnesota Timberwolves and Dallas Mavericks.\n\nIf the Minnesota Timberwolves win, the market will resolve to “Timberwolves”.\n\nIf the Dallas Mavericks win, the market will resolve to “Mavericks”.\n\nIf the game is not completed by June 5, 2024 (11:59 PM ET), the market will resolve 50-50.\n",
+    "options": [
+      "Timberwolves",
+      "Mavericks"
+    ],
+    "close_date": "2024-05-30",
+    "resolved_to": "Mavericks"
+  },
+  {
+    "id": "nba-min-phx-2024-04-20",
+    "title": "Timberwolves vs. Suns",
+    "description": "In the upcoming NBA game, scheduled for April 20:\n     \nIf the Minnesota Timberwolves win, the market will resolve to \"Timberwolves”.\n\nIf the Phoenix Suns win, the market will resolve to “Suns”.\n\nIf the game is not completed by April 26, 2024 11:59 PM ET, the market will resolve 50-50.\n",
+    "options": [
+      "Timberwolves",
+      "Suns"
+    ],
+    "close_date": null,
+    "resolved_to": "Timberwolves"
+  },
+  {
+    "id": "nba-cle-orl-2024-04-20",
+    "title": "Cavaliers vs. Magic",
+    "description": "In the upcoming NBA game, scheduled for April 20:\n\nIf the Cleveland Cavaliers win, the market will resolve to “Cavaliers”.\n\nIf the Orlando Magic win, the market will resolve to “Magic”.\n\nIf the game is not completed by April 26, 2024 11:59 PM ET, the market will resolve 50-50.\n",
+    "options": [
+      "Cavaliers",
+      "Magic"
+    ],
+    "close_date": null,
+    "resolved_to": "Cavaliers"
+  },
+  {
+    "id": "nba-den-lal-2024-04-20",
+    "title": "Nuggets vs. Lakers",
+    "description": "In the upcoming NBA game, scheduled for April 20:\n\nIf the Denver Nuggets win, the market will resolve to \"Nuggets”.\n\nIf the Los Angles Lakers win, the market will resolve to “Lakers”.\n\nIf the game is not completed by April 26, 2024 11:59 PM ET, the market will resolve 50-50.\n",
+    "options": [
+      "Nuggets",
+      "Lakers"
+    ],
+    "close_date": null,
+    "resolved_to": "Nuggets"
   }
 ]
