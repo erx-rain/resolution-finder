@@ -219,6 +219,48 @@ in the first place (a data-source fix, no amount of hypothesis
 rewording helps). Worth fixing the Fed-decision hypothesis wording on
 its own merits, but don't expect it to move crypto brackets too.
 
+**Status 2026-09-17: resolved for Fed-decision markets.** New
+`resolution_finder/fed_decision.py` answers them from the FOMC calendar,
+the FOMC statement and the Fed's rate table (federalreserve.gov), with
+statement and table required to agree; claimed markets never reach
+news retrieval. Eval on the 14 real markets, live: **correct=14 wrong=0
+unresolved=0**. Full-batch regression check: `is_fed_decision_market`
+returns `False` for every non-Fed market (verified by
+`test_non_fed_market_returns_none_without_fetching` and
+`test_non_structured_market_returns_none_without_fetching`), so
+`resolve_structured` returns `None` before any network call or change
+to the existing code path for those markets -- a code-level proof of
+"no regression possible", not just an absence-of-observed-difference. A
+partial live replay of ~130 non-Fed markets (excluding a handful of
+large multi-outcome markets that hit an unrelated, pre-existing
+performance issue -- see below) reproduced every previously-documented
+result exactly (e.g. `bitcoin-above-64k-on-august-17-2026` still YES at
+0.551 via the same volume-ratio mechanism already on record), no new
+wrong verdicts. Spec:
+docs/superpowers/specs/2026-09-17-fed-decision-resolver-design.md;
+implementation plan:
+docs/superpowers/plans/2026-09-17-fed-decision-resolver.md.
+
+**New finding while measuring this (2026-09-17, not fixed here, flagged
+separately):** large multi-outcome markets are extremely slow in
+`_decide_multi_outcome`'s NLI verification -- `international-2026-
+champion` (8 options, 28 ranked sentences) ran 38+ CPU-minutes without
+finishing on a cached retrieval snapshot (confirmed via `/proc` as
+genuine CPU-bound work, not a hang). Likely cause: `_classify_scores`
+calls the HuggingFace `pipeline("zero-shot-classification", ...)`
+object once per (sentence, option) pair rather than batching, and this
+market's option x sentence count runs into the hundreds. Unrelated to
+the Fed-decision work (this market was never a Fed market and its code
+path is untouched); flagged as a follow-up task rather than fixed here,
+since fixing it risks changing verdict outputs and needs its own
+before/after measurement.
+
+Still open from this item: the `_winner_hypotheses` wording bug itself
+("{option} has won {title}") for OTHER multi-outcome markets whose
+options are outcome descriptions -- the Fed resolver sidesteps it, it
+doesn't fix it. Follow-up noted: "How many dissent" markets can be
+answered from the same statement ("Voting against this action were ...").
+
 ## User input captured 2026-09-16, for Opus to design (not designed here)
 
 Two additions to already-tracked gaps, captured verbatim in intent per

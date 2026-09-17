@@ -202,3 +202,16 @@ frequency, worth measuring before deciding to invest here.
   caveat: the Bing UA fix landed in the same window, so this comparison
   reflects everything shipped since 09-07, not an isolated A/B on the
   elimination fix alone.
+
+## Done 2026-09-17 (Opus planning session)
+
+- Fed-decision markets: built (see unsupported-market-types.md item 7
+  status for the eval numbers -- correct=14 wrong=0 unresolved=0 on the
+  real 14-market set, live).
+- Crypto/currency/gold/stock price markets: deliberately NOT built -- no
+  free source licensed for commercial settlement use was found. Full
+  handoff: docs/superpowers/plans/2026-09-17-price-markets-handoff.md
+  (includes the submarket-reopening requirement).
+- New follow-up flagged (not part of this session's scope): large
+  multi-outcome markets are extremely slow in NLI verification --
+  see unsupported-market-types.md item 7's "New finding" note.
