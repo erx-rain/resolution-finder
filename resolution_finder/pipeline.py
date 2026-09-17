@@ -13,12 +13,14 @@ from resolution_finder.verdict_engine import decide
 from resolution_finder.peer_market import find_polymarket_match
 from resolution_finder.resolution_spec import check_availability
 from resolution_finder.storage import init_db, save_finding
+from resolution_finder.structured_resolvers import resolve_structured
 from resolution_finder.config import REQUEST_DELAY_SECONDS, PEER_MARKET_ENABLED
 
 logger = logging.getLogger(__name__)
 
 VerdictEngine = Callable[[Market, list[RankedArticle]], Verdict]
 PeerChecker = Callable[[Market], Optional[Verdict]]
+StructuredResolver = Callable[[Market], Optional[list[Verdict]]]
 
 
 def _promote_best_below_threshold(
@@ -71,6 +73,7 @@ def run_pipeline(
     db_path: str,
     verdict_engine: VerdictEngine = decide,
     peer_checker: PeerChecker = _default_peer_checker,
+    structured_resolver: StructuredResolver = resolve_structured,
 ) -> None:
     """Scan every unresolved market and store a proposed verdict for review.
 
@@ -80,13 +83,17 @@ def run_pipeline(
     Polymarket cross-check can be swapped out (or stubbed in tests) without
     editing the pipeline. The default already honours `PEER_MARKET_ENABLED`
     (see `_default_peer_checker`).
+
+    `structured_resolver` runs first and is injected the same way: a market
+    it claims (e.g. a Fed rate decision, answered from federalreserve.gov)
+    is saved from its verdicts and never reaches peer-check or news.
     """
     init_db(db_path)
     run_timestamp = datetime.now(timezone.utc).isoformat()
 
     for market in market_provider.get_unresolved_markets():
         try:
-            _scan_market(market, db_path, run_timestamp, verdict_engine, peer_checker)
+            _scan_market(market, db_path, run_timestamp, verdict_engine, peer_checker, structured_resolver)
         except Exception as exc:  # noqa: BLE001 - one bad market must not abort the run
             logger.exception("Skipping market %s after error: %s", market.id, exc)
 
@@ -97,6 +104,7 @@ def _scan_market(
     run_timestamp: str,
     verdict_engine: VerdictEngine,
     peer_checker: PeerChecker,
+    structured_resolver: StructuredResolver,
 ) -> None:
     # Computed once per market, independent of everything below -- pure
     # date arithmetic against the market's close_date and its own
@@ -113,6 +121,16 @@ def _scan_market(
     # glance, a wrong outcome resolves a market incorrectly, so this can
     # ship at a much lower bar without touching verdict_engine's own.
     availability = check_availability(market)
+
+    # A market answered from its own official structured source (Fed rate
+    # decisions today) never falls through to peer-check or news -- for
+    # these types the news path is where wrong answers come from. See
+    # structured_resolvers.py.
+    structured_verdicts = structured_resolver(market)
+    if structured_verdicts is not None:
+        for verdict in structured_verdicts:
+            save_finding(db_path, market.id, run_timestamp, verdict, availability)
+        return
 
     peer_verdict = peer_checker(market)
     if peer_verdict is not None:

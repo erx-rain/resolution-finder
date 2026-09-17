@@ -424,3 +424,43 @@ def test_run_pipeline_logs_and_skips_a_failing_market(mock_retrieve, mock_extrac
     assert "boom" in caplog.text
     assert "upstream exploded" in caplog.text
     os.remove(db_path)
+
+
+def test_run_pipeline_saves_structured_verdicts_and_skips_peer_check_and_news():
+    # run_pipeline logs and skips a market whose scan raises, so "must not
+    # run" is checked by recording calls, not by raising inside the stubs.
+    statement_url = "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251210a.htm"
+    peer_calls, engine_calls = [], []
+
+    def fake_structured_resolver(market):
+        return [
+            Verdict(outcome="YES", option="25 bps decrease", confidence=1.0,
+                    evidence_snippet="the Committee decided to lower the target range",
+                    source_url=statement_url, source_type="primary"),
+            Verdict(outcome="NO", option="No change", confidence=1.0,
+                    evidence_snippet="the Committee decided to lower the target range",
+                    source_url=statement_url, source_type="primary"),
+        ]
+
+    db_path = temp_db_path()
+    with patch("resolution_finder.pipeline.retrieve_evidence") as mock_retrieve:
+        run_pipeline(
+            FakeMarketProvider(), db_path,
+            verdict_engine=lambda market, ranked: engine_calls.append(market.id),
+            peer_checker=lambda market: peer_calls.append(market.id),
+            structured_resolver=fake_structured_resolver,
+        )
+
+    findings = {f["option"]: f for f in get_latest_findings(db_path)}
+    assert findings["25 bps decrease"]["outcome"] == "YES"
+    assert findings["25 bps decrease"]["source_type"] == "primary"
+    assert findings["No change"]["outcome"] == "NO"
+    assert peer_calls == []
+    assert engine_calls == []
+    mock_retrieve.assert_not_called()
+    os.remove(db_path)
+
+
+def test_run_pipeline_defaults_structured_resolver_to_resolve_structured():
+    import resolution_finder.pipeline as pipeline_module
+    assert pipeline_module.run_pipeline.__defaults__[2] is pipeline_module.resolve_structured
