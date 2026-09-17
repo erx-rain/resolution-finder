@@ -139,11 +139,23 @@ If the year isn't on the calendar page -> UNCLEAR.
 
 ### Step 3 -- statement published?
 
+Sanity first: the meeting's decision date (last meeting day) must be
+within 3 days of `close_date` when `close_date` is set, else UNCLEAR.
+Checked before the published check so a wrongly matched meeting can
+never hide behind NO_EVIDENCE.
+
 Row has no statement link -> one whole-market verdict
 `NO_EVIDENCE` ("FOMC statement not yet published"). Nothing to look at.
 
-Sanity: statement date (from the link) must be within 3 days of
-`close_date` when `close_date` is set, else UNCLEAR.
+Real calendar details (checked 2026-09-17): two-month meetings use
+abbreviations (`Apr/May` 30-1, `Jan/Feb` 31-1, `Oct/Nov` 31-1), and the
+`22 (notation vote)` entry in August 2025 HAS a statement link -- it is
+skipped because its date text isn't a plain day or day range.
+
+The calendar and rate-table pages are served as `text/html` with no
+charset, so a plain `requests` decode would fall back to ISO-8859-1 and
+mangle the U+2011 hyphens in "3‑3/4". Production fetch decodes as UTF-8
+when the header names no charset.
 
 The description's "no statement by the next meeting -> No change"
 default is **not** auto-applied: absence of a link is indistinguishable

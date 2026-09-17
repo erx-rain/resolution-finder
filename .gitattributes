@@ -1,0 +1,3 @@
+# Test fixtures are real pages saved byte-for-byte; never rewrite their
+# line endings.
+tests/fixtures/** -text
