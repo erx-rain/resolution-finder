@@ -2651,3 +2651,63 @@ def test_binary_market_no_path_stays_unclear_on_a_single_uncorroborated_source()
     verdict = decide(DJOKOVIC_MARKET, evidence)
     assert verdict.outcome == "UNCLEAR"
     assert "Only 1 independent source" in verdict.evidence_snippet
+
+
+# Real bugs found live (2026-09-16, fresh-batch eval): two real markets
+# (nfl-wsh-bal-2023-08-21, nfl-lac-no-2023-08-20) resolved to the LOSING
+# team. Both markets' only evidence was a bare Google News headline of the
+# shape "Team A vs. Team B - Final Score - ..." -- SENTENCE_SPLIT_PATTERN
+# split right at "vs." (lowercase, so the existing `[A-Z]\.` guard for
+# "U.S."/"H.R." never covered it), leaving a second fragment that names
+# only ONE team with no mention of the other. The semantic fallback then
+# misread that fragment -- which never actually says anyone won -- as a
+# specific winner claim. "Team A vs. Team B" is the standard shape of a
+# head-to-head headline in this project's own sports vertical, not a rare
+# edge case, so this gets its own regression coverage.
+
+def test_split_sentences_does_not_break_on_vs_period():
+    from resolution_finder.verdict_engine import _split_sentences
+    # Real headline text, verbatim, from the two markets above.
+    assert _split_sentences(
+        "New Orleans Saints vs. Los Angeles Chargers - Final Score - "
+        "August 20, 2023 - FOX Sports"
+    ) == [
+        "New Orleans Saints vs. Los Angeles Chargers - Final Score - "
+        "August 20, 2023 - FOX Sports"
+    ]
+    assert _split_sentences(
+        "Ravens vs. Commanders Preseason 2 | Everything You Need to Know "
+        "Preview - Baltimore Ravens"
+    ) == [
+        "Ravens vs. Commanders Preseason 2 | Everything You Need to Know "
+        "Preview - Baltimore Ravens"
+    ]
+
+
+def test_split_sentences_still_splits_on_a_real_sentence_boundary_after_vs():
+    # Guards against a fix that's too broad -- a genuine sentence ending
+    # right after "vs." text elsewhere in a longer passage must still split.
+    from resolution_finder.verdict_engine import _split_sentences
+    assert _split_sentences(
+        "Team USA vs. Team Canada faced off. Canada won 3-1."
+    ) == ["Team USA vs. Team Canada faced off.", "Canada won 3-1."]
+
+
+def test_multi_outcome_market_does_not_crown_a_winner_from_a_bare_vs_headline():
+    # End-to-end reproduction of the real nfl-lac-no-2023-08-20 bug: the
+    # ONLY evidence is a neutral "Team A vs. Team B - Final Score" headline
+    # that never actually states a winner -- before the sentence-split fix,
+    # this wrongly resolved "Chargers" to YES (the real answer: Saints).
+    market = Market(
+        id="nfl-lac-no-2023-08-20",
+        title="NFL: New Orleans Saints vs. Los Angeles Chargers 2023-08-20",
+        description="", options=["Saints", "Chargers"],
+        close_date=date(2023, 8, 20),
+    )
+    evidence = [make_ranked(
+        "New Orleans Saints vs. Los Angeles Chargers - Final Score - "
+        "August 20, 2023 - FOX Sports",
+        url="https://news.google.com/rss/articles/x", source_type="general",
+    )]
+    verdicts = decide(market, evidence)
+    assert not any(v.option == "Chargers" and v.outcome == "YES" for v in verdicts)

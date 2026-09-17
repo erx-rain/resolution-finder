@@ -470,7 +470,25 @@ def _decide_numeric_threshold(
 # "U.S. House" and "H.R. ####" are everywhere, including in market descriptions.
 # Known residual gap (accepted): Title-case abbreviations like "Sen.", "Rep."
 # and "Jan." still split, since matching those needs a real abbreviation list.
-SENTENCE_SPLIT_PATTERN = re.compile(r"(?<![A-Z]\.)(?<=[.!?])\s+")
+#
+# The `(?<!(?i:vs\.))` lookbehind is a second, separately load-bearing guard,
+# added after two real wrong verdicts (2026-09-16, fresh-batch eval,
+# nfl-wsh-bal-2023-08-21 and nfl-lac-no-2023-08-20). Both markets' only
+# evidence was a Google News headline of the shape "Team A vs. Team B -
+# Final Score - ...", and this pattern split it right at "vs." -- unlike
+# "U.S."/"H.R.", "vs." is lowercase, so the `[A-Z]\.` guard above never
+# covered it. The resulting second fragment ("Los Angeles Chargers - Final
+# Score - August 20, 2023 - FOX Sports") names only ONE team with no
+# mention of the other, so the semantic fallback confidently misread a
+# neutral score-report headline fragment as a specific winner claim --
+# for BOTH markets, the option that fragment happened to name was the
+# LOSING team. "Team A vs. Team B" is not a rare edge case in this
+# project's own sports vertical, unlike "Sen."/"Rep."/"Jan." above -- it
+# is the standard shape of a head-to-head matchup headline, so this one
+# gets fixed rather than accepted. Verified this does not reopen the
+# U.S./H.R. fix: "Team USA vs. Team Canada faced off. Canada won 3-1."
+# still splits correctly at the real sentence boundary.
+SENTENCE_SPLIT_PATTERN = re.compile(r"(?<![A-Z]\.)(?<!(?i:vs\.))(?<=[.!?])\s+")
 
 # Words/phrases that turn a sentence hypothetical or negated, e.g. "if
 # enacted" or "has not been signed" — a keyword match inside one of these
