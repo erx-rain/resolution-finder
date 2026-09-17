@@ -21,15 +21,17 @@ resolution source. Every candidate source checked:
 | Pyth (`pythdata.app`, Benchmarks/Hermes API) | Old TradingView-history shim now 404. Since the Pyth Core upgrade (2026-08-26 16:00 UTC) every request needs `Authorization: Bearer $PYTH_API_KEY`. | **Paid.** Data plans start around $500/month. |
 | Coinbase Exchange public candles (`api.exchange.coinbase.com/products/BTC-USDT/candles`) | Yes -- keyless, 1-minute history works. | **No.** Market Data Terms (updated 2026-08-07) restrict use to personal or research purposes, and explicitly bar using the data to determine amounts payable under a financial product -- i.e. settlement. |
 | CoinGecko | Not tested. | **No** on the free Demo plan (no commercial license); paid plans only. |
-| Kraken public OHLC (`api.kraken.com/0/public/OHLC`) | Partly: the REST endpoint only returns the most recent ~720 candles (about 12 hours at 1-minute), `since` is ignored beyond that. Bulk historical CSVs exist separately. | **Unverified.** No market-data-specific terms found on kraken.com/legal. Needs a real read before use. |
-| Chainlink on-chain price feeds (historical rounds via `getRoundData`) | Not tested. | **Unverified.** Public blockchain data, but Chainlink's own terms were not read. Precision caveat: feeds update on a deviation threshold (about 0.5% for major pairs) or a heartbeat, so a price at an exact minute is only known to within that band. |
+| Kraken public OHLC (`api.kraken.com/0/public/OHLC`) | Partly: the REST endpoint only returns the most recent ~720 candles (about 12 hours at 1-minute), `since` is ignored beyond that. Bulk historical CSVs exist separately. | **No** (read 2026-09-17, Kraken Global Terms of Service). Kraken content may be used "only for your own benefit"; commercially exploiting it or making it available to third parties is prohibited; any other use needs permission via marketdata@kraken.com. |
+| Chainlink on-chain price feeds (historical rounds via `getRoundData`) | Not tested. | **Ambiguous** (read 2026-09-17, Chainlink Foundation Terms of Service v6.0, effective 2026-08-18). Grants a limited license to use the Services "in accordance with their intended uses and using their designated public interfaces"; feeds are published for consumption through the on-chain aggregator interface. No explicit ban on commercial consumption of feed data, but no explicit grant either, and it bars breaching third-party data-provider terms. A legal call for the user, not an engineering one. Precision caveat: feeds update on a deviation threshold (about 0.5% for major pairs on Ethereum mainnet) or a heartbeat, so a price at an exact minute is only known to within that band -- vs. real bracket widths of ~2-2.6%. |
 | Gold / US stock prices from any free commercial source | None found. | -- |
 
+**User decision 2026-09-17: leave blocked for now.**
+
 Ways to unblock, in the order worth trying:
-1. Read Chainlink's and Kraken's terms properly. If either clears, it
-   becomes a proxy source (section 4).
-2. Ask for written permission: Binance, or Coinbase (the terms list
-   marketdata@coinbase.com).
+1. The user's own legal review approves Chainlink -> it becomes a proxy
+   source (section 4), with the margin sized above its deviation band.
+2. Ask for written permission: Kraken (marketdata@kraken.com), Coinbase
+   (marketdata@coinbase.com), or Binance.
 3. Budget for a paid plan (Pyth covers crypto + gold + stocks, which is
    every market shape in this file).
 

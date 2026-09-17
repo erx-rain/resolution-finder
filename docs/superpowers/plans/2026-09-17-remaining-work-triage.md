@@ -13,7 +13,7 @@ Measurement scripts (untracked, `scratchpad/`): `profile_nli.py`,
 
 | Item | Verdict | Why |
 |---|---|---|
-| Congress/Senate official-record resolver | **Design next** | 6 real markets with truth, 0/6 resolved today. Public-domain government data, mostly deterministic (roll-call counts, confirmation passed/failed, bill status). Same shape as the Fed resolver. |
+| Congress/Senate official-record resolver | **Designed at outline level, not built** -- see 2026-09-17-congress-resolver-handoff.md. Needs a free api.data.gov key (user). | 6 real markets with truth, 0/6 resolved today. Public-domain government data, mostly deterministic (roll-call counts, confirmation passed/failed, bill status). Same shape as the Fed resolver. |
 | SCOTUS ruling resolver | **Design after Congress** | 9 real markets with truth, 0/9 resolved today. Public domain, but reading a holding ("upholds the ban") is interpretation, not a number -- harder to make wrong-proof. |
 | Fed dissent count | **Small add-on** | 1 market (truth "1"). Same FOMC statement the Fed resolver already fetches ("Voting against this action were ..."). |
 | NLI slowness | **Small safe fix only** | Smaller than first reported; only memoization is output-identical. |

@@ -215,3 +215,11 @@ frequency, worth measuring before deciding to invest here.
 - New follow-up flagged (not part of this session's scope): large
   multi-outcome markets are extremely slow in NLI verification --
   see unsupported-market-types.md item 7's "New finding" note.
+- Remaining planned work triaged against licensing texts and measurements:
+  docs/superpowers/plans/2026-09-17-remaining-work-triage.md.
+- Congress/Senate resolver: designed at outline level only, recorded
+  as-is for the next person (user's instruction: don't go deeper):
+  docs/superpowers/plans/2026-09-17-congress-resolver-handoff.md. Blocked
+  on a free api.data.gov key the user will get later.
+- Crypto: Kraken ruled out, Chainlink ambiguous; user chose to leave it
+  blocked. ESPN ruled out (Disney Terms of Use).

@@ -297,3 +297,10 @@ verification (see memory: scraping-tos-risk-practice -- the existing
 discipline throughout source_config.py of a live robots.txt + real
 fetch check before adding any source applies here too), and how this
 plugs into resolution_spec.py are all open, for Opus.
+
+**Checked 2026-09-17: ESPN is ruled out.** ESPN is covered by the Disney
+Terms of Use, which prohibit "any commercial or business-related use"
+and extraction "using a robot, spider, script, or other automated
+means". Its unofficial `site.api.espn.com` JSON endpoints fall under the
+same terms. A structured sports-data source is still a valid idea, but
+needs a different provider whose terms allow this use (not researched).
