@@ -147,10 +147,49 @@ Genuinely new shapes this surfaced, not yet run through the engine:
 - `vail-resorts-mtn-up-or-down-after-earnings` -- a new "stock move
   after earnings" binary shape.
 
-None of this has been run through decide() or scored yet -- flagging
-the shapes found, not results, since scoring needs its own eval pass
-first (currently the added 68 have no cached retrieval, so an eval run
-would be a full live fetch, ~68 markets' worth of real network time).
+**Update 2026-09-17 -- scored.** Ran the full 68-market fresh batch:
+
+    correct=12  wrong=0  unresolved=56
+
+(after a real bug fix below -- see the wrong=2 note). Confirms, on
+real data: all 14 Fed-decision markets unresolved (0%), all 13
+Bitcoin/Ethereum bracket markets unresolved (0%) -- exactly the
+predicted gaps, no surprises. International elections: 5/10 correct,
+0 wrong -- solid on a genuinely new geography. No crash, no new
+structural surprises beyond what was already flagged above.
+
+## New real bug found and fixed (2026-09-17): sentence-splitter breaks on "vs."
+
+Running the fresh batch surfaced 2 wrong verdicts (nfl-wsh-bal-2023-08-21,
+nfl-lac-no-2023-08-20), both resolving to the LOSING team. Root cause:
+`SENTENCE_SPLIT_PATTERN` split headlines shaped "Team A vs. Team B -
+Final Score - ..." right at "vs." (lowercase, so the existing `[A-Z]\.`
+guard built for "U.S."/"H.R." never covered it) -- the resulting
+fragment named only ONE team, and the semantic fallback misread it as a
+specific winner claim for a headline that never actually states a
+winner at all. Fixed (commit 602d3cd): added a case-insensitive,
+scoped lookbehind excluding "vs." specifically. 3 new tests (both real
+headlines verbatim, a check that real sentence boundaries near "vs."
+text still split, and an end-to-end decide() reproduction). Re-ran both
+markets: wrong -> UNCLEAR (honestly correct -- neither headline states
+a winner). Full suite: 310 passed. This is why the reported fresh-batch
+total above is wrong=0, not wrong=2.
+
+**Open question this raises for Opus (Q5):** the SAME pattern's own
+comment already documents an "accepted" residual gap for OTHER
+lowercase-abbreviation-like sentence-enders -- specifically "Sen.",
+"Rep.", "Jan." (Title-case, so technically different from "vs.", but
+the same failure MECHANISM: an abbreviation containing a period gets
+misread as a sentence boundary). "vs." was escalated from theoretical
+to a confirmed real wrong verdict. Worth deciding: audit for other
+live abbreviation-split risks proactively (a systematic pass), or wait
+for the next one to surface live and fix reactively as this project has
+consistently done so far? Given the standing priority that wrong should
+never be allowed to grow, a proactive audit may be worth the small
+upfront cost -- but "vs." was uniquely dangerous because it's the
+single most common word in this project's own sports-headline
+vertical; "Sen."/"Rep."/"Jan." may not carry the same real-world
+frequency, worth measuring before deciding to invest here.
 
 ## Not open questions (already decided, noted so Opus doesn't re-litigate)
 

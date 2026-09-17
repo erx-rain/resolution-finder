@@ -175,6 +175,50 @@ English (the same way epl-team-to-qualify's and Todd Blanche's real
 shapes only became clear once their full descriptions were read
 directly).
 
+## 7. Fed interest-rate decision markets (confirmed real, root cause diagnosed 2026-09-17)
+
+14 real markets pulled from Polymarket (fed-decision-in-january,
+fed-decision-in-december, fed-interest-rates-january-2025, etc.),
+options like "No change" / "25 bps decrease" / "25 bps increase".
+Scored 0/14 (all UNCLEAR) on the full fresh-batch eval run
+(2026-09-17) -- not a retrieval problem: for fed-decision-in-december
+(truth: 25 bps decrease), the real confirming headline was RETRIEVED
+and RANKED (4th, sim=0.579): "Federal Reserve cuts interest rates by
+25 basis points, signals 1 cut ahead - Yahoo Finance". It just never
+verified.
+
+**Root cause, confirmed empirically, not guessed:**
+`_winner_hypotheses` builds `f"{option} has won {market.title}."` --
+for this market that's literally *"25 bps decrease has won Fed decision
+in December?."*, which is grammatically broken and semantically
+nonsensical (an outcome description can't "win" an event the way a
+named competitor can -- same class of bug this file's own history
+already documents for "is still advancing in {market.title}" against
+"The International 2026 Champion"). Scored the real confirming headline
+above against this exact hypothesis: **0.337**, far below
+`NLI_VERIFICATION_THRESHOLD = 0.85`. The negative hypothesis scored
+0.663 instead -- the model isn't confused about the FACT, it's being
+asked a malformed question about it.
+
+This generalizes to any multi-outcome market whose options are OUTCOME
+DESCRIPTIONS rather than named competitors -- crypto price brackets
+share the same grammatical shape ("64,000-66,000" can't "win" a market
+either). **Checked, not assumed**: read bitcoin-price-on-june-21-2026's
+real cached evidence to see if the SAME mechanism blocks it too -- it
+does not, or at least isn't the binding constraint there. Its top-
+ranked candidates are page titles like "BTC price on Jun 21, 2026 at
+11am EDT - Robinhood" that never state the actual price number in
+retrievable text at all, so there is no confirming sentence for a
+hypothesis (broken or not) to even be tested against -- that market is
+still blocked by the already-tracked "needs a structured price feed"
+problem (gap item 4), not by this one. The two gaps are real and
+distinct: Fed decisions have plenty of real prose confirming the
+outcome, and fail on VERIFYING it (a hypothesis-wording fix, no new
+data source needed); crypto brackets fail on FINDING the outcome
+in the first place (a data-source fix, no amount of hypothesis
+rewording helps). Worth fixing the Fed-decision hypothesis wording on
+its own merits, but don't expect it to move crypto brackets too.
+
 ## User input captured 2026-09-16, for Opus to design (not designed here)
 
 Two additions to already-tracked gaps, captured verbatim in intent per
