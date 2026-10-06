@@ -68,7 +68,7 @@ when the token is set.
 | `GET /scans` / `GET /scans/<job_id>` | Job list / status (`queued → running → done|failed`). |
 | `GET /findings` | Latest finding per (market, option). |
 | `GET /markets/<id>/findings` | Full findings history + run log for one market. |
-| `POST /findings/<id>/review` `{"decision":"confirm"|"reject","by":"<admin>"}` | Record the human verdict review, with who and when. |
+| `POST /findings/<id>/review` `{"decision":"confirm"\|"reject","by":"<admin>"}` | Record the human verdict review, with who and when. |
 | `GET /schedule` / `PUT /schedule` `{"tag":"everyday at 9:00"}` | Read / set the scan schedule tag. Bad tags get 400 + supported forms. |
 
 Schedule tag grammar: `everyday at 9:00`, `daily at 21:15`,
@@ -110,4 +110,3 @@ expose via reverse proxy with TLS if rain-admin's proxy is remote.
 - No auto-settlement: `Confirmed` here only feeds the admin UI; signing
   stays in rain-admin's existing Resolution Center.
 - No market-text rewriting anywhere between the gist and the engine.
-"""
