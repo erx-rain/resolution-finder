@@ -1,31 +1,40 @@
 """GistMarketProvider — reads rain-native markets from the team GitHub gist.
 
-Owner decision (2026-10-06): the authoritative FULL DESCRIPTION for
-rain-native markets lives in the team gist (the same store rain-admin's
-team-state uses), and the set of markets this service scans is the
-team-maintained list in that gist. This provider is the rain.trade-side
-implementation of the MarketProvider seam market_provider.py has always
-kept open.
+Owner decision (2026-10-06): the authoritative market list this service
+scans is the team gist file chosen by the owner — currently
+rtap_history_2026.json (see RF_GIST_FILE). This provider is the
+rain.trade-side implementation of the MarketProvider seam
+market_provider.py has always kept open.
 
 Hard rules respected here:
 - Market text is passed VERBATIM. No rewriting, summarizing or merging.
 - Nothing is invented: a record with no close date gets close_date=None
   (models.py already allows it); a record with no description gets ""
-  and is still listed — eligibility can still fire on close_date, and a
-  reviewer should see the market rather than have it silently vanish.
+  (or just labeled source metadata) and is still listed — eligibility
+  can still fire on close_date, and a reviewer should see the market
+  rather than have it silently vanish.
 
-Accepted gist file shapes (all three are real shapes in the team gist,
-verified live 2026-10-06):
+Accepted gist file shapes (all real shapes in the team gist, verified
+live 2026-10-06):
 1. A JSON LIST of market objects — the same shape as data/markets.json:
    {id, title, description, options, close_date}
 2. A JSON OBJECT keyed by market id, each value a record carrying at
    least a title/question and description.
 3. Either of the above wrapped in an envelope under a "markets" key —
    possible-markets.json is {version, markets: [...], meta} and
-   rtap_team_registry.json is {schemaVersion, markets: {id: record}, ...}.
-Recognized field aliases: title|question, close_date|closeDate|endDate,
-options|outcomes (list of strings, or list of {optionName|question}
-objects).
+   rtap_team_registry.json is {schemaVersion, markets: {id: record}}.
+4. The HISTORY SNAPSHOT shape — rtap_history_2026.json is
+   {schemaVersion, year, snapshots: [...], meta}; each snapshot is
+   {id, at, markets: [...]} where market records use compact keys:
+   i=id, q=question/title, s=status ("Live"/...), e=end timestamp,
+   g=group/category, n=note, sv=source venue, su=source URL.
+   The provider takes the LATEST snapshot (max "at") and keeps only
+   records whose status is "Live" (unresolved); su/n are surfaced in
+   the description as clearly-labeled metadata, never as invented prose.
+
+Recognized field aliases: title|question|q, close_date|closeDate|endDate|e,
+options|outcomes (list of strings or {optionName|question} objects),
+id|_id|i.
 
 No caching: every get_unresolved_markets() call re-fetches the gist
 (the no-production-caching rule; a gist read is cheap).
@@ -102,13 +111,77 @@ def _record_to_market(market_id: str, record: dict) -> Optional[Market]:
     )
 
 
+def _snapshot_record_to_market(record: dict) -> Optional[Market]:
+    """Map one compact history-snapshot record (i/q/s/e/g/n/sv/su keys) to a
+    Market. VERBATIM rule: q is used untouched as the title; the description
+    carries ONLY clearly-labeled metadata that exists in the record (source
+    URL, venue, team note, category) — no invented prose."""
+    title = record.get("q")
+    if not isinstance(title, str) or not title.strip():
+        return None
+    market_id = record.get("i")
+    if not market_id:
+        return None
+    meta_lines: list[str] = []
+    source_url = record.get("su")
+    if isinstance(source_url, str) and source_url.strip():
+        meta_lines.append(f"Source URL: {source_url.strip()}")
+    venue = record.get("sv")
+    if isinstance(venue, str) and venue.strip():
+        meta_lines.append(f"Source venue: {venue.strip()}")
+    category = record.get("g")
+    if isinstance(category, str) and category.strip():
+        meta_lines.append(f"Category: {category.strip()}")
+    note = record.get("n")
+    if isinstance(note, str) and note.strip():
+        meta_lines.append(f"Team note: {note.strip()}")
+    return Market(
+        id=str(market_id),
+        title=title,
+        description="\n".join(meta_lines),
+        options=[],
+        close_date=_parse_close_date(record.get("e")),
+    )
+
+
+def _parse_history_snapshots(payload: dict) -> list[Market]:
+    """rtap_history_2026.json: pick the latest snapshot and keep only
+    unresolved ("Live") markets. De-dupes by market id (first wins)."""
+    snapshots = payload.get("snapshots")
+    if not isinstance(snapshots, list) or not snapshots:
+        raise GistProviderError("History gist file has no snapshots")
+    latest = max(
+        (s for s in snapshots if isinstance(s, dict)),
+        key=lambda s: s.get("at") or 0,
+    )
+    records = latest.get("markets")
+    if not isinstance(records, list):
+        raise GistProviderError("Latest history snapshot has no markets list")
+    seen: set[str] = set()
+    markets: list[Market] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        status = record.get("s")
+        if isinstance(status, str) and status.strip().lower() != "live":
+            continue  # resolved/closed — not the scanner's job
+        market = _snapshot_record_to_market(record)
+        if market and market.id not in seen:
+            seen.add(market.id)
+            markets.append(market)
+    return markets
+
+
 def parse_gist_markets(payload) -> list[Market]:
     """Pure mapping from a decoded gist-file JSON payload to Markets.
     Separated from fetching so tests exercise it with no network."""
-    # Envelope unwrap: both real team gist files nest the records under a
-    # "markets" key ({version|schemaVersion, markets, meta, ...}). Only
-    # unwrap when the value is itself a list/dict of records — a top-level
-    # record that happens to HAVE a "markets" field would not match this.
+    # History-snapshot shape (rtap_history_2026.json).
+    if isinstance(payload, dict) and isinstance(payload.get("snapshots"), list):
+        return _parse_history_snapshots(payload)
+
+    # Envelope unwrap: possible-markets.json and rtap_team_registry.json
+    # nest the records under a "markets" key. Only unwrap when the value is
+    # itself a list/dict of records.
     if (
         isinstance(payload, dict)
         and isinstance(payload.get("markets"), (list, dict))
