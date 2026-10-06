@@ -14,13 +14,18 @@ Hard rules respected here:
   and is still listed — eligibility can still fire on close_date, and a
   reviewer should see the market rather than have it silently vanish.
 
-Accepted gist file shapes (both real shapes in use today):
+Accepted gist file shapes (all three are real shapes in the team gist,
+verified live 2026-10-06):
 1. A JSON LIST of market objects — the same shape as data/markets.json:
    {id, title, description, options, close_date}
 2. A JSON OBJECT keyed by market id, each value a record carrying at
-   least a title/question and description. Recognized field aliases:
-   title|question, close_date|closeDate|endDate, options (list of
-   strings, or list of {optionName|question} objects).
+   least a title/question and description.
+3. Either of the above wrapped in an envelope under a "markets" key —
+   possible-markets.json is {version, markets: [...], meta} and
+   rtap_team_registry.json is {schemaVersion, markets: {id: record}, ...}.
+Recognized field aliases: title|question, close_date|closeDate|endDate,
+options|outcomes (list of strings, or list of {optionName|question}
+objects).
 
 No caching: every get_unresolved_markets() call re-fetches the gist
 (the no-production-caching rule; a gist read is cheap).
@@ -54,7 +59,12 @@ def _parse_close_date(raw) -> Optional[date]:
         return None
 
 
-def _parse_options(raw) -> list[str]:
+def _parse_options(record: dict) -> list[str]:
+    # "options" is data/markets.json's name; "outcomes" is the name the
+    # team's possible-markets.json actually uses (verified live).
+    raw = record.get("options")
+    if not isinstance(raw, list):
+        raw = record.get("outcomes")
     if not isinstance(raw, list):
         return []
     out: list[str] = []
@@ -84,10 +94,10 @@ def _record_to_market(market_id: str, record: dict) -> Optional[Market]:
         or record.get("end_date")
     )
     return Market(
-        id=str(record.get("id") or market_id),
+        id=str(record.get("id") or record.get("_id") or market_id),
         title=title,
         description=description,
-        options=_parse_options(record.get("options")),
+        options=_parse_options(record),
         close_date=_parse_close_date(close_raw),
     )
 
@@ -95,6 +105,16 @@ def _record_to_market(market_id: str, record: dict) -> Optional[Market]:
 def parse_gist_markets(payload) -> list[Market]:
     """Pure mapping from a decoded gist-file JSON payload to Markets.
     Separated from fetching so tests exercise it with no network."""
+    # Envelope unwrap: both real team gist files nest the records under a
+    # "markets" key ({version|schemaVersion, markets, meta, ...}). Only
+    # unwrap when the value is itself a list/dict of records — a top-level
+    # record that happens to HAVE a "markets" field would not match this.
+    if (
+        isinstance(payload, dict)
+        and isinstance(payload.get("markets"), (list, dict))
+    ):
+        payload = payload["markets"]
+
     markets: list[Market] = []
     if isinstance(payload, list):
         for item in payload:
@@ -133,7 +153,11 @@ def _default_fetch(gist_id: str, file_name: str, token: Optional[str]) -> str:
         )
     if entry.get("truncated"):
         raw_url = entry.get("raw_url")
-        raw_resp = requests.get(raw_url, headers={"User-Agent": USER_AGENT}, timeout=30)
+        raw_headers = {"User-Agent": USER_AGENT}
+        if token:
+            # A secret gist's raw_url needs the same auth as the API call.
+            raw_headers["Authorization"] = f"Bearer {token}"
+        raw_resp = requests.get(raw_url, headers=raw_headers, timeout=30)
         if raw_resp.status_code != 200:
             raise GistProviderError(f"Gist raw fetch failed: HTTP {raw_resp.status_code}")
         return raw_resp.text
