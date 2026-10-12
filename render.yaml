@@ -1,0 +1,43 @@
+# Render Blueprint — deploys the Resolution Finder service on a Render
+# account Rain controls. Render dashboard → New → Blueprint → pick this repo.
+#
+# Why these settings (measured, not guessed — see docs/DEPLOY_RENDER.md):
+#  - plan: standard (2 GB). The engine alone is ~430 MB after imports and a
+#    real single-market scan peaked at ~590 MB with CPU-only torch. The
+#    starter plan (512 MB) was OOM-killed mid-scan on the old host.
+#  - one gunicorn worker: the scan job queue lives in-process (jobs.py), so
+#    a second worker would have its own queue and lose track of jobs.
+#  - persistent disk at /var/data: findings, runs and the schedule survive
+#    restarts and redeploys (the old host used /tmp and lost everything).
+services:
+  - type: web
+    name: resolution-finder
+    runtime: python
+    plan: standard
+    region: frankfurt
+    branch: master
+    buildCommand: pip install -r requirements-service.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180
+    healthCheckPath: /health
+    disk:
+      name: rf-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: RF_DB_PATH
+        value: /var/data/resolution_finder.db
+      - key: HF_HOME
+        value: /var/data/hf-cache
+      - key: RF_WARM_MODELS
+        value: "1"
+      - key: RF_GIST_ID
+        value: edee410f91db10925239129f2877b316
+      - key: RF_GIST_FILE
+        value: rtap_history_2026.json
+      # Secrets — set in the Render dashboard, never committed:
+      - key: RF_GITHUB_TOKEN
+        sync: false
+      - key: RF_SERVICE_TOKEN
+        generateValue: true

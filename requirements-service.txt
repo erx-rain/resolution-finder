@@ -1,0 +1,14 @@
+# Production install for the hosted service.
+# CPU-only torch: the default torch wheel bundles CUDA (several GB on disk,
+# more RAM at import). The service has no GPU, so the CPU build is the same
+# math at a fraction of the size.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+requests
+curl_cffi
+feedparser
+trafilatura
+lxml_html_clean
+sentence-transformers
+flask
+gunicorn
