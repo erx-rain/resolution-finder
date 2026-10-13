@@ -154,6 +154,20 @@ def test_review_flow(app, client):
     assert history["findings"][0]["review_status"] == "Confirmed"
 
 
+def test_findings_carry_the_option_under_the_name_the_admin_ui_reads(app, client):
+    save_finding(
+        app._db_path, "m-past", "2026-10-13T00:00:00+00:00",
+        Verdict(outcome="NO", confidence=0.6, evidence_snippet="s", source_url="u",
+                source_type="general", option="Donald Trump"),
+    )
+    for payload in (
+        client.get("/findings").get_json()["findings"],
+        client.get("/markets/m-past/findings").get_json()["findings"],
+    ):
+        assert payload[0]["option"] == "Donald Trump"
+        assert payload[0]["option_name"] == "Donald Trump"
+
+
 def test_review_validation(client):
     assert client.post("/findings/1/review", json={"decision": "maybe", "by": "x"}).status_code == 400
     assert client.post("/findings/1/review", json={"decision": "confirm"}).status_code == 400

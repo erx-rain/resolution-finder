@@ -39,6 +39,12 @@ def _promote_best_below_threshold(
     """
     if not articles_with_text or not all(v.outcome == "NO_EVIDENCE" for v in verdicts):
         return verdicts
+    if any(v.option is not None for v in verdicts):
+        # Per-option rows (a market with listed options, 2026-10-13): the
+        # closest article is about the market, not about any one option,
+        # and copying it onto every option's row would present the same
+        # unrelated text as if it were evidence about each of them.
+        return verdicts
     best = best_below_threshold(market, articles_with_text)
     if best is None:
         return verdicts

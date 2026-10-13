@@ -305,6 +305,39 @@ def test_run_pipeline_promotes_best_below_threshold_article_when_no_evidence_ran
 
 
 @patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.best_below_threshold")
+@patch("resolution_finder.pipeline.rank_by_relevance")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_run_pipeline_does_not_copy_one_below_threshold_article_onto_every_option(
+    mock_retrieve, mock_extract, mock_rank, mock_best, mock_sleep
+):
+    """A market with listed options is reported per option (2026-10-13).
+    The closest below-threshold article is about the market as a whole;
+    repeating it on every option's row would present the same unrelated
+    text as evidence about each of them."""
+    ref = ArticleRef(url="https://sports.example.com/x", title="t", source_type="credible_backup_secondary")
+    mock_retrieve.return_value = [ref]
+    mock_extract.return_value = "A relevant but below-threshold sentence."
+    mock_rank.return_value = []
+    mock_best.return_value = RankedArticle(
+        article=ref, text="A relevant but below-threshold sentence.", similarity=0.22,
+    )
+    market = Market(
+        id="two-option-market", title="Who will win?", description="Resolves to the winner.",
+        options=["Team A", "Team B"], close_date=date.today() + timedelta(days=365),
+    )
+
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider([market]), db_path, peer_checker=NO_PEER_MATCH)
+
+    findings = {f["option"]: f for f in get_latest_findings(db_path)}
+    assert set(findings) == {"Team A", "Team B"}
+    assert all(f["outcome"] == "NO_EVIDENCE" and f["evidence_snippet"] is None for f in findings.values())
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
 @patch("resolution_finder.pipeline.rank_by_relevance")
 @patch("resolution_finder.pipeline.extract_article_text")
 @patch("resolution_finder.pipeline.retrieve_evidence")
