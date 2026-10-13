@@ -78,7 +78,22 @@ def test_plan_skips_when_the_fetch_fails():
 def test_plan_skips_a_market_rain_has_already_resolved():
     resolved = [sp for sp in IRAN_SUB_POOLS if sp["poolFinalized"]]
     assert plan_scan(make_market(), fetch=_pool(resolved)).skip_reason == SKIP_ALL_RESOLVED
-    assert plan_scan(make_market(), fetch=_pool([_open("Yes")], isFinalized=True)).skip_reason == SKIP_ALL_RESOLVED
+    settled_binary = [{"question": "Yes", "poolFinalized": True, "status": "Closed"}]
+    assert plan_scan(make_market(), fetch=_pool(settled_binary)).skip_reason == SKIP_ALL_RESOLVED
+
+
+def test_plan_scans_a_live_market_whose_pool_flag_says_finalized():
+    # Verbatim from Rain 2026-10-13, "Will Apple launch a foldable iPhone
+    # by the end of 2026?" (6a60d883f8e64ced2c3fe90a): the POOL carries
+    # isFinalized=true while it is Live and its one sub-pool is unsettled.
+    # That flag was read as "already resolved" and the market was skipped.
+    apple = [{"question": "Yes",
+              "mergedQuestion": "Will Apple launch a foldable iPhone by the end of 2026?",
+              "poolFinalized": False, "status": "Live", "endDate": "2027-01-01T04:59:00.000Z"}]
+    plan = plan_scan(make_market(), fetch=_pool(apple, isFinalized=True, status="Live"))
+    assert plan.skip_reason is None
+    (target,) = plan.targets
+    assert target.option is None and target.market.options == []
 
 
 # ── plan_scan: what gets scanned ─────────────────────────────────────

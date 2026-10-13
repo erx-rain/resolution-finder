@@ -17,6 +17,15 @@ from typing import Callable, Optional
 logger = logging.getLogger(__name__)
 
 
+class NoFindingError(Exception):
+    """A scan ended without a single finding, for the stated reason. Owner
+    decision 2026-10-13: that is an error for someone to look at, never a
+    quiet "finished" -- found live when a Live market was wrongly skipped
+    and its run read "Finished without a finding", indistinguishable from
+    a scan that had looked and found nothing to say. The job ends
+    `failed` with the reason as its error; expected, so no traceback."""
+
+
 @dataclass
 class Job:
     id: str
@@ -103,6 +112,12 @@ class JobQueue:
                 self._scan_fn(job.market_id, job.trigger)
                 with self._lock:
                     job.status = "done"
+                    job.finished_at = datetime.now(timezone.utc).isoformat()
+            except NoFindingError as exc:
+                logger.warning("Scan job %s (market %s) ended without a finding: %s", job.id, job.market_id, exc)
+                with self._lock:
+                    job.status = "failed"
+                    job.error = str(exc)
                     job.finished_at = datetime.now(timezone.utc).isoformat()
             except Exception as exc:  # noqa: BLE001 — one bad market must not kill the worker
                 logger.exception("Scan job %s (market %s) failed", job.id, job.market_id)

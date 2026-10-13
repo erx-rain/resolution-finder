@@ -93,7 +93,16 @@ def _is_resolved(sub_pool: dict) -> bool:
 
     `status` alone is deliberately NOT the test: a sub-pool whose trading
     has closed but which nobody has settled yet is exactly the one a
-    reviewer needs an answer for."""
+    reviewer needs an answer for.
+
+    The POOL's own `isFinalized` is not the test either. Real bug, shipped
+    and found the same day (2026-10-13): plan_scan skipped any pool with
+    isFinalized=true as "already resolved", and "Will Apple launch a
+    foldable iPhone by the end of 2026?" -- Live, its one sub-pool
+    unsettled, closing Jan 2027 -- came back with no finding at all. Of
+    the 57 gist markets, 4 have isFinalized=true and 3 of those are Live
+    with nothing settled; whatever the flag records, it is not "this
+    market has been resolved". Only the sub-pools say that."""
     return bool(sub_pool.get("poolFinalized")) or bool(sub_pool.get("winnerOption"))
 
 
@@ -145,8 +154,8 @@ def _is_date_name(name: str) -> bool:
     return bool(_DATE_NAME_RE.match(name.strip()))
 
 
-SKIP_NO_RULES = "No resolution rules available from Rain yet — scan skipped."
-SKIP_ALL_RESOLVED = "Already resolved on Rain — nothing left to scan."
+SKIP_NO_RULES = "No finding: Rain has no resolution rules for this market yet, so it was not scanned."
+SKIP_ALL_RESOLVED = "No finding: every sub-pool of this market is already resolved on Rain, so nothing was scanned."
 
 
 @dataclass(frozen=True)
@@ -176,7 +185,9 @@ def plan_scan(market: Market, fetch: Optional[PoolFetcher] = None) -> ScanPlan:
 
     Nothing is scanned -- "do not run the finder" -- when Rain can't be
     reached or has no description, and when Rain has already resolved
-    everything there is.
+    every sub-pool. The caller reports either as a FAILED run with the
+    reason (owner decision 2026-10-13: a run that ends without a finding
+    is an error to look at, never a quiet "nothing").
 
     Sub-pools Rain has already resolved are never scanned (owner decision
     2026-10-13): Rain's own settlement is the answer for those, and
@@ -208,7 +219,7 @@ def plan_scan(market: Market, fetch: Optional[PoolFetcher] = None) -> ScanPlan:
 
     sub_pools = _sub_pools(data)
     open_sub_pools = [sp for sp in sub_pools if not sp.resolved]
-    if data.get("isFinalized") or (sub_pools and not open_sub_pools):
+    if sub_pools and not open_sub_pools:
         return ScanPlan(skip_reason=SKIP_ALL_RESOLVED)
 
     whole = replace(market, description=description, options=[])

@@ -27,7 +27,7 @@ from resolution_finder.rain_pool_client import plan_scan
 from resolution_finder.resolution_spec import check_availability
 from resolution_finder.storage import get_history, get_latest_findings, init_db
 from resolution_finder.service import service_storage
-from resolution_finder.service.jobs import JobQueue
+from resolution_finder.service.jobs import JobQueue, NoFindingError
 from resolution_finder.service.schedule import (
     Schedule,
     ScheduleParseError,
@@ -152,12 +152,13 @@ def create_app(
         # no usable description yet, or has already resolved everything
         # -- no scan and no finding, rather than matching evidence against
         # the gist's placeholder description the way the 2026-10-12
-        # OpenAI/Anthropic wrong finding did.
+        # OpenAI/Anthropic wrong finding did. Either way the run is
+        # recorded FAILED with the reason: no finding is an error.
         plan = plan_scan(market, fetch=rain_fetch)
         run_id = service_storage.start_run(db_path, market_id, trigger)
         if plan.skip_reason:
-            service_storage.finish_run(db_path, run_id, "done", plan.skip_reason, 0)
-            return
+            service_storage.finish_run(db_path, run_id, "failed", plan.skip_reason, 0)
+            raise NoFindingError(plan.skip_reason)
 
         run_timestamp = datetime.now(timezone.utc).isoformat()
         try:
@@ -176,7 +177,12 @@ def create_app(
                     _filed_under(resolve_structured, target.option),
                 )
             count = service_storage.count_findings_for_run(db_path, market_id, run_timestamp)
+            if count == 0:
+                raise NoFindingError("No finding: the scan ran but produced nothing.")
             service_storage.finish_run(db_path, run_id, "done", None, count)
+        except NoFindingError as exc:
+            service_storage.finish_run(db_path, run_id, "failed", str(exc), 0)
+            raise
         except Exception as exc:
             service_storage.finish_run(db_path, run_id, "failed", str(exc), None)
             raise

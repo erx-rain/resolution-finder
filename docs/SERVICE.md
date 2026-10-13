@@ -64,17 +64,22 @@ reads the real rules from Rain's own pool record instead (owner decision
 `poolDescription` becomes the market's description, and 2+ `subPools`
 become multi-outcome options (exactly 1 `subPool` is Rain's own
 binary-market shape, not a real option). If Rain has no description for
-that id, **the scan is skipped**: the run is recorded `done` with 0
-findings and an explanatory note, never a guessed verdict against the
-gist's placeholder text.
+that id, **the scan is not run**: the run and its job end `failed` with
+the reason, never a guessed verdict against the gist's placeholder text.
+
+**A run that ends without a finding is always `failed`, with the reason
+as its error** (2026-10-13) — no rules on Rain, everything already
+resolved on Rain, or a scan that ran and saved nothing. `done` means at
+least one finding was written.
 
 What a scan covers is also read from Rain's pool record (2026-10-13,
 `rain_pool_client.plan_scan`):
 
 - **Sub-pools Rain has already resolved are not scanned** (`poolFinalized`
-  or a recorded `winnerOption`). If nothing is left, or the pool itself is
-  finalized, the run is recorded `done` with 0 findings and the note
-  "Already resolved on Rain".
+  or a recorded `winnerOption` on the sub-pool). If none is left, the run
+  fails with "every sub-pool of this market is already resolved on Rain".
+  The pool's own `isFinalized` is ignored: it is true on Live markets
+  with nothing settled.
 - **Sub-pools named by dates** ("August 18", "December 31") are
   thresholds of one event, not rivals. Each open one is scanned as its
   own Yes/No market: Rain's `mergedQuestion` as the title, the sub-pool's
@@ -101,7 +106,7 @@ when the token is set.
 | `GET /health` | Liveness probe (no auth). |
 | `GET /markets` | The gist market list, as the engine sees it. |
 | `POST /eligibility` | Date-based availability. Empty body = all gist markets; `{"markets":[...]}` = just those. Fast, no models. |
-| `POST /scans` `{"market_id": "..."}` | Enqueue a full scan (202 + job). Deduped per market. Manual scans run regardless of eligibility. Skipped (done, 0 findings) if Rain has no resolution rules for this market yet — see "Gist market file" above. |
+| `POST /scans` `{"market_id": "..."}` | Enqueue a full scan (202 + job). Deduped per market. Manual scans run regardless of eligibility. The job ends `failed`, with the reason, whenever it produces no finding — see "Gist market file" above. |
 | `GET /scans` / `GET /scans/<job_id>` | Job list / status (`queued → running → done|failed`). |
 | `GET /findings` | The findings of each market's most recent run that produced any. |
 | `GET /markets/<id>/findings` | Full findings history + run log for one market. |
