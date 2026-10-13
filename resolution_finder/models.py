@@ -41,6 +41,18 @@ class RankedArticle:
 @dataclass
 class Verdict:
     outcome: str  # "YES", "NO", "UNCLEAR", or "NO_EVIDENCE"
+    # NOT how sure the outcome is. This is the EVIDENCE MATCH: the embedding
+    # similarity between the quoted article and the market's own text
+    # (RankedArticle.similarity), copied from whichever article the verdict
+    # quotes -- or one of two hard-coded stand-ins, 0.0 (nothing quoted)
+    # and 1.0 (read straight from an official page, fed_decision.py).
+    # It was served and shown as "confidence" until 2026-10-13, where it
+    # read as "five options, each 60% sure" on a result confirmed by the
+    # Nobel Committee itself. storage.py now stores and serves it as
+    # `evidence_match`; nothing in this codebase computes a certainty for
+    # an outcome yet, and a finding's `confidence` is null until something
+    # does. The field keeps its old name here only because every path in
+    # verdict_engine.py constructs it by that name.
     confidence: float
     evidence_snippet: Optional[str]
     source_url: Optional[str]

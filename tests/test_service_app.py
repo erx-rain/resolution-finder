@@ -234,6 +234,9 @@ def test_findings_carry_the_option_under_the_name_the_admin_ui_reads(app, client
     ):
         assert payload[0]["option"] == "Donald Trump"
         assert payload[0]["option_name"] == "Donald Trump"
+        # confidence is never the engine's evidence-match number (0.6 here).
+        assert payload[0]["confidence"] is None
+        assert payload[0]["evidence_match"] == 0.6
 
 
 def test_review_validation(client):

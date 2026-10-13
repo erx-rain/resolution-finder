@@ -123,6 +123,21 @@ question. An option nothing was found about is `NO_EVIDENCE`, never left
 out and never guessed. Findings carry the option as both `option` and
 `option_name` (the name rain-admin reads).
 
+Two numbers on a finding, never to be confused (2026-10-13):
+
+- `confidence` — how sure the service is that the proposed outcome (YES
+  or NO, for that option) is correct, 0 to 1, **or `null`**. It is `null`
+  on every finding today: the engine does not compute such a figure, and
+  no default, similarity or constant is sent in its place. `UNCLEAR` and
+  `NO_EVIDENCE` propose nothing and are always `null`.
+- `evidence_match` — how closely the quoted article matches the market's
+  own text (embedding similarity, 0 to 1), or `null` when no matched
+  article is quoted. Options settled by the same article share it. This
+  is the number that used to be served as `confidence`.
+
+Findings stored before this change are served unchanged (the old number
+still under `confidence`, `evidence_match` null).
+
 A finding whose resolution is not yet available carries `available_from`:
 the date it becomes determinable (the sub-pool's own deadline for a
 date-named sub-pool, the market's close date otherwise).

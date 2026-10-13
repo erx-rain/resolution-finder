@@ -7,7 +7,7 @@
   <p><a href="{{ url_for('settings') }}">Settings</a></p>
   <table border="1">
     <tr>
-      <th>Market</th><th>Option</th><th>Available?</th><th>Outcome</th><th>Confidence</th><th>Evidence</th>
+      <th>Market</th><th>Option</th><th>Available?</th><th>Outcome</th><th>Evidence match</th><th>Evidence</th>
       <th>Source</th><th>Status</th><th>Action</th>
     </tr>
     {% for f in findings %}
@@ -33,7 +33,10 @@
         {% endif %}
       </td>
       <td>{{ f.outcome }}</td>
-      <td>{{ "%.2f"|format(f.confidence) }}</td>
+      {# The engine's number is how closely the quoted article matches the
+         market, not how sure the outcome is -- see storage.FINDING_SCORE_VERSION. #}
+      {% set match = f.evidence_match if f.evidence_match is not none else f.confidence %}
+      <td>{{ "%.2f"|format(match) if match is not none else "-" }}</td>
       <td>{{ f.evidence_snippet or "-" }}</td>
       <td>
         {% if f.source_url %}
