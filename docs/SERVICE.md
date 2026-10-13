@@ -68,6 +68,21 @@ that id, **the scan is skipped**: the run is recorded `done` with 0
 findings and an explanatory note, never a guessed verdict against the
 gist's placeholder text.
 
+What a scan covers is also read from Rain's pool record (2026-10-13,
+`rain_pool_client.plan_scan`):
+
+- **Sub-pools Rain has already resolved are not scanned** (`poolFinalized`
+  or a recorded `winnerOption`). If nothing is left, or the pool itself is
+  finalized, the run is recorded `done` with 0 findings and the note
+  "Already resolved on Rain".
+- **Sub-pools named by dates** ("August 18", "December 31") are
+  thresholds of one event, not rivals. Each open one is scanned as its
+  own Yes/No market: Rain's `mergedQuestion` as the title, the sub-pool's
+  own `endDate` as its deadline. Its finding is filed under the sub-pool's
+  name.
+- Any other set of sub-pools is one contest whose options are the open
+  sub-pools' names.
+
 ## API
 
 All routes except `/health` require `Authorization: Bearer $RF_SERVICE_TOKEN`
@@ -80,7 +95,7 @@ when the token is set.
 | `POST /eligibility` | Date-based availability. Empty body = all gist markets; `{"markets":[...]}` = just those. Fast, no models. |
 | `POST /scans` `{"market_id": "..."}` | Enqueue a full scan (202 + job). Deduped per market. Manual scans run regardless of eligibility. Skipped (done, 0 findings) if Rain has no resolution rules for this market yet — see "Gist market file" above. |
 | `GET /scans` / `GET /scans/<job_id>` | Job list / status (`queued → running → done|failed`). |
-| `GET /findings` | Latest finding per (market, option). |
+| `GET /findings` | The findings of each market's most recent run that produced any. |
 | `GET /markets/<id>/findings` | Full findings history + run log for one market. |
 | `POST /findings/<id>/review` `{"decision":"confirm"\|"reject","by":"<admin>"}` | Record the human verdict review, with who and when. |
 | `GET /schedule` / `PUT /schedule` `{"tag":"everyday at 9:00"}` | Read / set the scan schedule tag. Bad tags get 400 + supported forms. |
@@ -99,6 +114,10 @@ option on every run** (2026-10-13) — each sub-pool is its own Yes/No
 question. An option nothing was found about is `NO_EVIDENCE`, never left
 out and never guessed. Findings carry the option as both `option` and
 `option_name` (the name rain-admin reads).
+
+A finding whose resolution is not yet available carries `available_from`:
+the date it becomes determinable (the sub-pool's own deadline for a
+date-named sub-pool, the market's close date otherwise).
 
 When a market's own rules say non-winning options resolve "No" and two
 independent sources state, with the market's own year, that someone

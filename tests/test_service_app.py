@@ -1,6 +1,7 @@
 """API tests with everything injectable — no models, no network."""
 import json
 import time
+from unittest.mock import patch
 
 import pytest
 
@@ -10,7 +11,7 @@ from resolution_finder.service.app import create_app
 from resolution_finder.service.jobs import JobQueue
 from resolution_finder.service.service_storage import get_runs
 from resolution_finder.storage import get_latest_findings, save_finding
-from resolution_finder.models import Verdict
+from resolution_finder.models import Market, Verdict
 
 
 MARKETS = [
@@ -104,6 +105,18 @@ def test_scan_dedupe(client):
     assert a and b
 
 
+def _run_scan_and_wait(client, market_id):
+    job_id = client.post("/scans", json={"market_id": market_id}).get_json()["job"]["id"]
+    deadline = time.time() + 5
+    job = None
+    while time.time() < deadline:
+        job = client.get(f"/scans/{job_id}").get_json()["job"]
+        if job["status"] in ("done", "failed"):
+            break
+        time.sleep(0.05)
+    return job
+
+
 def test_scan_skips_when_rain_has_no_description(tmp_path):
     # Real _real_scan (job_queue/scan_market_fn left at their defaults) --
     # only rain_fetch is injected, so this never touches the network or
@@ -123,16 +136,7 @@ def test_scan_skips_when_rain_has_no_description(tmp_path):
     application.config["TESTING"] = True
     client = application.test_client()
 
-    resp = client.post("/scans", json={"market_id": "m-past"})
-    assert resp.status_code == 202
-    job_id = resp.get_json()["job"]["id"]
-    deadline = time.time() + 5
-    job = None
-    while time.time() < deadline:
-        job = client.get(f"/scans/{job_id}").get_json()["job"]
-        if job["status"] != "queued":
-            break
-        time.sleep(0.05)
+    job = _run_scan_and_wait(client, "m-past")
     assert job["status"] == "done"  # skipped, not failed -- there's no bug to report
 
     runs = get_runs(db_path, "m-past")
@@ -141,6 +145,70 @@ def test_scan_skips_when_rain_has_no_description(tmp_path):
     assert runs[0]["findings_count"] == 0
     assert "skipped" in runs[0]["error"].lower()
     assert get_latest_findings(db_path) == []
+
+
+def test_scan_skips_a_market_rain_has_already_resolved(tmp_path):
+    provider = GistMarketProvider(
+        gist_id="test", file_name="f.json", token=None, fetch=lambda *a: json.dumps(MARKETS),
+    )
+    resolved = lambda market_id: {
+        "poolDescription": "Resolves YES if X happened.", "isFinalized": True,
+        "subPools": [{"question": "Yes", "poolFinalized": True}],
+    }
+    db_path = str(tmp_path / "t.db")
+    client = create_app(db_path, provider=provider, rain_fetch=resolved).test_client()
+
+    assert _run_scan_and_wait(client, "m-past")["status"] == "done"
+    (run,) = get_runs(db_path, "m-past")
+    assert run["findings_count"] == 0
+    assert "already resolved on rain" in run["error"].lower()
+    assert get_latest_findings(db_path) == []
+
+
+def test_scan_runs_each_open_date_sub_pool_as_its_own_market_and_files_it_by_name(tmp_path):
+    # _scan_market itself (retrieval, models) is replaced: this checks what
+    # the service hands it, and that the answers are filed per sub-pool.
+    provider = GistMarketProvider(
+        gist_id="test", file_name="f.json", token=None, fetch=lambda *a: json.dumps(MARKETS),
+    )
+    pool = lambda market_id: {
+        "poolDescription": "Resolves YES if it happens by the specified date.",
+        "subPools": [
+            {"question": "November 30", "mergedQuestion": "Will it happen by November 30?",
+             "poolFinalized": False, "endDate": "2099-12-01T04:59:00.000Z"},
+            {"question": "August 18", "mergedQuestion": "Will it happen by August 18?",
+             "poolFinalized": True, "endDate": "2026-08-20T09:11:06.031Z"},
+            {"question": "December 31", "mergedQuestion": "Will it happen by December 31?",
+             "poolFinalized": False, "endDate": "2100-01-01T04:59:00.000Z"},
+        ],
+    }
+    scanned = []
+    binary_verdict = Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                             source_url=None, source_type=None)
+
+    def fake_scan_market(market, db_path, run_timestamp, verdict_engine, peer_checker, structured_resolver):
+        from resolution_finder.resolution_spec import check_availability
+        scanned.append(market)
+        # `verdict_engine` is the service's wrapper around decide(): it is
+        # what files the binary engine's answer under the sub-pool's name.
+        for verdict in [verdict_engine(market, [])]:
+            save_finding(db_path, market.id, run_timestamp, verdict, check_availability(market))
+
+    db_path = str(tmp_path / "t.db")
+    client = create_app(db_path, provider=provider, rain_fetch=pool).test_client()
+    with patch("resolution_finder.pipeline._scan_market", side_effect=fake_scan_market), \
+            patch("resolution_finder.verdict_engine.decide", return_value=binary_verdict):
+        assert _run_scan_and_wait(client, "m-past")["status"] == "done"
+
+    assert [(m.title, m.options, m.close_date.isoformat()) for m in scanned] == [
+        ("Will it happen by November 30?", [], "2099-12-01"),
+        ("Will it happen by December 31?", [], "2100-01-01"),
+    ]
+    findings = {f["option_name"]: f for f in client.get("/markets/m-past/findings").get_json()["findings"]}
+    assert set(findings) == {"November 30", "December 31"}       # the resolved one is not scanned
+    assert findings["November 30"]["available_from"] == "2099-12-01"
+    assert findings["December 31"]["available_from"] == "2100-01-01"
+    assert all(f["resolution_available"] is False for f in findings.values())
 
 
 def test_review_flow(app, client):
