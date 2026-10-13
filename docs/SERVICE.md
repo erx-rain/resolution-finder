@@ -83,6 +83,14 @@ What a scan covers is also read from Rain's pool record (2026-10-13,
 - Any other set of sub-pools is one contest whose options are the open
   sub-pools' names.
 
+A date-named sub-pool is the one shape that may be proposed `NO` because
+nothing was found (owner decision 2026-10-13): its own deadline has
+passed, the rules say "otherwise No", coverage dated after the deadline
+was read from two or more sources, and no sentence in it reads as a
+report that the event happened. The finding says in words that it rests
+on absence, and carries 0 confidence. If something does read as such a
+report, the finding is `UNCLEAR` and quotes it.
+
 ## API
 
 All routes except `/health` require `Authorization: Bearer $RF_SERVICE_TOKEN`

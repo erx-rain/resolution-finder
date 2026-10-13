@@ -133,6 +133,15 @@ def test_plan_date_named_sub_pools_are_each_their_own_yes_no_market():
     assert target.market.description == RULES
 
 
+def test_plan_carries_the_day_rain_opened_a_date_sub_pool():
+    sub_pools = [
+        {**_open("November 30", "Will it happen by November 30?"), "createdAt": "2026-07-26T14:48:48.311Z"},
+        _open("December 31", "Will it happen by December 31?"),
+    ]
+    targets = plan_scan(make_market(), fetch=_pool(sub_pools)).targets
+    assert [t.opened for t in targets] == [date(2026, 7, 26), None]
+
+
 def test_plan_each_open_date_sub_pool_carries_its_own_deadline():
     sub_pools = [
         {**_open("November 30", "Will it happen by November 30?"), "endDate": "2026-12-01T04:59:00.000Z"},

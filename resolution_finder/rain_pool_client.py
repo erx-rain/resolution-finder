@@ -80,6 +80,7 @@ class SubPool:
     name: str                    # sub-pool `question`, verbatim ("December 31", "Anthropic")
     question: str                # `mergedQuestion`, verbatim ("Will ... by December 31?"), or ""
     end_date: Optional[date]     # the sub-pool's own `endDate`
+    opened: Optional[date]       # the day Rain created it (`createdAt`)
     resolved: bool               # Rain has already settled it -- see _is_resolved
 
 
@@ -124,6 +125,7 @@ def _sub_pools(data: dict) -> list[SubPool]:
             name=name,
             question=merged if isinstance(merged, str) else "",
             end_date=_parse_end_date(entry.get("endDate")),
+            opened=_parse_end_date(entry.get("createdAt")),
             resolved=_is_resolved(entry),
         ))
     return sub_pools
@@ -157,6 +159,7 @@ class ScanTarget:
 
     market: Market
     option: Optional[str] = None
+    opened: Optional[date] = None   # with `option`: the day Rain created that sub-pool
 
 
 @dataclass(frozen=True)
@@ -216,7 +219,7 @@ def plan_scan(market: Market, fetch: Optional[PoolFetcher] = None) -> ScanPlan:
         return ScanPlan(targets=tuple(
             ScanTarget(
                 replace(whole, title=sp.question, close_date=sp.end_date or market.close_date),
-                option=sp.name,
+                option=sp.name, opened=sp.opened,
             )
             for sp in open_sub_pools
         ))

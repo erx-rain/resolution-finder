@@ -2826,3 +2826,122 @@ def test_unlisted_winner_helpers_refuse_names_that_could_be_a_listed_option():
     assert _sentence_spells_out_listed_acronym(
         "The United Nations Relief and Works Agency wins 2026 Nobel Peace Prize.", NOBEL_MARKET)
     assert not _sentence_spells_out_listed_acronym(PILLAY_YAHOO, NOBEL_MARKET)
+
+
+# ── Date-named sub-pool: elapsed deadline, nothing found (2026-10-13) ────
+# Description verbatim from Rain's pool API for the live U.S.-Iran market
+# 6a661e50f8e64ced2cd8e486; evidence is the verbatim opening sentence of
+# three articles retrieved for it on 2026-10-13, with their real dates.
+IRAN_DESCRIPTION = 'On June 14, 2026, the United States and Iran announced a written diplomatic agreement establishing an extendable 60-day negotiation period during which both countries committed to pursue a "final deal" concerning Iran\'s nuclear program and other issues.\n\nThis market will resolve to "Yes" if, by the specified date at 11:59 PM ET, the United States and Iran have signed or formally adopted a qualifying written diplomatic instrument. Otherwise, this market will resolve to "No."\n\nUnless the instrument is formally adopted without signatures as described below, it must be signed by both the United States and Iran. Both countries may either sign the same document or separate documents that clearly and substantively express acceptance of the same underlying instrument, regardless of minor differences in wording, formatting, or translation. Both handwritten and officially issued electronic signatures qualify.\n\nIf the instrument is recognized by both governments as not requiring signatures to take effect, formal adoption without signature will also qualify. Formal adoption may be demonstrated by any of the following:\n\n(i) an official joint statement announcing that the United States and Iran have adopted, approved, executed, concluded, or otherwise finalized the instrument;\n\n(ii) official confirmation from both governments that the same published instrument has been agreed to, adopted, approved, executed, or concluded;\n\n(iii) adoption, approval, or endorsement through an official resolution, ministerial decision, executive decision, or comparable institutional act serving as the country\'s mechanism for adopting the instrument; or\n\n(iv) an exchange of official diplomatic notes or letters confirming acceptance of the same instrument.\n\nTo qualify, the written diplomatic instrument must:\n\n(i) be identified as the final deal contemplated by the June 14, 2026, memorandum of understanding, either through official communications from the United States or Iran or by a consensus of credible reporting;\n\n(ii) establish at least one specific obligation restricting Iran\'s nuclear program through a concrete and measurable benchmark that can be objectively evaluated. This may include a defined limit, prohibition, or quantity, such as a cap on uranium enrichment purity or a commitment to surrender, destroy, or dilute enriched uranium stockpiles. General or non-specific commitments, including pledges not to pursue nuclear weapons, commitments to preserve the status quo, or agreements limited to IAEA monitoring or inspection requirements that do not specifically restrict Iran\'s nuclear program, will not qualify.\n\nThe instrument must contain obligations that have been agreed to for implementation. The following will not qualify:\n\n(i) provisions whose substantive obligations remain explicitly subject to a future agreement, negotiation process, or follow-on instrument;\n\n(ii) provisions expressly described as minimum requirements for future negotiations rather than present obligations; or\n\n(iii) floors, placeholders, or minimum standards established solely to structure ongoing or future negotiations.\n\nAn unconditional obligation may still qualify even if technical or procedural matters, including implementation dates, sequencing, or timelines, remain subject to future arrangements, provided the obligation itself establishes a concrete, measurable benchmark for compliance. Conditional obligations will not qualify.\n\nQualification will primarily be determined from the officially released text of the instrument. The qualifying instrument must be signed or formally adopted by both the United States and Iran by the specified date at 11:59 PM ET. If the instrument has been signed or formally adopted by that deadline but its complete text has not yet been released, and there is genuine material uncertainty regarding whether it satisfies this market\'s requirements, the market may remain open for up to 28 calendar days after the specified date while awaiting publication of the text. If the complete text has still not been released after 28 calendar days, official and definitive statements from the United States or Iran, together with a consensus of credible reporting, will be used to determine whether the instrument qualifies.\n\nA diplomatic instrument involving additional parties will still qualify, provided both the United States and Iran are parties to the instrument and every other requirement of this market is satisfied.\n\nOnce a qualifying written diplomatic instrument has been signed or formally adopted without signature by both the United States and Iran, this market\'s condition will be considered satisfied regardless of whether the instrument later enters into force, is ratified, receives legislative or treaty approval, or is subsequently withdrawn from, repudiated, or not implemented by either country.\n\nResolution will primarily rely on official communications from the governments of the United States and Iran, or their authorized representatives. A consensus of credible reporting from major news organizations may also be used.'
+IRAN_JPOST_JUNE = "Iran and the US will start a new round of negotiations on Friday in Switzerland to reach a final agreement after the official start of an interim agreement, Iran's foreign minister said on Tuesday."
+IRAN_BBC_SEPT_26 = 'Trump rejects Iran deal to reopen Strait of Hormuz in seven days - BBC'
+IRAN_BRITANNICA_OCT_9 = '2026 Iran war | Oil, Explained, United States, Israel, Strait of Hormuz, Map, & Conflict - Britannica'
+
+
+def _iran_sub_pool(deadline=date(2026, 10, 1)):
+    # Rain's own mergedQuestion for the "September 30" sub-pool, and that
+    # sub-pool's own end date (2026-10-01T03:59Z = Sept 30, 11:59 PM ET).
+    return Market(
+        id="6a661e50f8e64ced2cd8e486",
+        title="Will the U.S. and Iran finalize a nuclear agreement by September 30?",
+        description=IRAN_DESCRIPTION, options=[], close_date=deadline,
+    )
+
+
+def _dated(text, domain, published):
+    return RankedArticle(
+        article=ArticleRef(url=f"https://{domain}/article", title="t", source_type="credible_backup",
+                           published_date=published, source_domain=domain),
+        text=text, similarity=0.5,
+    )
+
+
+IRAN_EVIDENCE = [
+    _dated(IRAN_JPOST_JUNE, "www.jpost.com", date(2026, 6, 16)),
+    _dated(IRAN_BBC_SEPT_26, "www.bbc.com", date(2026, 9, 26)),
+    _dated(IRAN_BRITANNICA_OCT_9, "www.britannica.com", date(2026, 10, 9)),
+]
+
+
+def _decide_dated_on(today, market, evidence):
+    from resolution_finder.verdict_engine import decide_dated_sub_pool
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = today
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        return decide_dated_sub_pool(market, evidence)
+
+
+def test_dated_sub_pool_past_its_deadline_with_nothing_found_resolves_no():
+    verdict = _decide_dated_on(date(2026, 10, 13), _iran_sub_pool(), IRAN_EVIDENCE)
+    assert verdict.outcome == "NO"
+    assert verdict.confidence == 0.0
+    assert "absence of evidence" in verdict.evidence_snippet
+    assert "2026-10-09" in verdict.evidence_snippet        # the post-deadline article it read
+    assert verdict.source_url == "https://www.britannica.com/article"
+
+
+def test_the_same_market_through_plain_decide_is_never_settled_from_absence():
+    # The exception is opt-in for date-named sub-pools only.
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = date(2026, 10, 13)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        verdict = decide(_iran_sub_pool(), IRAN_EVIDENCE)
+    assert verdict.outcome == "UNCLEAR"
+    assert "NOT asserted as a verdict" in verdict.evidence_snippet
+
+
+def test_dated_sub_pool_before_its_deadline_is_not_settled():
+    verdict = _decide_dated_on(date(2026, 9, 29), _iran_sub_pool(), IRAN_EVIDENCE)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_dated_sub_pool_needs_coverage_from_after_the_deadline():
+    # Only articles written before the deadline: they cannot say whether
+    # it happened by then.
+    verdict = _decide_dated_on(date(2026, 10, 13), _iran_sub_pool(), IRAN_EVIDENCE[:2])
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_dated_sub_pool_needs_two_independent_sources_read():
+    verdict = _decide_dated_on(date(2026, 10, 13), _iran_sub_pool(), IRAN_EVIDENCE[2:])
+    assert verdict.outcome == "UNCLEAR"
+    assert _decide_dated_on(date(2026, 10, 13), _iran_sub_pool(), []).outcome == "NO_EVIDENCE"
+
+
+def test_dated_sub_pool_whose_rules_state_no_default_is_not_settled():
+    market = _iran_sub_pool()
+    with patch("resolution_finder.verdict_engine._extract_default_outcome", return_value=None):
+        verdict = _decide_dated_on(date(2026, 10, 13), market, IRAN_EVIDENCE)
+    assert verdict.outcome == "UNCLEAR"
+
+
+def test_dated_sub_pool_is_not_settled_no_over_a_report_that_it_happened():
+    # Found building this rule: the binary path's own YES detection sees
+    # nothing in this sentence, so without the veto it was settled "No".
+    signed = _dated(
+        "The United States and Iran signed the final nuclear agreement in Geneva on Tuesday, "
+        "officials from both governments confirmed.", "www.reuters.com", date(2026, 10, 3))
+    verdict = _decide_dated_on(date(2026, 10, 13), _iran_sub_pool(), IRAN_EVIDENCE + [signed])
+    assert verdict.outcome == "UNCLEAR"
+    assert "signed the final nuclear agreement" in verdict.evidence_snippet
+    assert "left unresolved rather than settled No" in verdict.evidence_snippet
+
+
+def test_dated_sub_pool_report_from_before_it_was_opened_is_not_about_it():
+    from resolution_finder.verdict_engine import decide_dated_sub_pool
+    old_report = _dated(
+        "The United States and Iran signed the final nuclear agreement in Geneva on Tuesday, "
+        "officials from both governments confirmed.", "www.reuters.com", date(2026, 6, 20))
+    with patch("resolution_finder.verdict_engine.date") as mock_date:
+        mock_date.today.return_value = date(2026, 10, 13)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        verdict = decide_dated_sub_pool(_iran_sub_pool(), IRAN_EVIDENCE + [old_report], opened=date(2026, 7, 26))
+    assert verdict.outcome == "NO"
+
+
+def test_question_as_statement_drops_the_question_form_and_its_deadline():
+    from resolution_finder.verdict_engine import _question_as_statement
+    assert _question_as_statement(
+        "Will the U.S. and Iran finalize a nuclear agreement by September 30?"
+    ) == "the U.S. and Iran finalize a nuclear agreement"
+    assert _question_as_statement("Will Man City win the Premier League?") == "Man City win the Premier League"

@@ -16,7 +16,7 @@ import threading
 import time
 from dataclasses import replace
 from datetime import datetime, timezone
-from functools import wraps
+from functools import partial, wraps
 from typing import Optional
 
 from flask import Flask, jsonify, request
@@ -138,7 +138,7 @@ def create_app(
     # ── The real scan function (overridable in tests) ──────────────────
     def _real_scan(market_id: str, trigger: str) -> None:
         from resolution_finder.pipeline import _scan_market, _default_peer_checker
-        from resolution_finder.verdict_engine import decide
+        from resolution_finder.verdict_engine import decide, decide_dated_sub_pool
         from resolution_finder.structured_resolvers import resolve_structured
 
         market = get_provider().get_market(market_id)
@@ -164,7 +164,14 @@ def create_app(
             for target in plan.targets:
                 _scan_market(
                     target.market, db_path, run_timestamp,
-                    _filed_under(decide, target.option),
+                    # A sub-pool scanned on its own is a date-named one
+                    # (plan_scan): the only shape allowed to settle "No"
+                    # on an elapsed deadline with nothing found.
+                    _filed_under(
+                        decide if target.option is None
+                        else partial(decide_dated_sub_pool, opened=target.opened),
+                        target.option,
+                    ),
                     _filed_under(_default_peer_checker, target.option),
                     _filed_under(resolve_structured, target.option),
                 )
