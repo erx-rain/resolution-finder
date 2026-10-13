@@ -322,6 +322,10 @@ class AvailabilityResult:
     reason: Optional[str]
     trigger_date: Optional[date]
     spec: ResolutionSpec
+    # When NOT yet available: the earliest date one of the three signals
+    # below will fire -- what "can't be determined until ..." means for
+    # this market. None when available, or when no date is known at all.
+    available_from: Optional[date] = None
 
 
 def check_availability(
@@ -356,4 +360,5 @@ def check_availability(
         return AvailabilityResult(True, AVAILABLE_CLOSE_DATE_PASSED, market.close_date, spec)
     if spec.backstop_deadline and today > spec.backstop_deadline:
         return AvailabilityResult(True, AVAILABLE_BACKSTOP_DEADLINE_PASSED, spec.backstop_deadline, spec)
-    return AvailabilityResult(False, None, None, spec)
+    upcoming = [d for d in (spec.scheduled_event_date, market.close_date, spec.backstop_deadline) if d]
+    return AvailabilityResult(False, None, None, spec, min(upcoming) if upcoming else None)

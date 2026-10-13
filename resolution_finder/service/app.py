@@ -14,15 +14,16 @@ import logging
 import os
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
-from functools import wraps
+from functools import partial, wraps
 from typing import Optional
 
 from flask import Flask, jsonify, request
 
 from resolution_finder.models import Market
 from resolution_finder.gist_market_provider import GistMarketProvider, GistProviderError, _parse_close_date, _parse_options
-from resolution_finder.rain_pool_client import enrich_market_with_rain_description
+from resolution_finder.rain_pool_client import plan_scan
 from resolution_finder.resolution_spec import check_availability
 from resolution_finder.storage import get_history, get_latest_findings, init_db
 from resolution_finder.service import service_storage
@@ -57,6 +58,27 @@ def _finding_payload(finding: dict) -> dict:
     2026-10-13: per-option findings reached the screen with no label at
     all. Both names are sent; neither is renamed."""
     return {**finding, "option_name": finding.get("option")}
+
+
+def _filed_under(produce, option: Optional[str]):
+    """`produce` (the verdict engine, the peer checker or the structured
+    resolver) unchanged when `option` is None; otherwise the same callable
+    with every verdict it returns filed under `option`. A sub-pool scanned
+    as its own Yes/No market (see rain_pool_client.plan_scan) is decided
+    by the binary engine, which knows nothing of options -- this is what
+    records WHICH sub-pool the answer belongs to."""
+    if option is None:
+        return produce
+
+    def labelled(*args):
+        result = produce(*args)
+        if result is None:
+            return None
+        if isinstance(result, list):
+            return [replace(verdict, option=option) for verdict in result]
+        return replace(result, option=option)
+
+    return labelled
 
 
 def _market_from_payload(item: dict) -> Optional[Market]:
@@ -116,7 +138,7 @@ def create_app(
     # ── The real scan function (overridable in tests) ──────────────────
     def _real_scan(market_id: str, trigger: str) -> None:
         from resolution_finder.pipeline import _scan_market, _default_peer_checker
-        from resolution_finder.verdict_engine import decide
+        from resolution_finder.verdict_engine import decide, decide_dated_sub_pool
         from resolution_finder.structured_resolvers import resolve_structured
 
         market = get_provider().get_market(market_id)
@@ -124,26 +146,35 @@ def create_app(
             raise ValueError(f"Market {market_id!r} not found in the gist market list")
 
         # The gist only supplies id/title/close_date; the real resolution
-        # rules come from Rain's own pool record (rain_pool_client.py).
-        # None means Rain has no usable description yet -- "do not run
-        # the finder" (owner decision 2026-10-13): no scan, no finding,
-        # rather than matching evidence against the gist's placeholder
-        # description the way the 2026-10-12 OpenAI/Anthropic wrong
-        # finding did.
-        enriched = enrich_market_with_rain_description(market, fetch=rain_fetch)
+        # rules, and which sub-pools are still open, come from Rain's own
+        # pool record (rain_pool_client.plan_scan). A skip reason means
+        # "do not run the finder" (owner decisions 2026-10-13): Rain has
+        # no usable description yet, or has already resolved everything
+        # -- no scan and no finding, rather than matching evidence against
+        # the gist's placeholder description the way the 2026-10-12
+        # OpenAI/Anthropic wrong finding did.
+        plan = plan_scan(market, fetch=rain_fetch)
         run_id = service_storage.start_run(db_path, market_id, trigger)
-        if enriched is None:
-            service_storage.finish_run(
-                db_path, run_id, "done",
-                "No resolution rules available from Rain yet — scan skipped.",
-                0,
-            )
+        if plan.skip_reason:
+            service_storage.finish_run(db_path, run_id, "done", plan.skip_reason, 0)
             return
-        market = enriched
 
         run_timestamp = datetime.now(timezone.utc).isoformat()
         try:
-            _scan_market(market, db_path, run_timestamp, decide, _default_peer_checker, resolve_structured)
+            for target in plan.targets:
+                _scan_market(
+                    target.market, db_path, run_timestamp,
+                    # A sub-pool scanned on its own is a date-named one
+                    # (plan_scan): the only shape allowed to settle "No"
+                    # on an elapsed deadline with nothing found.
+                    _filed_under(
+                        decide if target.option is None
+                        else partial(decide_dated_sub_pool, opened=target.opened),
+                        target.option,
+                    ),
+                    _filed_under(_default_peer_checker, target.option),
+                    _filed_under(resolve_structured, target.option),
+                )
             count = service_storage.count_findings_for_run(db_path, market_id, run_timestamp)
             service_storage.finish_run(db_path, run_id, "done", None, count)
         except Exception as exc:

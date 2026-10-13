@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS findings (
     source_type TEXT,
     review_status TEXT NOT NULL DEFAULT 'Pending',
     resolution_available INTEGER,
-    availability_reason TEXT
+    availability_reason TEXT,
+    available_from TEXT
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -36,6 +37,10 @@ CREATE TABLE IF NOT EXISTS settings (
 _MIGRATIONS = [
     ("resolution_available", "ALTER TABLE findings ADD COLUMN resolution_available INTEGER"),
     ("availability_reason", "ALTER TABLE findings ADD COLUMN availability_reason TEXT"),
+    # 2026-10-13: the date a not-yet-available finding becomes determinable.
+    # Needed per FINDING, not per market: sub-pools named by dates each
+    # have their own deadline (see rain_pool_client.plan_scan).
+    ("available_from", "ALTER TABLE findings ADD COLUMN available_from TEXT"),
 ]
 
 
@@ -72,13 +77,16 @@ def save_finding(
             """
             INSERT INTO findings
                 (market_id, option, run_timestamp, outcome, confidence, evidence_snippet,
-                 source_url, source_type, review_status, resolution_available, availability_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)
+                 source_url, source_type, review_status, resolution_available, availability_reason,
+                 available_from)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?)
             """,
             (market_id, verdict.option, run_timestamp, verdict.outcome, verdict.confidence,
              verdict.evidence_snippet, verdict.source_url, verdict.source_type,
              None if availability is None else int(availability.available),
-             None if availability is None else availability.reason),
+             None if availability is None else availability.reason,
+             None if availability is None or availability.available_from is None
+             else availability.available_from.isoformat()),
         )
         conn.commit()
         return cursor.lastrowid
@@ -102,10 +110,22 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
             None if row["resolution_available"] is None else bool(row["resolution_available"])
         ),
         "availability_reason": row["availability_reason"],
+        "available_from": row["available_from"],
     }
 
 
 def get_latest_findings(db_path: str) -> list[dict]:
+    """Every finding of each market's most recent run that produced any.
+
+    Was "latest row per (market, option)" until 2026-10-13, from when a
+    run could report only SOME options and the rest had to be carried
+    over from earlier runs. Every run now reports every option it scans
+    (verdict_engine._fill_missing_options), so carrying rows over can
+    only show stale ones: the single whole-market row an unsettled market
+    used to get, or a sub-pool Rain has since resolved and the finder no
+    longer scans (rain_pool_client.plan_scan) -- found live on the
+    U.S.-Iran "by <date>" market, whose three settled sub-pools kept
+    their old "no answer" rows next to the one still open."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -113,39 +133,16 @@ def get_latest_findings(db_path: str) -> list[dict]:
             """
             SELECT f.* FROM findings f
             INNER JOIN (
-                SELECT market_id, option, MAX(run_timestamp) AS max_ts
-                FROM findings GROUP BY market_id, option
+                SELECT market_id, MAX(run_timestamp) AS max_ts
+                FROM findings GROUP BY market_id
             ) latest
-            ON f.market_id = latest.market_id
-               AND f.option IS latest.option
-               AND f.run_timestamp = latest.max_ts
+            ON f.market_id = latest.market_id AND f.run_timestamp = latest.max_ts
             ORDER BY f.market_id, f.option, f.confidence DESC
             """
         ).fetchall()
-        return _drop_superseded_whole_market_rows([_row_to_dict(r) for r in rows])
+        return [_row_to_dict(r) for r in rows]
     finally:
         conn.close()
-
-
-def _drop_superseded_whole_market_rows(findings: list[dict]) -> list[dict]:
-    """A market with listed options is reported per option since
-    2026-10-13 (see verdict_engine._fill_missing_options); before that, a
-    run that could not settle it saved ONE row with no option. "Latest per
-    (market, option)" would keep showing that old row forever next to the
-    newer per-option ones -- e.g. a stale whole-market UNCLEAR beside five
-    per-option NOs. Drop a no-option row only when the same market has a
-    NEWER per-option row; per-option tracking across runs is untouched."""
-    newest_per_option: dict[str, str] = {}
-    for finding in findings:
-        if finding["option"] is not None:
-            market_id = finding["market_id"]
-            if finding["run_timestamp"] > newest_per_option.get(market_id, ""):
-                newest_per_option[market_id] = finding["run_timestamp"]
-    return [
-        finding for finding in findings
-        if finding["option"] is not None
-        or finding["run_timestamp"] >= newest_per_option.get(finding["market_id"], "")
-    ]
 
 
 def get_history(db_path: str, market_id: str) -> list[dict]:

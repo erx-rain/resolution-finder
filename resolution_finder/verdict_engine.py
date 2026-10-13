@@ -1795,7 +1795,10 @@ def _uncorroborated_note(confirmations: list[tuple[str, RankedArticle]]) -> str:
     )
 
 
-def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict:
+def _decide_binary(
+    market: Market, ranked_evidence: list[RankedArticle], assert_elapsed_default: bool = False,
+    opened: Optional[date] = None,
+) -> Verdict:
     subject_terms = _subject_terms(market)
     distinctive_terms = _distinctive_subject_terms(market)
     binary_subject = _market_binary_subject(market)
@@ -1941,6 +1944,15 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
     #
     # The stated default is still surfaced to the human reviewer as
     # CONTEXT on the unresolved verdict -- just never as the answer.
+    #
+    # One exception, opt-in via `assert_elapsed_default` and used ONLY for
+    # a sub-pool named by a date (see decide_dated_sub_pool, the only
+    # caller that sets it): owner decision 2026-10-13.
+    if assert_elapsed_default:
+        elapsed = _elapsed_deadline_verdict(market, ranked_evidence, opened)
+        if elapsed is not None:
+            return elapsed
+
     deadline_note = _deadline_default_note(market)
 
     if ranked_evidence:
@@ -2602,6 +2614,153 @@ def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]
                 evidence_snippet=None, source_url=None, source_type=None,
             ))
     return results
+
+
+_TRAILING_BY_DATE_RE = re.compile(
+    r"\s+by\s+(?:the\s+end\s+of\s+)?(?:[A-Z][a-z]+\.?\s+\d{1,2}(?:,\s*\d{4})?|[A-Z][a-z]+\s+\d{4}|\d{4})$"
+)
+
+
+def _question_as_statement(title: str) -> str:
+    """"Will the U.S. and Iran finalize a nuclear agreement by September
+    30?" -> "the U.S. and Iran finalize a nuclear agreement": the event
+    itself, without the question form or its deadline."""
+    statement = title.strip().rstrip("?").strip()
+    statement = re.sub(r"^will\s+", "", statement, flags=re.IGNORECASE)
+    return _TRAILING_BY_DATE_RE.sub("", statement)
+
+
+def _report_that_it_happened(
+    market: Market, ranked_evidence: list[RankedArticle], opened: Optional[date],
+) -> Optional[tuple[str, RankedArticle]]:
+    """The first sentence in the evidence that reads as a report that the
+    market's own event has ALREADY happened, or None.
+
+    Exists because _decide_binary's own YES detection is far too narrow to
+    be trusted as "nothing says it happened": found while building
+    _elapsed_deadline_verdict, "The United States and Iran signed the
+    final nuclear agreement in Geneva on Tuesday" produced no YES
+    candidate at all, so the elapsed-deadline No would have been asserted
+    straight over it.
+
+    Used ONLY as a veto on that No -- never to assert Yes. Measured
+    2026-10-13 on the 7 resolved Yes/No eval markets where the
+    elapsed-deadline No would otherwise fire, highest-scoring sentence
+    per market:
+        truth Yes (the No would be WRONG):  0.997  0.991  0.980
+        truth No  (the No would be right):  0.913  0.878  0.809  0.658
+    and on the live U.S.-Iran market: 0.36 on its real post-opening
+    coverage, 0.997 on "...signed the final nuclear agreement...", 0.02
+    on "...talks remain stalled". The bar is NLI_VERIFICATION_THRESHOLD,
+    the constant already used everywhere else, not a number fitted to
+    those seven: it vetoes all three wrong ones and also two right ones,
+    which is the intended side to err on.
+
+    An article published before the sub-pool was opened cannot be
+    reporting the event the sub-pool asks about, and is left out (the
+    U.S.-Iran market was opened after an interim deal that the press
+    called "complete")."""
+    statement = _question_as_statement(market.title)
+    happened = f"It has already happened: {statement}."
+    not_happened = f"It has not happened: {statement}."
+    for item in ranked_evidence:
+        published = item.article.published_date
+        if opened is not None and published is not None and published < opened:
+            continue
+        for sentence in _split_sentences(item.text):
+            if len(sentence.split()) < 5 or _sentence_is_interrogative(sentence):
+                continue
+            scores = _classify_scores(sentence[:600], [happened, not_happened])
+            if scores[happened] >= NLI_VERIFICATION_THRESHOLD:
+                return sentence, item
+    return None
+
+
+def _elapsed_deadline_verdict(
+    market: Market, ranked_evidence: list[RankedArticle], opened: Optional[date] = None,
+) -> Optional[Verdict]:
+    """NO for a market whose own deadline has passed with nothing found --
+    or None, which leaves the unresolved verdict exactly as it was.
+
+    This IS the absence-as-proof that was removed from _decide_binary on
+    2026-08-26 (see the comment where this is called: 2 right, 2 wrong on
+    the real eval; re-measured 2026-10-13 on 27 resolved Yes/No markets
+    without the veto below: fired on 7, 4 right, 3 wrong). The owner chose
+    to accept it for one shape only, on 2026-10-13: a rain.trade sub-pool
+    named by a date ("Will the U.S. and Iran finalize a nuclear agreement
+    by September 30?"). There the deadline is the sub-pool's own, the
+    question is whether one named event happened by then, and Rain itself
+    settles such a sub-pool "No" within days when nothing has happened --
+    it did for all three elapsed sub-pools of that market. It must not be
+    widened to other shapes on the strength of this comment.
+
+    Reached only when the binary path found NO confirmation of either
+    kind. On top of that, all of these must hold:
+      - the sub-pool's own deadline is behind us;
+      - the market's own description states that it otherwise resolves
+        "No" (description beats title);
+      - relevant coverage was actually read: 2+ independent domains, at
+        least one article dated AFTER the deadline. Reading nothing, or
+        only articles written before the deadline, says nothing about
+        whether the event happened by it;
+      - nothing in that coverage reads as a report that it happened
+        (_report_that_it_happened). If something does, the result is an
+        UNCLEAR carrying that sentence, not a No. With this veto the same
+        7 markets give: fired on 2, both right; the 3 wrong ones abstain.
+    The No says in words that it rests on absence, with confidence 0.0 --
+    no source says "it did not happen"."""
+    deadline = market.close_date
+    if deadline is None or date.today() <= deadline:
+        return None
+    if _extract_default_outcome(market.description) != "NO":
+        return None
+    domains = {_confirmation_domain(item) for item in ranked_evidence}
+    after_deadline = [
+        item for item in ranked_evidence
+        if item.article.published_date is not None and item.article.published_date > deadline
+    ]
+    if len(domains) < CORROBORATION_MIN_DOMAINS or not after_deadline:
+        return None
+
+    report = _report_that_it_happened(market, ranked_evidence, opened)
+    if report is not None:
+        sentence, item = report
+        return Verdict(
+            outcome="UNCLEAR", confidence=item.similarity,
+            evidence_snippet=(
+                sentence.strip()[:280]
+                + " [Deadline passed. This reads as a report that the condition was met, but it "
+                  "could not be confirmed -- left unresolved rather than settled No.]"
+            ),
+            source_url=item.article.url, source_type=item.article.source_type,
+        )
+
+    latest = max(after_deadline, key=lambda item: item.article.published_date)
+    return Verdict(
+        outcome="NO", confidence=0.0,
+        evidence_snippet=(
+            f"Deadline ({deadline.isoformat()}) passed and none of the "
+            f"{len(ranked_evidence)} relevant articles read ({len(domains)} independent sources, "
+            f"the latest dated {latest.article.published_date.isoformat()}) reports that the "
+            "condition was met. This market's own rules resolve it to No in that case. "
+            "[Asserted from the absence of evidence, not from a source saying it did not happen.]"
+        ),
+        source_url=latest.article.url, source_type=latest.article.source_type,
+    )
+
+
+def decide_dated_sub_pool(
+    market: Market, ranked_evidence: list[RankedArticle], opened: Optional[date] = None,
+) -> Verdict | list[Verdict]:
+    """decide() for ONE rain.trade sub-pool named by a date, scanned as
+    its own Yes/No market with its own deadline (rain_pool_client.
+    plan_scan). Identical to decide() except that the plain binary path
+    may settle "No" once that deadline has passed with nothing found --
+    see _elapsed_deadline_verdict for why, and for everything that must
+    hold. `opened` is the day Rain created the sub-pool, when known."""
+    if market.options or _extract_threshold_condition(market) is not None:
+        return decide(market, ranked_evidence)
+    return _decide_binary(market, ranked_evidence, assert_elapsed_default=True, opened=opened)
 
 
 def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict | list[Verdict]:

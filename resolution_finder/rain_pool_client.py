@@ -17,14 +17,16 @@ served publicly with no token (verified live 2026-10-13 against
 prod2-api.rain.one/pools/pool/<id> -- the exact endpoint rain-admin's
 own fetchRainPoolDetail() calls, services/market-wizard/rain.ts).
 
-Hard rule enforced here, not just documented: enrich_market_with_rain_
-description() returns None -- "do not run the finder" -- whenever Rain
-can't be reached or has no usable description. Nothing here ever falls
-back to the gist's own placeholder text; a caller that gets None must
-skip the scan, not substitute anything.
+Hard rule enforced here, not just documented: plan_scan() returns no
+targets -- "do not run the finder" -- whenever Rain can't be reached or
+has no usable description. Nothing here ever falls back to the gist's
+own placeholder text; a caller that gets a skip reason must skip the
+scan, not substitute anything.
 """
 import logging
-from dataclasses import replace
+import re
+from dataclasses import dataclass, replace
+from datetime import date
 from typing import Callable, Optional
 
 import requests
@@ -46,8 +48,8 @@ PoolFetcher = Callable[[str], dict]
 
 class RainPoolError(Exception):
     """The pool record could not be fetched or decoded. Always turned
-    into "skip this scan" by enrich_market_with_rain_description --
-    never into a guessed description."""
+    into "skip this scan" by plan_scan -- never into a guessed
+    description."""
 
 
 def _default_fetch(market_id: str) -> dict:
@@ -70,54 +72,156 @@ def _default_fetch(market_id: str) -> dict:
     return data
 
 
-def _options_from_subpools(data: dict) -> list[str]:
-    """Verified live 2026-10-13 on two real pools:
-    - 2+ subPools = a real multi-outcome market, one sub-pool per named
-      outcome (e.g. "Anthropic" / "OpenAI" on the OpenAI-vs-Anthropic IPO
-      market -- each sub-pool its own internal Yes/No bet on THAT outcome
-      happening first). Matches pull_test_batch.py's own groupItemTitle
-      convention: the sub-pool's own question, verbatim, in source order.
-    - Exactly 1 subPool = Rain's binary-market convention (the
-      MicroStrategy-bankruptcy market has one sub-pool whose own
-      question is the placeholder "Yes", not a real outcome name).
-      Returning [] here is what routes it to verdict_engine's
-      _decide_binary instead of wrongly treating "Yes" as a 1-item
-      outcome list for _decide_multi_outcome.
-    A malformed/partial list (some sub-pool missing its own question) is
-    not trusted as a real split either -- real markets never have this,
-    so treat it the same as "no split" rather than guess."""
-    sub_pools = data.get("subPools")
-    if not isinstance(sub_pools, list) or len(sub_pools) < 2:
+@dataclass(frozen=True)
+class SubPool:
+    """One Rain sub-pool, as Rain itself reports it. Each is its own
+    Yes/No question on rain.trade."""
+
+    name: str                    # sub-pool `question`, verbatim ("December 31", "Anthropic")
+    question: str                # `mergedQuestion`, verbatim ("Will ... by December 31?"), or ""
+    end_date: Optional[date]     # the sub-pool's own `endDate`
+    opened: Optional[date]       # the day Rain created it (`createdAt`)
+    resolved: bool               # Rain has already settled it -- see _is_resolved
+
+
+def _is_resolved(sub_pool: dict) -> bool:
+    """Rain has settled this sub-pool: it is finalized, or a winning side
+    has been recorded. Verified live 2026-10-13 on the U.S.-Iran "by
+    <date>" market: its three elapsed sub-pools carry poolFinalized=true,
+    a `winnerOption` (decidedBy "olympus-ai") and status "Closed"; the one
+    still running has none of the three and status "Live".
+
+    `status` alone is deliberately NOT the test: a sub-pool whose trading
+    has closed but which nobody has settled yet is exactly the one a
+    reviewer needs an answer for."""
+    return bool(sub_pool.get("poolFinalized")) or bool(sub_pool.get("winnerOption"))
+
+
+def _parse_end_date(raw) -> Optional[date]:
+    if not isinstance(raw, str) or len(raw) < 10:
+        return None
+    try:
+        return date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
+
+
+def _sub_pools(data: dict) -> list[SubPool]:
+    """Every sub-pool Rain lists, in Rain's own order. A malformed list
+    (an entry with no question of its own) is not trusted as a real split
+    -- real markets never have this -- and yields []."""
+    raw = data.get("subPools")
+    if not isinstance(raw, list):
         return []
-    names = [
-        sp.get("question") for sp in sub_pools
-        if isinstance(sp, dict) and isinstance(sp.get("question"), str) and sp.get("question").strip()
-    ]
-    return names if len(names) == len(sub_pools) else []
+    sub_pools: list[SubPool] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return []
+        name = entry.get("question")
+        if not isinstance(name, str) or not name.strip():
+            return []
+        merged = entry.get("mergedQuestion")
+        sub_pools.append(SubPool(
+            name=name,
+            question=merged if isinstance(merged, str) else "",
+            end_date=_parse_end_date(entry.get("endDate")),
+            opened=_parse_end_date(entry.get("createdAt")),
+            resolved=_is_resolved(entry),
+        ))
+    return sub_pools
 
 
-def enrich_market_with_rain_description(
-    market: Market, fetch: Optional[PoolFetcher] = None
-) -> Optional[Market]:
-    """The one place a service-path market's REAL resolution rules get
-    attached before it reaches verdict_engine.decide(). `market` as
-    passed in carries only what the gist supplies (id/title/close_date);
-    this overlays Rain's own `poolDescription` as `description` and
-    derives `options` from `subPools` -- both verbatim, never merged
-    with the gist's own placeholder text.
+# A sub-pool named by a calendar date -- "August 18", "Sept 30", "December
+# 31, 2026". The whole name must be a date: "August Wilson" is a person.
+_DATE_NAME_RE = re.compile(
+    r"^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|"
+    r"sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?"
+    r"(?:,?\s+\d{4})?$",
+    re.IGNORECASE,
+)
 
-    Returns None when Rain can't be reached or has no usable description
-    -- the caller's contract (see service/app.py::_real_scan) is that
-    None means "do not run the finder": no scan, no finding, no verdict,
-    for this run."""
+
+def _is_date_name(name: str) -> bool:
+    return bool(_DATE_NAME_RE.match(name.strip()))
+
+
+SKIP_NO_RULES = "No resolution rules available from Rain yet — scan skipped."
+SKIP_ALL_RESOLVED = "Already resolved on Rain — nothing left to scan."
+
+
+@dataclass(frozen=True)
+class ScanTarget:
+    """One thing to hand to the pipeline. `option` is None when `market`
+    is scanned as a whole (its own options, if any, are reported by the
+    engine); it is a sub-pool's name when `market` is that ONE sub-pool
+    scanned as its own Yes/No question, and every finding it produces is
+    filed under that name."""
+
+    market: Market
+    option: Optional[str] = None
+    opened: Optional[date] = None   # with `option`: the day Rain created that sub-pool
+
+
+@dataclass(frozen=True)
+class ScanPlan:
+    targets: tuple[ScanTarget, ...] = ()
+    skip_reason: Optional[str] = None
+
+
+def plan_scan(market: Market, fetch: Optional[PoolFetcher] = None) -> ScanPlan:
+    """What to scan for a service-path market, from Rain's own record.
+    `market` as passed in carries only what the gist supplies
+    (id/title/close_date); Rain's `poolDescription` becomes the
+    description, verbatim, never merged with the gist's placeholder text.
+
+    Nothing is scanned -- "do not run the finder" -- when Rain can't be
+    reached or has no description, and when Rain has already resolved
+    everything there is.
+
+    Sub-pools Rain has already resolved are never scanned (owner decision
+    2026-10-13): Rain's own settlement is the answer for those, and
+    re-deriving it can only add noise.
+
+    How the open sub-pools are scanned depends on what they are:
+    - ONE sub-pool in total is Rain's binary-market shape (its own name
+      is the placeholder "Yes", not an outcome): a plain Yes/No market.
+    - Sub-pools named by DATES ("August 18", "December 31") are thresholds
+      of one event, not rivals: each open one is scanned as its own Yes/No
+      market -- Rain's own `mergedQuestion` as the title ("Will ... by
+      December 31?") and the sub-pool's own end date as its deadline.
+      Found live 2026-10-13: scanned together as a "who wins" market, all
+      four U.S.-Iran sub-pools were reported "can't be determined until
+      Jan 1, 2027" (the pool's close), including three whose own dates had
+      passed, and the engine was asking whether "August 18 has won".
+    - Anything else is a contest between named outcomes: one market whose
+      options are the open sub-pools' names, in Rain's order."""
     fetch_fn = fetch or _default_fetch
     try:
         data = fetch_fn(market.id)
     except RainPoolError as exc:
         logger.warning("Rain pool fetch failed for market %s — skipping scan: %s", market.id, exc)
-        return None
+        return ScanPlan(skip_reason=SKIP_NO_RULES)
     description = data.get("poolDescription")
     if not isinstance(description, str) or not description.strip():
         logger.info("Rain has no resolution rules yet for market %s — skipping scan", market.id)
-        return None
-    return replace(market, description=description, options=_options_from_subpools(data))
+        return ScanPlan(skip_reason=SKIP_NO_RULES)
+
+    sub_pools = _sub_pools(data)
+    open_sub_pools = [sp for sp in sub_pools if not sp.resolved]
+    if data.get("isFinalized") or (sub_pools and not open_sub_pools):
+        return ScanPlan(skip_reason=SKIP_ALL_RESOLVED)
+
+    whole = replace(market, description=description, options=[])
+    if len(sub_pools) < 2:
+        return ScanPlan(targets=(ScanTarget(whole),))
+
+    if all(_is_date_name(sp.name) for sp in sub_pools) and all(sp.question.strip() for sp in open_sub_pools):
+        return ScanPlan(targets=tuple(
+            ScanTarget(
+                replace(whole, title=sp.question, close_date=sp.end_date or market.close_date),
+                option=sp.name, opened=sp.opened,
+            )
+            for sp in open_sub_pools
+        ))
+
+    return ScanPlan(targets=(ScanTarget(replace(whole, options=[sp.name for sp in open_sub_pools])),))

@@ -25,6 +25,13 @@ only the essentials.
    `eval_cache.py`), never in the production pipeline.
 6. **"Found nothing" is not "didn't happen."** Never emit a market's default
    outcome as a verdict from absence of evidence.
+   One exception, owner decision 2026-10-13, and only this one: a Rain
+   sub-pool **named by a date** ("... by September 30?") whose own deadline
+   has passed may be proposed `NO` when its rules say "otherwise No",
+   coverage from after the deadline was read from 2+ sources, and nothing
+   in it reads as a report that the event happened
+   (`verdict_engine._elapsed_deadline_verdict`; its comment has the
+   measurements). Do not widen it to other market shapes.
 7. **Sources:** robots.txt is not legal clearance; read the ToS. Never fetch
    X/Instagram pages. Never bypass a block, WAF challenge or broken SSL cert.
    Verify any new domain live before whitelisting. See HANDOFF section 10.

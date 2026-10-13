@@ -208,7 +208,12 @@ def test_migrate_is_idempotent_and_preserves_existing_data():
     os.remove(db_path)
 
 
-def test_get_latest_findings_tracks_each_option_independently_across_runs():
+def test_get_latest_findings_are_the_most_recent_runs_rows_only():
+    # Until 2026-10-13 this asserted the opposite -- an option's row was
+    # carried over from an earlier run when a later run did not report it.
+    # Every run now reports every option it scans, so an option missing
+    # from the latest run is one the finder no longer scans (Rain resolved
+    # it), and its old row is stale.
     db_path = make_temp_db()
     v1 = Verdict(outcome="NO", confidence=0.6, evidence_snippet="eliminated",
                  source_url="https://dexerto.com/x", source_type="credible_backup",
@@ -216,15 +221,12 @@ def test_get_latest_findings_tracks_each_option_independently_across_runs():
     save_finding(db_path, "international-2026-champion", "2026-08-17T00:00:00", v1)
 
     v2 = Verdict(outcome="UNCLEAR", confidence=0.3, evidence_snippet="still undecided",
-                 source_url=None, source_type=None)
+                 source_url=None, source_type=None, option="Team Spirit")
     save_finding(db_path, "international-2026-champion", "2026-08-18T00:00:00", v2)
 
     latest = get_latest_findings(db_path)
-    market_rows = [r for r in latest if r["market_id"] == "international-2026-champion"]
-    assert len(market_rows) == 2
-    assert {r["option"]: r["outcome"] for r in market_rows} == {
-        "Aurora Gaming": "NO", None: "UNCLEAR",
-    }
+    assert [(r["option"], r["outcome"]) for r in latest] == [("Team Spirit", "UNCLEAR")]
+    assert len(get_history(db_path, "international-2026-champion")) == 2
     os.remove(db_path)
 
 
@@ -245,4 +247,15 @@ def test_latest_findings_drop_a_whole_market_row_superseded_by_per_option_rows()
     assert {(row["market_id"], row["option"]) for row in latest} == {
         ("nobel-peace-2026", "Donald Trump"), ("nobel-peace-2026", "UNRWA"), ("clarity-act-2026", None),
     }
+    os.remove(db_path)
+
+
+def test_finding_records_the_date_its_answer_becomes_determinable():
+    db_path = make_temp_db()
+    verdict = Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                      source_url=None, source_type=None, option="December 31")
+    market = Market(id="m", title="Will it happen by December 31?", description="",
+                    options=[], close_date=date(2099, 12, 31))
+    save_finding(db_path, "m", "2026-10-13T00:00:00", verdict, check_availability(market))
+    assert get_latest_findings(db_path)[0]["available_from"] == "2099-12-31"
     os.remove(db_path)

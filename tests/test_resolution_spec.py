@@ -234,3 +234,14 @@ def test_states_non_winners_resolve_no_reads_the_markets_own_rule():
     assert not states_non_winners_resolve_no(
         "This market will resolve according to the division of the team that wins the 2025 MLB World Series.")
     assert not states_non_winners_resolve_no("")
+
+
+def test_availability_says_from_when_a_not_yet_available_market_can_be_determined():
+    from resolution_finder.resolution_spec import check_availability
+    pending = Market(id="m", title="Will X happen?", description="", options=[], close_date=date(2099, 6, 30))
+    result = check_availability(pending, today=date(2026, 10, 13))
+    assert result.available is False and result.available_from == date(2099, 6, 30)
+    # Once available there is nothing to wait for; and with no date at all, nothing to say.
+    assert check_availability(pending, today=date(2100, 1, 1)).available_from is None
+    undated = Market(id="m", title="Will X happen?", description="", options=[], close_date=None)
+    assert check_availability(undated, today=date(2026, 10, 13)).available_from is None
