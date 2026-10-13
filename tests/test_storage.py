@@ -226,3 +226,23 @@ def test_get_latest_findings_tracks_each_option_independently_across_runs():
         "Aurora Gaming": "NO", None: "UNCLEAR",
     }
     os.remove(db_path)
+
+
+def test_latest_findings_drop_a_whole_market_row_superseded_by_per_option_rows():
+    # Before 2026-10-13 an unsettled market with options saved ONE row with
+    # no option; runs since then save one per option.
+    db_path = make_temp_db()
+    old = Verdict(outcome="UNCLEAR", confidence=0.5, evidence_snippet="x", source_url=None, source_type=None)
+    save_finding(db_path, "nobel-peace-2026", "2026-10-13T09:58:18", old)
+    for option in ("Donald Trump", "UNRWA"):
+        save_finding(db_path, "nobel-peace-2026", "2026-10-13T12:00:00", Verdict(
+            outcome="NO", confidence=0.6, evidence_snippet="y", source_url="https://x.com/a",
+            source_type="official_social", option=option))
+    # A binary market's own no-option row is untouched.
+    save_finding(db_path, "clarity-act-2026", "2026-10-13T09:00:00", old)
+
+    latest = get_latest_findings(db_path)
+    assert {(row["market_id"], row["option"]) for row in latest} == {
+        ("nobel-peace-2026", "Donald Trump"), ("nobel-peace-2026", "UNRWA"), ("clarity-act-2026", None),
+    }
+    os.remove(db_path)

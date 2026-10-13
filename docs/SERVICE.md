@@ -94,6 +94,19 @@ Outcomes: `YES` / `NO` / per-option verdicts are proposals with evidence;
 `UNCLEAR` and `NO_EVIDENCE` are valid "no answer yet" states for the
 reviewer — never errors, and never auto-converted to a default outcome.
 
+A market with listed options (Rain sub-pools) gets **one finding per
+option on every run** (2026-10-13) — each sub-pool is its own Yes/No
+question. An option nothing was found about is `NO_EVIDENCE`, never left
+out and never guessed. Findings carry the option as both `option` and
+`option_name` (the name rain-admin reads).
+
+When a market's own rules say non-winning options resolve "No" and two
+independent sources state, with the market's own year, that someone
+**not listed** won, every listed option is proposed `NO` (the evidence
+names who won and that they are not listed). Anything short of that —
+one source, no year in the sentence, a listed option with a winner claim
+of its own — leaves the options unresolved.
+
 ## VM deployment (systemd)
 
 ```ini

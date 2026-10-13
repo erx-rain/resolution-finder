@@ -122,9 +122,30 @@ def get_latest_findings(db_path: str) -> list[dict]:
             ORDER BY f.market_id, f.option, f.confidence DESC
             """
         ).fetchall()
-        return [_row_to_dict(r) for r in rows]
+        return _drop_superseded_whole_market_rows([_row_to_dict(r) for r in rows])
     finally:
         conn.close()
+
+
+def _drop_superseded_whole_market_rows(findings: list[dict]) -> list[dict]:
+    """A market with listed options is reported per option since
+    2026-10-13 (see verdict_engine._fill_missing_options); before that, a
+    run that could not settle it saved ONE row with no option. "Latest per
+    (market, option)" would keep showing that old row forever next to the
+    newer per-option ones -- e.g. a stale whole-market UNCLEAR beside five
+    per-option NOs. Drop a no-option row only when the same market has a
+    NEWER per-option row; per-option tracking across runs is untouched."""
+    newest_per_option: dict[str, str] = {}
+    for finding in findings:
+        if finding["option"] is not None:
+            market_id = finding["market_id"]
+            if finding["run_timestamp"] > newest_per_option.get(market_id, ""):
+                newest_per_option[market_id] = finding["run_timestamp"]
+    return [
+        finding for finding in findings
+        if finding["option"] is not None
+        or finding["run_timestamp"] >= newest_per_option.get(finding["market_id"], "")
+    ]
 
 
 def get_history(db_path: str, market_id: str) -> list[dict]:

@@ -173,6 +173,28 @@ _DEADLINE_ANCHORED_DEFAULT_PATTERN = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# A multi-outcome market's own statement that every listed option which is
+# NOT the winner resolves "No" -- real wording, both from live markets:
+#   "If none of the listed individuals or entities receive the prize, all
+#    listed outcomes will resolve to "No"."        (Nobel Peace Prize 2026)
+#   "The winning team's market will resolve to "Yes". All other team
+#    markets will resolve to "No"."                (The International 2026)
+# verdict_engine's unlisted-winner path only ever fires for a market whose
+# own rules say this (description beats title): without it, "someone not
+# on the list won" is not known to settle the listed options at all (a
+# market whose options are scores, seeds or divisions -- "Dodgers win
+# 4-1" -- is decided by a named team winning, not negated by it).
+_NON_WINNERS_RESOLVE_NO_RE = re.compile(
+    r"none of the listed[^.]{0,120}?resolve[^.]{0,20}?[\"“]?no\b|"
+    r"all other (?:listed )?[a-z]*\s?(?:outcomes|options|markets)[^.]{0,60}?resolve[^.]{0,20}?[\"“]?no\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def states_non_winners_resolve_no(description: str) -> bool:
+    return bool(_NON_WINNERS_RESOLVE_NO_RE.search(description or ""))
+
+
 # Highly regular across every real description examined -- "The primary
 # resolution source...", "official information from...", "a consensus
 # of credible reporting". This deliberately only detects WHETHER a

@@ -8,6 +8,7 @@ from resolution_finder.models import Market, RankedArticle, Verdict
 from resolution_finder.query_builder import extract_entities
 from resolution_finder.relevance_ranker import _get_model
 from resolution_finder.resolution_spec import extract_default_outcome as _extract_default_outcome
+from resolution_finder.resolution_spec import states_non_winners_resolve_no as _states_non_winners_resolve_no
 
 logger = logging.getLogger(__name__)
 
@@ -1957,6 +1958,188 @@ def _decide_binary(market: Market, ranked_evidence: list[RankedArticle]) -> Verd
                     source_url=None, source_type=None)
 
 
+# Owner decision (2026-10-13): a market with listed options is reported
+# PER OPTION, always -- each option is its own Yes/No sub-market on
+# rain.trade, and "is THIS nominee resolved" is the question a reviewer
+# actually has. Every _decide_multi_outcome return path used to collapse to
+# a single market-wide row whenever the market as a whole could not be
+# settled (real case, the 2026 Nobel Peace Prize market: one flat UNCLEAR
+# carrying a Donald Trump sentence, nothing at all for the other four
+# nominees). Options a path has something to say about keep exactly the
+# verdict that path built; every other option gets an honest NO_EVIDENCE --
+# never an outcome inferred from having found nothing (hard rule: "found
+# nothing" is not "didn't happen").
+def _no_evidence_verdict(option: str, note: str = "") -> Verdict:
+    return Verdict(outcome="NO_EVIDENCE", option=option, confidence=0.0,
+                   evidence_snippet=note or None, source_url=None, source_type=None)
+
+
+def _fill_missing_options(results: list[Verdict], market: Market, note: str = "") -> list[Verdict]:
+    by_option = {verdict.option: verdict for verdict in results}
+    return [by_option.get(option) or _no_evidence_verdict(option, note) for option in market.options]
+
+
+# Unlisted winner (2026-10-13). Real case this exists for: the 2026 Nobel
+# Peace Prize market lists five nominees; the prize went to Navi Pillay,
+# who is not one of them. Seven independent outlets were retrieved saying
+# so, and none of it could be used -- every check in _decide_multi_outcome
+# starts from a sentence naming a LISTED option, so evidence about anyone
+# else was invisible and all five nominees stayed unresolved, although the
+# market's own rules settle each of them "No" the moment someone else wins.
+#
+# What is and is not trusted here was measured on that market's real
+# evidence before anything was built, because the first two designs failed:
+#   - Asking the NLI model about every capitalized name in a sentence:
+#     "United States has won ..." scored 0.96 on a sentence about Maduro,
+#     "International Court of Justice has won ..." 0.92, while real winner
+#     sentences scored 0.16-0.67.
+#   - A name-free hypothesis ("Someone other than {option} has won ..."):
+#     top score 0.73, on a biography sentence; the real "has won the Nobel
+#     Peace Prize" sentence scored 0.45.
+#   - Even on a name picked by award grammar, the NLI check alone accepts
+#     nearly anything: "International Criminal Court" 0.98 ("awarded to
+#     former International Criminal Court judge Navi Pillay"), "Justice"
+#     0.98, last year's laureate "María Corina Machado" 0.95.
+# What did separate cleanly: the sentence states the market's OWN year next
+# to the award ("...award the 2026 #NobelPeacePrize to...", "...is the 2026
+# Peace Prize winner"). Every false candidate above lacks it; the real
+# winner has it in two independent domains. So the year is a hard
+# requirement, not a tie-breaker, and a market whose title names no year
+# never takes this path.
+#
+# Keywords select, NLI verifies, 2 independent domains corroborate -- same
+# architecture as every other path in this file. On top of that, each of
+# these must hold, and failing any one means the old behaviour (no verdict):
+#   - the market's own description says non-winning options resolve "No"
+#     (resolution_spec.states_non_winners_resolve_no);
+#   - no listed option has ANY winner confirmation, corroborated or not;
+#   - the sentence names no listed option (a shared award must be judged
+#     on the listed option's own evidence), and does not spell out a listed
+#     acronym ("United Nations Relief and Works Agency" for "UNRWA");
+#   - the candidate shares no name with a listed option ("Trump" is never
+#     an "unlisted" winner in a market listing "Donald Trump");
+#   - exactly one such name is corroborated -- two different unlisted
+#     "winners" is disagreement, not a result.
+_NAME_TOKEN = r"[A-Z][\w.'’-]*"
+_RECIPIENT_NAME = rf"{_NAME_TOKEN}(?:\s+(?:[\"“]{_NAME_TOKEN}[\"”]\s+)?{_NAME_TOKEN}){{0,3}}"
+_RECIPIENT_PATTERNS = [
+    # "Navanethem Pillay Wins 2026 Nobel Peace Prize"
+    re.compile(rf"\b({_RECIPIENT_NAME})\s+(?:has\s+|have\s+)?(?i:wins|won|receives|received|is awarded|was awarded)\b"),
+    # "...announced that Pillay is the 2026 Peace Prize winner"
+    re.compile(rf"\b({_RECIPIENT_NAME})\s+(?:is|was)\s+(?:named\s+|announced\s+)?(?:as\s+)?(?:the\s+)?[^.,;]{{0,40}}?\b(?:winner|laureate|recipient)\b"),
+    # "...has decided to award the 2026 #NobelPeacePrize to Navanethem “Navi” Pillay"
+    re.compile(rf"\b(?i:award(?:ed|s)?|goes|went|given|presented)\b[^.;]{{0,80}}?\bto\s+(?:[a-z][\w-]*\s+){{0,5}}?({_RECIPIENT_NAME})"),
+    # "2026 Nobel Peace Prize laureate Navi Pillay"
+    re.compile(rf"\b(?:winner|laureate|recipient)\s+({_RECIPIENT_NAME})"),
+]
+
+# Same cap concept as MULTI_OUTCOME_MAX_CONFIRMATIONS_PER_OPTION.
+UNLISTED_WINNER_MAX_CONFIRMATIONS = 3
+
+
+def _name_tokens(text: str) -> list[str]:
+    return [token.lower() for token in re.findall(r"[A-Za-z0-9]+", text)]
+
+
+def _recipient_names(sentence: str) -> list[str]:
+    names: list[str] = []
+    for pattern in _RECIPIENT_PATTERNS:
+        for match in pattern.finditer(sentence):
+            name = re.sub(r"[\"“”]", "", match.group(1)).strip()
+            name = re.sub(r"[’']s$", "", name).strip(" .,;:")
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def _shares_a_name_with_listed_option(name: str, market: Market) -> bool:
+    tokens = {token for token in _name_tokens(name) if len(token) >= 3}
+    return any(tokens & set(_name_tokens(option)) for option in market.options)
+
+
+def _sentence_spells_out_listed_acronym(sentence: str, market: Market) -> bool:
+    """True if the capitalized words of `sentence` spell a listed option
+    that is itself an acronym -- "United Nations Relief and Works Agency"
+    for "UNRWA". A false hit only skips a sentence, which is the safe
+    direction."""
+    initials = "".join(word[0] for word in re.findall(r"[A-Za-z]+", sentence) if word[0].isupper())
+    for option in market.options:
+        compact = option.strip()
+        if len(compact) >= 3 and compact.isalpha() and compact.isupper() and compact in initials:
+            return True
+    return False
+
+
+def _unlisted_winner(
+    market: Market, ranked_evidence: list[RankedArticle]
+) -> Optional[tuple[str, list[tuple[str, RankedArticle]]]]:
+    """(name, confirmations) when 2+ independent domains state, with the
+    market's own year, that someone NOT listed in this market won it --
+    None in every other case. See the comment above for each gate."""
+    if not _states_non_winners_resolve_no(market.description):
+        return None
+    year_match = _YEAR_PATTERN.search(market.title)
+    if not year_match:
+        return None
+    year = year_match.group()
+    year_pattern = re.compile(rf"\b{re.escape(year)}\b")
+    expected_year = int(year)
+    market_is_playoff = _market_is_playoff_context(market)
+    expected_competition = _market_named_competition(market)
+    market_vocabulary = set(_name_tokens(f"{market.title} {market.description}"))
+
+    confirmations: dict[str, list[tuple[str, RankedArticle]]] = {}
+    display_name: dict[str, str] = {}
+    for item in ranked_evidence:
+        article_lead_sentence = _first_sentence(item.text)
+        for sentence in _split_sentences(item.text):
+            if not year_pattern.search(sentence):
+                continue
+            if _sentence_has_hedge(sentence) or _sentence_is_interrogative(sentence):
+                continue
+            lowered = sentence.lower()
+            if any(_option_mentioned(lowered, option) for option in market.options if option.strip()):
+                continue
+            if _sentence_spells_out_listed_acronym(sentence, market):
+                continue
+            if (_sentence_mentions_conflicting_year(sentence, expected_year)
+                    or _sentence_mentions_conflicting_year(article_lead_sentence, expected_year)
+                    or _sentence_mentions_conflicting_relative_season(
+                        sentence, expected_year, item.article.published_date)
+                    or _sentence_mentions_last_year_reference(sentence)
+                    or _sentence_mentions_conflicting_phase(sentence, market_is_playoff)
+                    or _sentence_mentions_relative_recency(sentence)
+                    or _sentence_mentions_conflicting_competition(sentence, expected_competition)):
+                continue
+            for name in _recipient_names(sentence):
+                tokens = _name_tokens(name)
+                if not tokens:
+                    continue
+                # People are corroborated by surname: "Pillay", "Navi
+                # Pillay" and "Navanethem Pillay" are one winner, not three.
+                key = tokens[-1]
+                if len(key) < 3 or key in market_vocabulary:
+                    # "Peace Prize", "Nobel Committee": the event's own
+                    # words, never a recipient.
+                    continue
+                if _shares_a_name_with_listed_option(name, market):
+                    continue
+                if len(confirmations.get(key, [])) >= UNLISTED_WINNER_MAX_CONFIRMATIONS:
+                    continue
+                if _verify_winner_candidate(sentence, name, market):
+                    confirmations.setdefault(key, []).append((sentence, item))
+                    display_name.setdefault(key, name)
+
+    corroborated = {
+        key: found for key, found in confirmations.items()
+        if _corroborating_domain_count(found) >= CORROBORATION_MIN_DOMAINS
+    }
+    if len(corroborated) != 1:
+        return None
+    key, found = next(iter(corroborated.items()))
+    return display_name[key], found
+
+
 def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) -> list[Verdict]:
     # Real bug found live (2026-08-27): the loop used to stop checking
     # for a winner entirely once the FIRST option verified ("winner is
@@ -2186,29 +2369,34 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
         # first is a coin flip on article ranking/order, not a real
         # decision -- see this function's own opening comment. Abstain.
         names = ", ".join(sorted(corroborated))
-        return [Verdict(
-            outcome="UNCLEAR", option=None, confidence=0.0,
-            evidence_snippet=(
-                f"Conflicting evidence: {len(corroborated)} options "
-                f"({names}) are each independently corroborated as having "
-                "won -- flagged for review rather than guessed."
-            ),
-            source_url=None, source_type=None,
-        )]
+        conflict_note = (
+            f" [Conflicting evidence: {len(corroborated)} options "
+            f"({names}) are each independently corroborated as having "
+            "won -- flagged for review rather than guessed.]"
+        )
+        return _fill_missing_options([
+            Verdict(
+                outcome="UNCLEAR", option=option, confidence=confirmations[0][1].similarity,
+                evidence_snippet=confirmations[0][0].strip()[:280] + conflict_note,
+                source_url=confirmations[0][1].article.url,
+                source_type=confirmations[0][1].article.source_type,
+            )
+            for option, confirmations in corroborated.items()
+        ], market)
 
     if not corroborated and winner_confirmations:
         # Options matched, but none reached the corroboration bar -- see
         # this function's own phase-2 comment for the real Cleveland
         # Guardians case this catches (a single MLB.com list page).
-        option, confirmations = next(iter(winner_confirmations.items()))
-        sentence, item = confirmations[0]
-        return [Verdict(
-            outcome="UNCLEAR", option=None, confidence=item.similarity,
-            evidence_snippet=(
-                f"{option}: " + sentence.strip()[:280] + _uncorroborated_note(confirmations)
-            ),
-            source_url=item.article.url, source_type=item.article.source_type,
-        )]
+        return _fill_missing_options([
+            Verdict(
+                outcome="UNCLEAR", option=option, confidence=confirmations[0][1].similarity,
+                evidence_snippet=confirmations[0][0].strip()[:280] + _uncorroborated_note(confirmations),
+                source_url=confirmations[0][1].article.url,
+                source_type=confirmations[0][1].article.source_type,
+            )
+            for option, confirmations in winner_confirmations.items()
+        ], market)
 
     if corroborated:
         # Overall winner confirmed: every option gets an explicit verdict.
@@ -2233,11 +2421,33 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
                 ))
         return results
 
+    # No listed option has any winner confirmation at this point (both
+    # branches above returned otherwise) -- the only state in which an
+    # unlisted winner is even considered. See _unlisted_winner's comment.
+    unlisted = _unlisted_winner(market, ranked_evidence)
+    if unlisted is not None:
+        winner_name, confirmations = unlisted
+        sentence, item = confirmations[0]
+        domain_count = _corroborating_domain_count(confirmations)
+        note = (
+            f" [{domain_count} independent sources report that {winner_name} won. "
+            f"{winner_name} is not a listed option, and this market's own rules "
+            "resolve every listed option that did not win to No.]"
+        )
+        return [
+            eliminated.get(option) or Verdict(
+                outcome="NO", option=option, confidence=item.similarity,
+                evidence_snippet=sentence.strip()[:280] + note,
+                source_url=item.article.url, source_type=item.article.source_type,
+            )
+            for option in market.options
+        ]
+
     if eliminated:
-        # Partial resolution: only the options confirmed lost so far. The
-        # rest of the market stays unreported (still genuinely pending) --
-        # not spammed with an UNCLEAR row for every remaining option.
-        return list(eliminated.values())
+        # Partial resolution: the options confirmed lost so far. Every
+        # other option is still genuinely pending and is reported as such
+        # (NO_EVIDENCE), not left out -- see _fill_missing_options.
+        return _fill_missing_options(list(eliminated.values()), market)
 
     if elimination_confirmations:
         # Mirrors the winner-side uncorroborated check above: an option
@@ -2245,15 +2455,15 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
         # CORROBORATION_MIN_DOMAINS -- a single source is a candidate, not
         # a verdict, same reasoning as _uncorroborated_note everywhere else
         # in this file.
-        option, confirmations = next(iter(elimination_confirmations.items()))
-        sentence, item = confirmations[0]
-        return [Verdict(
-            outcome="UNCLEAR", option=None, confidence=item.similarity,
-            evidence_snippet=(
-                f"{option}: " + sentence.strip()[:280] + _uncorroborated_note(confirmations)
-            ),
-            source_url=item.article.url, source_type=item.article.source_type,
-        )]
+        return _fill_missing_options([
+            Verdict(
+                outcome="UNCLEAR", option=option, confidence=confirmations[0][1].similarity,
+                evidence_snippet=confirmations[0][0].strip()[:280] + _uncorroborated_note(confirmations),
+                source_url=confirmations[0][1].article.url,
+                source_type=confirmations[0][1].article.source_type,
+            )
+            for option, confirmations in elimination_confirmations.items()
+        ], market)
 
     # The stated default is no longer emitted as a verdict here either --
     # same reasoning as _decide_binary (see its comment): it asserts an
@@ -2263,16 +2473,11 @@ def _decide_multi_outcome(market: Market, ranked_evidence: list[RankedArticle]) 
     # all.
     deadline_note = _deadline_default_note(market)
 
-    if ranked_evidence:
-        top = ranked_evidence[0]
-        return [Verdict(outcome="UNCLEAR", option=None, confidence=top.similarity,
-                         evidence_snippet=(top.text[:280] + deadline_note) or None,
-                         source_url=top.article.url,
-                         source_type=top.article.source_type)]
-
-    return [Verdict(outcome="NO_EVIDENCE", option=None, confidence=0.0,
-                     evidence_snippet=deadline_note or None,
-                     source_url=None, source_type=None)]
+    # Nothing in the evidence is about any listed option. This used to
+    # surface the single top-ranked article as a market-wide UNCLEAR even
+    # though it said nothing about any option; per option, the honest
+    # status is that nothing was found.
+    return _fill_missing_options([], market, deadline_note.strip())
 
 
 def _decide_date_thresholds(market: Market, ranked_evidence: list[RankedArticle]) -> list[Verdict]:

@@ -217,3 +217,20 @@ def test_availability_result_carries_the_parsed_spec_for_context():
     market = make_market(CLARITY_DESCRIPTION, close_date=date(2026, 12, 31))
     result = check_availability(market, today=date(2027, 1, 5))
     assert result.spec.default_outcome == "NO"
+
+
+def test_states_non_winners_resolve_no_reads_the_markets_own_rule():
+    from resolution_finder.resolution_spec import states_non_winners_resolve_no
+    # Verbatim from the live Nobel Peace Prize 2026 and The International
+    # 2026 descriptions.
+    assert states_non_winners_resolve_no(
+        'If none of the listed individuals or entities receive the prize, all listed outcomes will resolve to "No".')
+    assert states_non_winners_resolve_no(
+        'The listed person or entity that receives the 2026 Nobel Peace Prize will resolve to "Yes", '
+        'and all other listed outcomes will resolve to "No".')
+    assert states_non_winners_resolve_no(
+        'The winning team\'s market will resolve to "Yes". All other team markets will resolve to "No".')
+    # A market decided BY a named team winning, not negated by it.
+    assert not states_non_winners_resolve_no(
+        "This market will resolve according to the division of the team that wins the 2025 MLB World Series.")
+    assert not states_non_winners_resolve_no("")

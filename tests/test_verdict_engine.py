@@ -590,9 +590,9 @@ def test_multi_outcome_market_full_sweep_on_confirmed_winner():
 def test_multi_outcome_market_unclear_when_no_option_matches():
     evidence = [make_ranked("The Nobel Committee will announce the winner next week.")]
     verdicts = decide(NOBEL_MARKET, evidence)
-    assert len(verdicts) == 1
-    assert verdicts[0].outcome == "UNCLEAR"
-    assert verdicts[0].option is None
+    # One row per listed option (2026-10-13), none of them an outcome.
+    assert [v.option for v in verdicts] == NOBEL_MARKET.options
+    assert {v.outcome for v in verdicts} == {"NO_EVIDENCE"}
 
 
 def test_multi_outcome_market_does_not_assert_stated_no_default_after_deadline():
@@ -630,8 +630,8 @@ def test_multi_outcome_market_ignores_keyword_inside_a_longer_word():
         url="https://www.bbc.com/sport/2", source_type="credible_backup",
     )]
     verdicts = decide(VINICIUS_MARKET, evidence)
-    assert len(verdicts) == 1
-    assert verdicts[0].outcome == "UNCLEAR"
+    assert [v.option for v in verdicts] == VINICIUS_MARKET.options
+    assert {v.outcome for v in verdicts} == {"NO_EVIDENCE"}
 
 
 def test_multi_outcome_market_ignores_option_inside_a_longer_word():
@@ -640,8 +640,8 @@ def test_multi_outcome_market_ignores_option_inside_a_longer_word():
         url="https://www.bbc.com/sport/3", source_type="credible_backup",
     )]
     verdicts = decide(VINICIUS_MARKET, evidence)
-    assert len(verdicts) == 1
-    assert verdicts[0].outcome == "UNCLEAR"
+    assert [v.option for v in verdicts] == VINICIUS_MARKET.options
+    assert {v.outcome for v in verdicts} == {"NO_EVIDENCE"}
 
 
 def test_multi_outcome_market_does_not_crown_a_named_default_option_after_deadline():
@@ -1201,10 +1201,11 @@ def test_multi_outcome_market_abstains_when_two_options_both_independently_verif
         ),
     ]
     verdicts = decide(DEMOCRATIC_NOMINEE_MARKET, evidence)
-    assert len(verdicts) == 1
-    assert verdicts[0].outcome == "UNCLEAR"
-    assert verdicts[0].option is None
-    assert "independent source" in (verdicts[0].evidence_snippet or "")
+    assert [v.option for v in verdicts] == DEMOCRATIC_NOMINEE_MARKET.options
+    assert not any(v.outcome in ("YES", "NO") for v in verdicts)
+    unclear = [v for v in verdicts if v.outcome == "UNCLEAR"]
+    assert unclear
+    assert all("independent source" in (v.evidence_snippet or "") for v in unclear)
 
 
 def test_multi_outcome_market_abstains_when_two_corroborated_options_both_verify():
@@ -1238,10 +1239,11 @@ def test_multi_outcome_market_abstains_when_two_corroborated_options_both_verify
         ),
     ]
     verdicts = decide(NOBEL_MARKET, evidence)
-    assert len(verdicts) == 1
-    assert verdicts[0].outcome == "UNCLEAR"
-    assert verdicts[0].option is None
-    assert "Conflicting evidence" in (verdicts[0].evidence_snippet or "")
+    assert [v.option for v in verdicts] == NOBEL_MARKET.options
+    assert not any(v.outcome in ("YES", "NO") for v in verdicts)
+    conflicting = {v.option: v for v in verdicts if v.outcome == "UNCLEAR"}
+    assert set(conflicting) == {"Pope Leo XIV", "Donald Trump"}
+    assert all("Conflicting evidence" in (v.evidence_snippet or "") for v in conflicting.values())
 
 
 # Real market pulled from Polymarket (2026-nhl-stanley-cup-champion) --
@@ -1444,9 +1446,9 @@ def test_multi_outcome_market_option_independently_resolves_no_on_elimination():
         ),
     ]
     verdicts = decide(INTERNATIONAL_MARKET, evidence)
-    assert len(verdicts) == 1
-    assert verdicts[0].option == "Aurora Gaming"
-    assert verdicts[0].outcome == "NO"
+    assert {v.option: v.outcome for v in verdicts} == {
+        "Aurora Gaming": "NO", "Team Spirit": "NO_EVIDENCE",
+    }
 
 
 def test_multi_outcome_market_resolves_no_on_negation_phrased_elimination():
@@ -1472,9 +1474,9 @@ def test_multi_outcome_market_resolves_no_on_negation_phrased_elimination():
         ),
     ]
     verdicts = decide(INTERNATIONAL_MARKET, evidence)
-    assert len(verdicts) == 1
-    assert verdicts[0].option == "Aurora Gaming"
-    assert verdicts[0].outcome == "NO"
+    assert {v.option: v.outcome for v in verdicts} == {
+        "Aurora Gaming": "NO", "Team Spirit": "NO_EVIDENCE",
+    }
 
 
 def test_multi_outcome_market_elimination_from_a_single_source_stays_unclear():
@@ -1489,9 +1491,10 @@ def test_multi_outcome_market_elimination_from_a_single_source_stays_unclear():
         url="https://www.dexerto.com/dota2/1", source_type="credible_backup",
     )]
     verdicts = decide(INTERNATIONAL_MARKET, evidence)
-    assert len(verdicts) == 1
-    assert verdicts[0].outcome == "UNCLEAR"
-    assert "Only 1 independent source" in verdicts[0].evidence_snippet
+    by_option = {v.option: v for v in verdicts}
+    assert by_option["Aurora Gaming"].outcome == "UNCLEAR"
+    assert "Only 1 independent source" in by_option["Aurora Gaming"].evidence_snippet
+    assert by_option["Team Spirit"].outcome == "NO_EVIDENCE"
 
 
 def test_multi_outcome_market_ignores_single_game_loss_as_elimination():
@@ -1515,7 +1518,7 @@ def test_multi_outcome_market_elimination_does_not_claim_the_other_option_won():
         url="https://www.dexerto.com/dota2/1", source_type="credible_backup",
     )]
     verdicts = decide(INTERNATIONAL_MARKET, evidence)
-    assert "Team Spirit" not in {v.option for v in verdicts}
+    assert {v.option: v.outcome for v in verdicts}["Team Spirit"] == "NO_EVIDENCE"
 
 
 def test_multi_outcome_market_named_default_outside_option_list_does_not_resolve():
@@ -1626,10 +1629,9 @@ def test_named_entity_option_that_looks_like_a_date_word_is_not_misdetected():
         mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
         verdicts = decide(named_market, [])
     # Falls through to the existing named-entity path: no evidence, no
-    # default -> single whole-market UNCLEAR/NO_EVIDENCE, NOT a per-option
-    # NO from a misfired date parse.
-    assert len(verdicts) == 1
-    assert verdicts[0].option is None
+    # default -> NO_EVIDENCE for each option, NOT a per-option NO from a
+    # misfired date parse.
+    assert {v.outcome for v in verdicts} == {"NO_EVIDENCE"}
 
 
 def test_date_shaped_options_without_cumulative_language_are_not_cascaded():
@@ -1648,8 +1650,7 @@ def test_date_shaped_options_without_cumulative_language_are_not_cascaded():
         verdicts = decide(exact_date_market, [])
     # Falls through to the existing named-entity path (no "by"/"no later
     # than"/etc. language), so no per-option elapsed-NO fires here either.
-    assert len(verdicts) == 1
-    assert verdicts[0].option is None
+    assert {v.outcome for v in verdicts} == {"NO_EVIDENCE"}
 
 
 BITCOIN_DESCRIPTION = (
@@ -2711,3 +2712,117 @@ def test_multi_outcome_market_does_not_crown_a_winner_from_a_bare_vs_headline():
     )]
     verdicts = decide(market, evidence)
     assert not any(v.option == "Chargers" and v.outcome == "YES" for v in verdicts)
+
+
+# ── Unlisted winner (2026-10-13) ─────────────────────────────────────────
+# Evidence below is verbatim from the pages retrieved for the live rain.trade
+# market 6a79c7f5849b6fb38beb9eb4 on 2026-10-13: the 2026 prize went to Navi
+# Pillay, who is not one of the five listed nominees.
+PILLAY_X_AWARD = (
+    "BREAKING NEWS The Norwegian Nobel Committee has decided to award the 2026 "
+    "#NobelPeacePrize to Navanethem “Navi” Pillay for her efforts to promote "
+    "peace and international law."
+)
+PILLAY_X_LAUREATE = (
+    "2026 Nobel Peace Prize laureate Navi Pillay’s commitment to universal legal "
+    "principles and her firm moral compass are constants in a long career."
+)
+PILLAY_YAHOO = (
+    "Instead, the chair of the Norwegian Nobel Committee, Jørgen Watne Frydnes, "
+    "announced that Pillay is the 2026 Peace Prize winner for her work in being "
+    "\"instrumental in ensuring war crimes, crimes against humanity and genocide\" "
+    "are prosecuted."
+)
+PILLAY_AP_NO_YEAR = (
+    "A former U.N. human rights chief and judge on the International Court of "
+    "Justice has won the Nobel Peace Prize."
+)
+PILLAY_BBC_NO_YEAR = (
+    "The prize was awarded to former International Criminal Court judge Navi "
+    "Pillay on Friday."
+)
+
+
+def _from_domain(text, domain, source_type="credible_backup", similarity=0.6):
+    return RankedArticle(
+        article=ArticleRef(url=f"https://{domain}/article", title="t", source_type=source_type,
+                           source_domain=domain),
+        text=text, similarity=similarity,
+    )
+
+
+def test_unlisted_winner_in_two_domains_resolves_every_listed_option_no():
+    evidence = [
+        _from_domain(PILLAY_X_AWARD, "x.com", "official_social"),
+        _from_domain(PILLAY_YAHOO, "www.yahoo.com", "credible_backup_secondary"),
+    ]
+    verdicts = decide(NOBEL_MARKET, evidence)
+    assert [v.option for v in verdicts] == NOBEL_MARKET.options
+    assert {v.outcome for v in verdicts} == {"NO"}
+    assert all("not a listed option" in v.evidence_snippet for v in verdicts)
+    assert all(v.source_url for v in verdicts)
+
+
+def test_unlisted_winner_from_a_single_domain_resolves_nothing():
+    # Two posts, one outlet: one source, not two.
+    evidence = [
+        _from_domain(PILLAY_X_AWARD, "x.com", "official_social"),
+        _from_domain(PILLAY_X_LAUREATE, "x.com", "official_social"),
+    ]
+    verdicts = decide(NOBEL_MARKET, evidence)
+    assert [v.option for v in verdicts] == NOBEL_MARKET.options
+    assert not any(v.outcome in ("YES", "NO") for v in verdicts)
+
+
+def test_unlisted_winner_needs_the_markets_own_year_in_the_sentence():
+    # Both are real, true reports of the same win -- and both name the
+    # wrong thing under the award grammar ("Justice", "International
+    # Criminal Court"), each scoring 0.98 on the NLI check. Neither states
+    # the year; that is what keeps them out.
+    evidence = [
+        _from_domain(PILLAY_AP_NO_YEAR, "apnews.com"),
+        _from_domain(PILLAY_BBC_NO_YEAR, "www.bbc.com"),
+    ]
+    verdicts = decide(NOBEL_MARKET, evidence)
+    assert not any(v.outcome in ("YES", "NO") for v in verdicts)
+
+
+def test_unlisted_winner_is_ignored_when_the_description_does_not_state_the_rule():
+    evidence = [
+        _from_domain(PILLAY_X_AWARD, "x.com", "official_social"),
+        _from_domain(PILLAY_YAHOO, "www.yahoo.com", "credible_backup_secondary"),
+    ]
+    with patch("resolution_finder.verdict_engine._states_non_winners_resolve_no", return_value=False):
+        verdicts = decide(NOBEL_MARKET, evidence)
+    assert not any(v.outcome in ("YES", "NO") for v in verdicts)
+
+
+def test_unlisted_winner_never_overrides_a_listed_option_with_its_own_winner_claim():
+    # A listed option with any winner confirmation, even from one source,
+    # is judged on its own evidence -- never swept to NO by the unlisted path.
+    evidence = [
+        _from_domain(PILLAY_X_AWARD, "x.com", "official_social"),
+        _from_domain(PILLAY_YAHOO, "www.yahoo.com", "credible_backup_secondary"),
+        _from_domain(
+            "Pope Leo XIV has been named winner of this year's Nobel Peace Prize, the committee said Friday.",
+            "apnews.com",
+        ),
+    ]
+    verdicts = decide(NOBEL_MARKET, evidence)
+    by_option = {v.option: v for v in verdicts}
+    assert by_option["Pope Leo XIV"].outcome == "UNCLEAR"
+    assert not any(v.outcome in ("YES", "NO") for v in verdicts)
+
+
+def test_unlisted_winner_helpers_refuse_names_that_could_be_a_listed_option():
+    from resolution_finder.verdict_engine import (
+        _recipient_names, _sentence_spells_out_listed_acronym, _shares_a_name_with_listed_option,
+    )
+    assert _recipient_names(PILLAY_X_AWARD) == ["Navanethem Navi Pillay"]
+    assert _recipient_names(PILLAY_X_LAUREATE) == ["Navi Pillay"]
+    assert _shares_a_name_with_listed_option("Trump", NOBEL_MARKET)
+    assert _shares_a_name_with_listed_option("President Zelenskyy", NOBEL_MARKET)
+    assert not _shares_a_name_with_listed_option("Navi Pillay", NOBEL_MARKET)
+    assert _sentence_spells_out_listed_acronym(
+        "The United Nations Relief and Works Agency wins 2026 Nobel Peace Prize.", NOBEL_MARKET)
+    assert not _sentence_spells_out_listed_acronym(PILLAY_YAHOO, NOBEL_MARKET)

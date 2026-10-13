@@ -50,6 +50,15 @@ def _availability_payload(market: Market) -> dict:
     }
 
 
+def _finding_payload(finding: dict) -> dict:
+    """A stored finding as the admin UI reads it. rain-admin's RfFinding
+    type names the option `option_name` (services/market-wizard/
+    resolutionFinder.ts) while storage calls it `option` -- found live
+    2026-10-13: per-option findings reached the screen with no label at
+    all. Both names are sent; neither is renamed."""
+    return {**finding, "option_name": finding.get("option")}
+
+
 def _market_from_payload(item: dict) -> Optional[Market]:
     title = item.get("title") or item.get("question") or ""
     if not isinstance(title, str) or not title.strip():
@@ -215,13 +224,13 @@ def create_app(
     @app.get("/findings")
     @require_auth
     def latest_findings():
-        return jsonify({"findings": get_latest_findings(db_path)})
+        return jsonify({"findings": [_finding_payload(f) for f in get_latest_findings(db_path)]})
 
     @app.get("/markets/<market_id>/findings")
     @require_auth
     def market_findings(market_id: str):
         return jsonify({
-            "findings": get_history(db_path, market_id),
+            "findings": [_finding_payload(f) for f in get_history(db_path, market_id)],
             "runs": service_storage.get_runs(db_path, market_id),
         })
 

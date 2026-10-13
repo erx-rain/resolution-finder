@@ -131,11 +131,18 @@ def _score(verdicts: list, ground_truth: str | None, options: list[str]) -> str:
 
     if options:
         matching = [v for v in verdicts if v.option is not None and v.option.lower() == ground_truth.lower()]
-        if matching:
-            return "correct" if any(v.outcome == "YES" for v in matching) else "wrong"
-        # No verdict for the ground-truth option itself -- still wrong if
-        # some OTHER option was wrongly declared the winner instead.
-        return "wrong" if any(v.outcome == "YES" for v in verdicts) else "unresolved"
+        if any(v.outcome == "YES" for v in matching):
+            return "correct"
+        # The true option declared NO, or some OTHER option declared the
+        # winner, is a wrong verdict. An UNCLEAR/NO_EVIDENCE row for the
+        # true option is not: since 2026-10-13 every listed option gets a
+        # row on every run (verdict_engine._fill_missing_options), and "no
+        # answer yet" for the true option is exactly what "unresolved"
+        # means -- scoring it wrong would count every unsettled market as
+        # a wrong verdict.
+        if any(v.outcome == "NO" for v in matching) or any(v.outcome == "YES" for v in verdicts):
+            return "wrong"
+        return "unresolved"
 
     outcomes = {v.outcome for v in verdicts}
     if outcomes & {"YES", "NO"}:
