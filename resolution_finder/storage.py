@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS findings (
     review_status TEXT NOT NULL DEFAULT 'Pending',
     resolution_available INTEGER,
     availability_reason TEXT,
-    available_from TEXT
+    available_from TEXT,
+    score_version INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -41,7 +42,39 @@ _MIGRATIONS = [
     # Needed per FINDING, not per market: sub-pools named by dates each
     # have their own deadline (see rain_pool_client.plan_scan).
     ("available_from", "ALTER TABLE findings ADD COLUMN available_from TEXT"),
+    # 2026-10-13: marks a row written since `confidence` stopped being
+    # served from the evidence-match number -- see FINDING_SCORE_VERSION.
+    ("score_version", "ALTER TABLE findings ADD COLUMN score_version INTEGER"),
 ]
+
+# What the `confidence` COLUMN holds has never changed: the engine's
+# evidence-match number (models.Verdict.confidence -- embedding similarity
+# of the quoted article to the market text). What is SERVED did, on
+# 2026-10-13, because that number was being read as "how sure the outcome
+# is" (found live: five Nobel options each "60% confidence" on a result
+# confirmed by the committee itself).
+#
+# A finding now has two separate things (see _row_to_dict):
+#   confidence      how sure the service is that the proposed outcome is
+#                   correct, 0..1 -- or null. It is null on every new
+#                   finding today: nothing computes such a figure, and no
+#                   default, similarity or constant is ever sent in its
+#                   place.
+#   evidence_match  the number above, under its own name -- null when the
+#                   engine quoted no matched article (see _evidence_match).
+#
+# Rows written before this (score_version NULL) are served exactly as
+# they always were, the old number still under `confidence`: stored
+# findings are history and are not reinterpreted.
+FINDING_SCORE_VERSION = 2
+
+
+def _evidence_match(raw: float) -> Optional[float]:
+    """The engine's number when it is a real similarity. Exactly 0.0 and
+    exactly 1.0 are never similarities -- they are the engine's own
+    hard-coded stand-ins for "nothing quoted" and "read from an official
+    page" -- and are not passed on as if they were measurements."""
+    return raw if 0.0 < raw < 1.0 else None
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -78,15 +111,16 @@ def save_finding(
             INSERT INTO findings
                 (market_id, option, run_timestamp, outcome, confidence, evidence_snippet,
                  source_url, source_type, review_status, resolution_available, availability_reason,
-                 available_from)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?)
+                 available_from, score_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?)
             """,
             (market_id, verdict.option, run_timestamp, verdict.outcome, verdict.confidence,
              verdict.evidence_snippet, verdict.source_url, verdict.source_type,
              None if availability is None else int(availability.available),
              None if availability is None else availability.reason,
              None if availability is None or availability.available_from is None
-             else availability.available_from.isoformat()),
+             else availability.available_from.isoformat(),
+             FINDING_SCORE_VERSION),
         )
         conn.commit()
         return cursor.lastrowid
@@ -101,7 +135,11 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "option": row["option"],
         "run_timestamp": row["run_timestamp"],
         "outcome": row["outcome"],
-        "confidence": row["confidence"],
+        # See FINDING_SCORE_VERSION: a legacy row is served as it always
+        # was; a current one never passes the evidence match off as
+        # confidence.
+        "confidence": row["confidence"] if row["score_version"] is None else None,
+        "evidence_match": None if row["score_version"] is None else _evidence_match(row["confidence"]),
         "evidence_snippet": row["evidence_snippet"],
         "source_url": row["source_url"],
         "source_type": row["source_type"],
