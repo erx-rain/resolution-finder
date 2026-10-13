@@ -22,6 +22,7 @@ from flask import Flask, jsonify, request
 
 from resolution_finder.models import Market
 from resolution_finder.gist_market_provider import GistMarketProvider, GistProviderError, _parse_close_date, _parse_options
+from resolution_finder.rain_pool_client import enrich_market_with_rain_description
 from resolution_finder.resolution_spec import check_availability
 from resolution_finder.storage import get_history, get_latest_findings, init_db
 from resolution_finder.service import service_storage
@@ -60,7 +61,7 @@ def _market_from_payload(item: dict) -> Optional[Market]:
         id=str(item.get("id", "")),
         title=title,
         description=description,
-        options=_parse_options(item.get("options")),
+        options=_parse_options(item),
         close_date=_parse_close_date(
             item.get("close_date") or item.get("closeDate") or item.get("endDate")
         ),
@@ -73,9 +74,11 @@ def create_app(
     job_queue: Optional[JobQueue] = None,
     scan_market_fn=None,
     start_scheduler: bool = False,
+    rain_fetch=None,
 ) -> Flask:
-    """App factory. `provider`/`job_queue`/`scan_market_fn` are injectable
-    for tests (no models, no network); run_service.py wires the real ones."""
+    """App factory. `provider`/`job_queue`/`scan_market_fn`/`rain_fetch`
+    are injectable for tests (no models, no network); run_service.py
+    wires the real ones."""
     app = Flask(__name__)
     init_db(db_path)
     service_storage.init_service_schema(db_path)
@@ -110,7 +113,25 @@ def create_app(
         market = get_provider().get_market(market_id)
         if market is None:
             raise ValueError(f"Market {market_id!r} not found in the gist market list")
+
+        # The gist only supplies id/title/close_date; the real resolution
+        # rules come from Rain's own pool record (rain_pool_client.py).
+        # None means Rain has no usable description yet -- "do not run
+        # the finder" (owner decision 2026-10-13): no scan, no finding,
+        # rather than matching evidence against the gist's placeholder
+        # description the way the 2026-10-12 OpenAI/Anthropic wrong
+        # finding did.
+        enriched = enrich_market_with_rain_description(market, fetch=rain_fetch)
         run_id = service_storage.start_run(db_path, market_id, trigger)
+        if enriched is None:
+            service_storage.finish_run(
+                db_path, run_id, "done",
+                "No resolution rules available from Rain yet — scan skipped.",
+                0,
+            )
+            return
+        market = enriched
+
         run_timestamp = datetime.now(timezone.utc).isoformat()
         try:
             _scan_market(market, db_path, run_timestamp, decide, _default_peer_checker, resolve_structured)

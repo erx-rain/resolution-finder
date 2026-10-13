@@ -5,9 +5,11 @@ import time
 import pytest
 
 from resolution_finder.gist_market_provider import GistMarketProvider
+from resolution_finder.rain_pool_client import RainPoolError
 from resolution_finder.service.app import create_app
 from resolution_finder.service.jobs import JobQueue
-from resolution_finder.storage import save_finding
+from resolution_finder.service.service_storage import get_runs
+from resolution_finder.storage import get_latest_findings, save_finding
 from resolution_finder.models import Verdict
 
 
@@ -100,6 +102,45 @@ def test_scan_dedupe(client):
     # Either the same job (still queued/running) or a new one if the first
     # finished already — both acceptable; what matters is no error.
     assert a and b
+
+
+def test_scan_skips_when_rain_has_no_description(tmp_path):
+    # Real _real_scan (job_queue/scan_market_fn left at their defaults) --
+    # only rain_fetch is injected, so this never touches the network or
+    # loads a model. "Not found" simulates Rain having no pool record /
+    # no poolDescription yet: enrich_market_with_rain_description returns
+    # None, and "do not run the finder" means no finding is written.
+    provider = GistMarketProvider(
+        gist_id="test", file_name="f.json", token=None,
+        fetch=lambda *a: json.dumps(MARKETS),
+    )
+
+    def rain_fetch_raises(market_id):
+        raise RainPoolError("HTTP 404")
+
+    db_path = str(tmp_path / "t.db")
+    application = create_app(db_path, provider=provider, rain_fetch=rain_fetch_raises)
+    application.config["TESTING"] = True
+    client = application.test_client()
+
+    resp = client.post("/scans", json={"market_id": "m-past"})
+    assert resp.status_code == 202
+    job_id = resp.get_json()["job"]["id"]
+    deadline = time.time() + 5
+    job = None
+    while time.time() < deadline:
+        job = client.get(f"/scans/{job_id}").get_json()["job"]
+        if job["status"] != "queued":
+            break
+        time.sleep(0.05)
+    assert job["status"] == "done"  # skipped, not failed -- there's no bug to report
+
+    runs = get_runs(db_path, "m-past")
+    assert len(runs) == 1
+    assert runs[0]["status"] == "done"
+    assert runs[0]["findings_count"] == 0
+    assert "skipped" in runs[0]["error"].lower()
+    assert get_latest_findings(db_path) == []
 
 
 def test_review_flow(app, client):

@@ -54,6 +54,20 @@ Field aliases accepted: `question` for `title`, `endDate`/`closeDate`
 for `close_date`, option objects with `optionName`. A missing
 `close_date` stays `null` (never guessed). `options: []` = binary.
 
+In the team's own gist (`rtap_history_2026.json`), `description` is only
+source metadata (source URL/venue/category) — it carries no resolution
+rules. `GET /markets` and `POST /eligibility` still read straight from
+the gist, unchanged. A **scan** (`POST /scans`, manual or scheduled)
+reads the real rules from Rain's own pool record instead (owner decision
+2026-10-13, `resolution_finder/rain_pool_client.py`):
+`GET https://prod2-api.rain.one/pools/pool/<id>` (public, no token) —
+`poolDescription` becomes the market's description, and 2+ `subPools`
+become multi-outcome options (exactly 1 `subPool` is Rain's own
+binary-market shape, not a real option). If Rain has no description for
+that id, **the scan is skipped**: the run is recorded `done` with 0
+findings and an explanatory note, never a guessed verdict against the
+gist's placeholder text.
+
 ## API
 
 All routes except `/health` require `Authorization: Bearer $RF_SERVICE_TOKEN`
@@ -64,7 +78,7 @@ when the token is set.
 | `GET /health` | Liveness probe (no auth). |
 | `GET /markets` | The gist market list, as the engine sees it. |
 | `POST /eligibility` | Date-based availability. Empty body = all gist markets; `{"markets":[...]}` = just those. Fast, no models. |
-| `POST /scans` `{"market_id": "..."}` | Enqueue a full scan (202 + job). Deduped per market. Manual scans run regardless of eligibility. |
+| `POST /scans` `{"market_id": "..."}` | Enqueue a full scan (202 + job). Deduped per market. Manual scans run regardless of eligibility. Skipped (done, 0 findings) if Rain has no resolution rules for this market yet — see "Gist market file" above. |
 | `GET /scans` / `GET /scans/<job_id>` | Job list / status (`queued → running → done|failed`). |
 | `GET /findings` | Latest finding per (market, option). |
 | `GET /markets/<id>/findings` | Full findings history + run log for one market. |
