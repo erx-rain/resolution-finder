@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from unittest.mock import patch
 
@@ -219,3 +220,36 @@ def test_default_fetch_raises_when_no_data_object():
     with patch("resolution_finder.rain_pool_client.requests.get", return_value=_response(b'{"message": "no"}')):
         with pytest.raises(RainPoolError):
             _default_fetch("m-1")
+
+
+# ── pool_statuses: one listing read for the whole market list ────────
+
+def test_pool_statuses_read_each_markets_sub_pools_from_the_listing():
+    from resolution_finder.rain_pool_client import pool_statuses
+    listing = [
+        {"_id": "a", "subPools": [{"question": "Yes", "poolFinalized": True, "winnerOption": {"choiceIndex": 2}}]},
+        {"_id": "b", "subPools": [{"question": "August 18", "poolFinalized": True}, {"question": "December 31", "poolFinalized": False}]},
+        {"_id": "c", "subPools": []},
+    ]
+    statuses = pool_statuses(["a", "b", "c", "not-listed"], fetch=lambda: listing)
+    assert statuses["a"].resolved is True
+    assert statuses["b"].resolved is False
+    assert [(sp.name, sp.resolved) for sp in statuses["b"].sub_pools] == [("August 18", True), ("December 31", False)]
+    assert statuses["c"].known is True and statuses["c"].resolved is False   # no sub-pools: not "resolved"
+    assert statuses["not-listed"].known is False and statuses["not-listed"].resolved is False
+
+
+def test_default_listing_fetch_walks_every_page():
+    from resolution_finder.rain_pool_client import _default_listing_fetch
+    pages = {1: {"pools": [{"_id": "a"}], "pages": 2}, 2: {"pools": [{"_id": "b"}], "pages": 2}}
+    def get(url, params, timeout, headers):
+        return _response(json.dumps({"data": pages[params["offset"]]}).encode())
+    with patch("resolution_finder.rain_pool_client.requests.get", side_effect=get):
+        assert [p["_id"] for p in _default_listing_fetch()] == ["a", "b"]
+
+
+def test_default_listing_fetch_raises_on_failure():
+    from resolution_finder.rain_pool_client import _default_listing_fetch
+    with patch("resolution_finder.rain_pool_client.requests.get", return_value=_response(b"{}", 503)):
+        with pytest.raises(RainPoolError):
+            _default_listing_fetch()

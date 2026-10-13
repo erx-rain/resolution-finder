@@ -72,6 +72,24 @@ as its error** (2026-10-13) — no rules on Rain, everything already
 resolved on Rain, or a scan that ran and saved nothing. `done` means at
 least one finding was written.
 
+**The market list hides what Rain has resolved** (2026-10-13). On every
+`GET /markets` the service reads Rain's public pool listing once (one
+call, every pool with its sub-pools' settlement; reading each market's
+own record instead took 16–42 s, past rain-admin's proxy timeout) and:
+
+- drops a market whose **every** sub-pool Rain has settled
+  (`poolFinalized` or a recorded `winnerOption`) — for a Yes/No market,
+  its one sub-pool;
+- adds to each listed market `sub_pools: [{name, resolved}]`, Rain's
+  breakdown, and `rain_status_known` (false when the market was not in
+  the listing: nothing is known, and it is shown, not dropped);
+- if the listing cannot be read, shows every gist market with status
+  unknown and sets `rain_listing_error` at the top level. Nothing is ever
+  dropped as "resolved" on no information.
+
+The scheduler's own repeating scan uses the same list. `POST /eligibility`
+with an empty body still covers every gist market.
+
 What a scan covers is also read from Rain's pool record (2026-10-13,
 `rain_pool_client.plan_scan`):
 
@@ -104,7 +122,7 @@ when the token is set.
 | Method & path | What it does |
 |---|---|
 | `GET /health` | Liveness probe (no auth). |
-| `GET /markets` | The gist market list, as the engine sees it. |
+| `GET /markets` | The gist market list, minus markets Rain has resolved, each with Rain's per-sub-pool status (see below). |
 | `POST /eligibility` | Date-based availability. Empty body = all gist markets; `{"markets":[...]}` = just those. Fast, no models. |
 | `POST /scans` `{"market_id": "..."}` | Enqueue a full scan (202 + job). Deduped per market. Manual scans run regardless of eligibility. The job ends `failed`, with the reason, whenever it produces no finding — see "Gist market file" above. |
 | `GET /scans` / `GET /scans/<job_id>` | Job list / status (`queued → running → done|failed`). |

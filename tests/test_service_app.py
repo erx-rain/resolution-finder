@@ -32,6 +32,13 @@ MARKETS = [
 ]
 
 
+# Rain's public listing, as pool_statuses reads it: both markets open.
+LISTING = [
+    {"_id": "m-past", "subPools": [{"question": "Yes", "poolFinalized": False}]},
+    {"_id": "m-future", "subPools": [{"question": "Yes", "poolFinalized": False}]},
+]
+
+
 @pytest.fixture
 def app(tmp_path):
     provider = GistMarketProvider(
@@ -44,7 +51,8 @@ def app(tmp_path):
         scanned.append((market_id, trigger))
 
     queue = JobQueue(fake_scan)
-    application = create_app(str(tmp_path / "t.db"), provider=provider, job_queue=queue)
+    application = create_app(str(tmp_path / "t.db"), provider=provider, job_queue=queue,
+                             rain_listing_fetch=lambda: LISTING)
     application.config["TESTING"] = True
     application._scanned = scanned  # type: ignore[attr-defined]
     application._db_path = str(tmp_path / "t.db")  # type: ignore[attr-defined]
@@ -63,6 +71,49 @@ def test_health(client):
 def test_markets_listed_from_provider(client):
     data = client.get("/markets").get_json()
     assert [m["id"] for m in data["markets"]] == ["m-past", "m-future"]
+    assert data["rain_listing_error"] is None
+    assert data["markets"][0]["rain_status_known"] is True
+    assert data["markets"][0]["sub_pools"] == [{"name": "Yes", "resolved": False}]
+
+
+def _app_with_listing(tmp_path, listing):
+    provider = GistMarketProvider(
+        gist_id="test", file_name="f.json", token=None, fetch=lambda *a: json.dumps(MARKETS),
+    )
+    application = create_app(str(tmp_path / "l.db"), provider=provider, job_queue=JobQueue(lambda m, t: None),
+                             rain_listing_fetch=listing)
+    return application.test_client()
+
+
+def test_markets_hide_a_market_whose_every_sub_pool_rain_has_resolved(tmp_path):
+    # Verbatim shape from Rain's listing 2026-10-13: the Nobel market, all
+    # five sub-pools settled (poolFinalized + winnerOption).
+    listing = [
+        {"_id": "m-past", "status": "Closed", "subPools": [
+            {"question": "Yes", "poolFinalized": True, "winnerOption": {"choiceIndex": 2}}]},
+        {"_id": "m-future", "subPools": [
+            {"question": "September 30", "poolFinalized": True, "winnerOption": {"choiceIndex": 2}},
+            {"question": "December 31", "poolFinalized": False}]},
+    ]
+    data = _app_with_listing(tmp_path, lambda: listing).get("/markets").get_json()
+    assert [m["id"] for m in data["markets"]] == ["m-future"]
+    assert data["markets"][0]["sub_pools"] == [
+        {"name": "September 30", "resolved": True}, {"name": "December 31", "resolved": False},
+    ]
+
+
+def test_markets_not_in_rains_listing_are_shown_with_status_unknown(tmp_path):
+    data = _app_with_listing(tmp_path, lambda: []).get("/markets").get_json()
+    assert [m["id"] for m in data["markets"]] == ["m-past", "m-future"]
+    assert all(m["rain_status_known"] is False and m["sub_pools"] == [] for m in data["markets"])
+
+
+def test_markets_are_all_shown_when_rains_listing_cannot_be_read(tmp_path):
+    def broken():
+        raise RainPoolError("HTTP 503")
+    data = _app_with_listing(tmp_path, broken).get("/markets").get_json()
+    assert [m["id"] for m in data["markets"]] == ["m-past", "m-future"]
+    assert "503" in data["rain_listing_error"]
 
 
 def test_eligibility_all_markets(client):
@@ -286,7 +337,8 @@ def test_auth_enforced_when_token_set(tmp_path, monkeypatch):
         gist_id="test", file_name="f.json", token=None,
         fetch=lambda *a: json.dumps(MARKETS),
     )
-    application = create_app(str(tmp_path / "a.db"), provider=provider, job_queue=JobQueue(lambda m, t: None))
+    application = create_app(str(tmp_path / "a.db"), provider=provider, job_queue=JobQueue(lambda m, t: None),
+                             rain_listing_fetch=lambda: LISTING)
     c = application.test_client()
     assert c.get("/markets").status_code == 401
     assert c.get("/markets", headers={"Authorization": "Bearer sekret"}).status_code == 200
