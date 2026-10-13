@@ -137,13 +137,16 @@ def test_scan_skips_when_rain_has_no_description(tmp_path):
     client = application.test_client()
 
     job = _run_scan_and_wait(client, "m-past")
-    assert job["status"] == "done"  # skipped, not failed -- there's no bug to report
+    # A run that ends without a finding is an error to look at (owner
+    # decision 2026-10-13), with the reason -- never a quiet "done".
+    assert job["status"] == "failed"
+    assert "no resolution rules" in job["error"].lower()
 
     runs = get_runs(db_path, "m-past")
     assert len(runs) == 1
-    assert runs[0]["status"] == "done"
+    assert runs[0]["status"] == "failed"
     assert runs[0]["findings_count"] == 0
-    assert "skipped" in runs[0]["error"].lower()
+    assert "no resolution rules" in runs[0]["error"].lower()
     assert get_latest_findings(db_path) == []
 
 
@@ -152,14 +155,16 @@ def test_scan_skips_a_market_rain_has_already_resolved(tmp_path):
         gist_id="test", file_name="f.json", token=None, fetch=lambda *a: json.dumps(MARKETS),
     )
     resolved = lambda market_id: {
-        "poolDescription": "Resolves YES if X happened.", "isFinalized": True,
+        "poolDescription": "Resolves YES if X happened.",
         "subPools": [{"question": "Yes", "poolFinalized": True}],
     }
     db_path = str(tmp_path / "t.db")
     client = create_app(db_path, provider=provider, rain_fetch=resolved).test_client()
 
-    assert _run_scan_and_wait(client, "m-past")["status"] == "done"
+    job = _run_scan_and_wait(client, "m-past")
+    assert job["status"] == "failed" and "already resolved on rain" in job["error"].lower()
     (run,) = get_runs(db_path, "m-past")
+    assert run["status"] == "failed"
     assert run["findings_count"] == 0
     assert "already resolved on rain" in run["error"].lower()
     assert get_latest_findings(db_path) == []
@@ -209,6 +214,21 @@ def test_scan_runs_each_open_date_sub_pool_as_its_own_market_and_files_it_by_nam
     assert findings["November 30"]["available_from"] == "2099-12-01"
     assert findings["December 31"]["available_from"] == "2100-01-01"
     assert all(f["resolution_available"] is False for f in findings.values())
+
+
+def test_scan_that_produces_no_finding_is_a_failed_run_with_its_reason(tmp_path):
+    provider = GistMarketProvider(
+        gist_id="test", file_name="f.json", token=None, fetch=lambda *a: json.dumps(MARKETS),
+    )
+    pool = lambda market_id: {"poolDescription": "Resolves YES if X happened.",
+                              "subPools": [{"question": "Yes", "poolFinalized": False}]}
+    db_path = str(tmp_path / "t.db")
+    client = create_app(db_path, provider=provider, rain_fetch=pool).test_client()
+    with patch("resolution_finder.pipeline._scan_market", return_value=None):   # ran, saved nothing
+        job = _run_scan_and_wait(client, "m-past")
+    assert job["status"] == "failed" and "produced nothing" in job["error"]
+    (run,) = get_runs(db_path, "m-past")
+    assert run["status"] == "failed" and run["findings_count"] == 0
 
 
 def test_review_flow(app, client):
