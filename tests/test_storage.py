@@ -259,3 +259,18 @@ def test_finding_records_the_date_its_answer_becomes_determinable():
     save_finding(db_path, "m", "2026-10-13T00:00:00", verdict, check_availability(market))
     assert get_latest_findings(db_path)[0]["available_from"] == "2099-12-31"
     os.remove(db_path)
+
+
+def test_finding_records_whether_its_market_can_resolve_early():
+    db_path = make_temp_db()
+    verdict = Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
+                      source_url=None, source_type=None)
+    early = Market(id="a", title="Will X happen?", options=[], close_date=date(2099, 12, 31),
+                   description="Resolves Yes if, at any time before the close, X happens.")
+    fixed = Market(id="b", title="Who wins?", options=[], close_date=date(2099, 12, 31),
+                   description="Resolves to the team that wins the championship.")
+    save_finding(db_path, "a", "2026-10-14T00:00:00", verdict, check_availability(early))
+    save_finding(db_path, "b", "2026-10-14T00:00:00", verdict, check_availability(fixed))
+    flags = {f["market_id"]: f["can_resolve_early"] for f in get_latest_findings(db_path)}
+    assert flags == {"a": True, "b": False}
+    os.remove(db_path)

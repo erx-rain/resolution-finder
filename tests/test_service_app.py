@@ -51,8 +51,10 @@ def app(tmp_path):
         scanned.append((market_id, trigger))
 
     queue = JobQueue(fake_scan)
+    # Rain is never called from tests: the detail page's rules read gets an
+    # empty pool record.
     application = create_app(str(tmp_path / "t.db"), provider=provider, job_queue=queue,
-                             rain_listing_fetch=lambda: LISTING)
+                             rain_listing_fetch=lambda: LISTING, rain_fetch=lambda market_id: {})
     application.config["TESTING"] = True
     application._scanned = scanned  # type: ignore[attr-defined]
     application._db_path = str(tmp_path / "t.db")  # type: ignore[attr-defined]
@@ -257,13 +259,13 @@ def test_scan_runs_each_open_date_sub_pool_as_its_own_market_and_files_it_by_nam
         assert _run_scan_and_wait(client, "m-past")["status"] == "done"
 
     assert [(m.title, m.options, m.close_date.isoformat()) for m in scanned] == [
-        ("Will it happen by November 30?", [], "2099-12-01"),
-        ("Will it happen by December 31?", [], "2100-01-01"),
+        ("Will it happen by November 30?", [], "2099-11-30"),
+        ("Will it happen by December 31?", [], "2099-12-31"),
     ]
     findings = {f["option_name"]: f for f in client.get("/markets/m-past/findings").get_json()["findings"]}
     assert set(findings) == {"November 30", "December 31"}       # the resolved one is not scanned
-    assert findings["November 30"]["available_from"] == "2099-12-01"
-    assert findings["December 31"]["available_from"] == "2100-01-01"
+    assert findings["November 30"]["available_from"] == "2099-11-30"
+    assert findings["December 31"]["available_from"] == "2099-12-31"
     assert all(f["resolution_available"] is False for f in findings.values())
 
 
@@ -280,6 +282,22 @@ def test_scan_that_produces_no_finding_is_a_failed_run_with_its_reason(tmp_path)
     assert job["status"] == "failed" and "produced nothing" in job["error"]
     (run,) = get_runs(db_path, "m-past")
     assert run["status"] == "failed" and run["findings_count"] == 0
+
+
+def test_market_rules_come_from_rain_or_are_null(tmp_path):
+    provider = GistMarketProvider(
+        gist_id="test", file_name="f.json", token=None, fetch=lambda *a: json.dumps(MARKETS),
+    )
+    rules = "This market resolves to \"Yes\" if, at any time from the market's creation through ..."
+    ok = create_app(str(tmp_path / "r1.db"), provider=provider, job_queue=JobQueue(lambda m, t: None),
+                    rain_fetch=lambda market_id: {"poolDescription": rules}).test_client()
+    assert ok.get("/markets/m-past/rules").get_json() == {"market_id": "m-past", "rules": rules}
+
+    def down(market_id):
+        raise RainPoolError("HTTP 503")
+    failing = create_app(str(tmp_path / "r2.db"), provider=provider, job_queue=JobQueue(lambda m, t: None),
+                         rain_fetch=down).test_client()
+    assert failing.get("/markets/m-past/rules").get_json()["rules"] is None
 
 
 def test_review_flow(app, client):

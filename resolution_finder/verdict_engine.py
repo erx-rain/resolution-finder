@@ -2758,12 +2758,22 @@ def decide_dated_sub_pool(
     may settle "No" once that deadline has passed with nothing found --
     see _elapsed_deadline_verdict for why, and for everything that must
     hold. `opened` is the day Rain created the sub-pool, when known."""
+    ranked_evidence = _verifiable(ranked_evidence)
     if market.options or _extract_threshold_condition(market) is not None:
         return decide(market, ranked_evidence)
     return _decide_binary(market, ranked_evidence, assert_elapsed_default=True, opened=opened)
 
 
+def _verifiable(ranked_evidence: list[RankedArticle]) -> list[RankedArticle]:
+    """Everything a verdict may rest on: all of it except context-only
+    search headlines from publishers outside the verified list (see
+    evidence_retriever.CONTEXT_SOURCE_TYPE). Applied at both entry points
+    so no decision path can see them."""
+    return [item for item in ranked_evidence if item.article.source_type != "context"]
+
+
 def decide(market: Market, ranked_evidence: list[RankedArticle]) -> Verdict | list[Verdict]:
+    ranked_evidence = _verifiable(ranked_evidence)
     if market.options:
         if _is_cumulative_date_threshold_market(market):
             return _decide_date_thresholds(market, ranked_evidence)

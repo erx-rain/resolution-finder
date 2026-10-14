@@ -497,3 +497,30 @@ def test_run_pipeline_saves_structured_verdicts_and_skips_peer_check_and_news():
 def test_run_pipeline_defaults_structured_resolver_to_resolve_structured():
     import resolution_finder.pipeline as pipeline_module
     assert pipeline_module.run_pipeline.__defaults__[2] is pipeline_module.resolve_structured
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_context_headline_is_shown_on_a_finding_with_nothing_else_and_decides_nothing(
+    mock_retrieve, mock_extract, mock_sleep
+):
+    """2026-10-14: a market whose only search results came from publishers
+    outside the verified list showed no evidence at all. Such a result is
+    now kept as context: its headline is shown, nothing is fetched, and the
+    verdict engine never sees it -- even a headline that says it happened."""
+    headline = "Congress passes the CLARITY act; President signs it into law"
+    mock_retrieve.return_value = [ArticleRef(
+        url="https://randomblog.example/x", title=headline, source_type="context",
+        summary=headline, source_domain="randomblog.example", published_date=date(2026, 10, 13),
+    )]
+    db_path = temp_db_path()
+    run_pipeline(FakeMarketProvider(), db_path, peer_checker=NO_PEER_MATCH)
+
+    (finding,) = get_latest_findings(db_path)
+    mock_extract.assert_not_called()
+    assert finding["outcome"] == "UNCLEAR"
+    assert finding["source_type"] == "context"
+    assert headline in finding["evidence_snippet"]
+    assert "Context only" in finding["evidence_snippet"]
+    os.remove(db_path)

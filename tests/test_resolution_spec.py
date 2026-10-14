@@ -245,3 +245,35 @@ def test_availability_says_from_when_a_not_yet_available_market_can_be_determine
     assert check_availability(pending, today=date(2100, 1, 1)).available_from is None
     undated = Market(id="m", title="Will X happen?", description="", options=[], close_date=None)
     assert check_availability(undated, today=date(2026, 10, 13)).available_from is None
+
+
+def test_states_early_resolution_reads_the_markets_own_rules():
+    from resolution_finder.resolution_spec import states_early_resolution
+    # Verbatim openings of live rain.trade descriptions, 2026-10-13/14.
+    assert states_early_resolution(
+        'This market resolves to "Yes" if, at any time from the market\'s creation through '
+        "December 31, 2026, 11:59 PM ET, Anthropic's public valuation exceeds Bitcoin's (BTC) market capitalization.")
+    assert states_early_resolution(
+        'This market will resolve to "Yes" if, between the moment this market is created and 11:59 PM ET '
+        "on the specified date, the United States government ... makes a public, official announcement")
+    assert states_early_resolution(
+        'This market will resolve to "Yes" if, by the specified date at 11:59 PM ET, the United States and '
+        "Iran have signed or formally adopted a qualifying written diplomatic instrument.")
+    assert states_early_resolution(
+        "This market will immediately resolve to \u201cYes\u201d if any Binance 1-minute candle for Bitcoin "
+        "(BTC/USDT) between July 21, 2026, and December 31, 2026")
+    # Decided by a season, or at one fixed moment.
+    assert not states_early_resolution(
+        "This market is resolved based on the team that wins the 2026-27 NBA championship.")
+    assert not states_early_resolution(
+        "This market will settle based on which company has the highest market capitalization at the close "
+        "of trading on December 31, 2026.")
+
+
+def test_a_scheduled_event_date_means_the_answer_waits_for_it():
+    from resolution_finder.resolution_spec import parse_resolution_spec
+    market = Market(id="m", title="Who wins?", options=[], close_date=date(2026, 12, 1),
+                    description="The game is scheduled for November 20, 2026. Resolves Yes by the specified date.")
+    spec = parse_resolution_spec(market)
+    assert spec.scheduled_event_date == date(2026, 11, 20)
+    assert spec.can_resolve_early is False      # "by the specified date" notwithstanding

@@ -24,6 +24,7 @@ from flask import Flask, jsonify, request
 from resolution_finder.models import Market
 from resolution_finder.gist_market_provider import GistMarketProvider, GistProviderError, _parse_close_date, _parse_options
 from resolution_finder.rain_pool_client import PoolStatus, RainPoolError, UNKNOWN_STATUS, plan_scan, pool_statuses
+from resolution_finder.rain_pool_client import _default_fetch as _rain_pool_fetch
 from resolution_finder.resolution_spec import check_availability
 from resolution_finder.storage import get_history, get_latest_findings, init_db
 from resolution_finder.service import service_storage
@@ -299,6 +300,22 @@ def create_app(
             "runs": service_storage.get_runs(db_path, market_id),
         })
 
+    @app.get("/markets/<market_id>/rules")
+    @require_auth
+    def market_rules(market_id: str):
+        """The rules the finder actually scans against: Rain's own
+        poolDescription (2026-10-14). The admin page showed the gist's
+        source-URL/venue/category lines under "Resolution rules", which are
+        not rules. Its own route, not part of /findings: rain-admin's
+        History tab reads /findings for every market, and one Rain read
+        each would make that tab wait on Rain 57 times. null if Rain
+        cannot be read -- never the gist text in its place."""
+        try:
+            rules = (rain_fetch or _rain_pool_fetch)(market_id).get("poolDescription") or None
+        except RainPoolError:
+            rules = None
+        return jsonify({"market_id": market_id, "rules": rules})
+
     @app.post("/findings/<int:finding_id>/review")
     @require_auth
     def review(finding_id: int):
@@ -367,13 +384,19 @@ def create_app(
                         # resolved is not scanned on schedule either (it
                         # would only produce a failed run).
                         for market, _status in listed_markets()[0]:
-                            # Scheduled runs scan only markets whose
-                            # resolution is AVAILABLE (date signals) —
-                            # scanning a market months before its close
-                            # date wastes the news budget. A manual POST
-                            # /scans has no such gate: a human asking is
-                            # the override.
-                            if check_availability(market).available:
+                            # Scheduled runs scan markets whose resolution
+                            # is AVAILABLE (date signals), and -- owner
+                            # decision 2026-10-14 -- every market whose own
+                            # rules let it resolve before its close date
+                            # ("at any time", "by the specified date"): for
+                            # those the close date is a time frame, and
+                            # waiting for it would miss exactly the early
+                            # answer. Markets decided at a fixed moment or
+                            # by a season still wait. A manual POST /scans
+                            # has no gate at all: a human asking is the
+                            # override.
+                            availability = check_availability(market)
+                            if availability.available or availability.spec.can_resolve_early:
                                 queue.enqueue(market.id, "schedule")
                     except GistProviderError as exc:
                         logger.error("Scheduled run skipped: %s", exc)

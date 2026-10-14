@@ -300,7 +300,11 @@ def test_tier1_does_not_tag_offdomain_results_as_primary(mock_parse, mock_sleep)
     ])
     evidence = retrieve_evidence(CLARITY_MARKET, ["CLARITY act"])
     assert not any(e.source_type == "primary" for e in evidence)
-    assert evidence == []
+    # Kept since 2026-10-14 -- as CONTEXT only (headline as its text, never
+    # fetched, never seen by the verdict engine), not as evidence.
+    assert [(e.source_type, e.summary) for e in evidence] == [
+        ("context", "Crypto blog take on the CLARITY act"),
+    ]
 
 
 @patch("resolution_finder.evidence_retriever.time.sleep")
