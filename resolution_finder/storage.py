@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS findings (
     resolution_available INTEGER,
     availability_reason TEXT,
     available_from TEXT,
-    score_version INTEGER
+    score_version INTEGER,
+    can_resolve_early INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -45,6 +46,10 @@ _MIGRATIONS = [
     # 2026-10-13: marks a row written since `confidence` stopped being
     # served from the evidence-match number -- see FINDING_SCORE_VERSION.
     ("score_version", "ALTER TABLE findings ADD COLUMN score_version INTEGER"),
+    # 2026-10-14: the market's rules let it resolve before its close date
+    # (resolution_spec.states_early_resolution). Per finding, like
+    # available_from: it changes what "not yet available" means to a reader.
+    ("can_resolve_early", "ALTER TABLE findings ADD COLUMN can_resolve_early INTEGER"),
 ]
 
 # What the `confidence` COLUMN holds has never changed: the engine's
@@ -111,8 +116,8 @@ def save_finding(
             INSERT INTO findings
                 (market_id, option, run_timestamp, outcome, confidence, evidence_snippet,
                  source_url, source_type, review_status, resolution_available, availability_reason,
-                 available_from, score_version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?)
+                 available_from, score_version, can_resolve_early)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?)
             """,
             (market_id, verdict.option, run_timestamp, verdict.outcome, verdict.confidence,
              verdict.evidence_snippet, verdict.source_url, verdict.source_type,
@@ -120,7 +125,8 @@ def save_finding(
              None if availability is None else availability.reason,
              None if availability is None or availability.available_from is None
              else availability.available_from.isoformat(),
-             FINDING_SCORE_VERSION),
+             FINDING_SCORE_VERSION,
+             None if availability is None else int(availability.spec.can_resolve_early)),
         )
         conn.commit()
         return cursor.lastrowid
@@ -149,6 +155,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         ),
         "availability_reason": row["availability_reason"],
         "available_from": row["available_from"],
+        "can_resolve_early": None if row["can_resolve_early"] is None else bool(row["can_resolve_early"]),
     }
 
 

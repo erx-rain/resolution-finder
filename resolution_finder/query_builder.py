@@ -88,8 +88,28 @@ def extract_entities(text: str) -> list[str]:
     return seen
 
 
+_QUESTION_DEADLINE_RE = re.compile(
+    r"\s+(?:by|before|in)\s+(?:the\s+)?(?:end\s+of\s+)?(?:[A-Z][a-z]+\.?\s+\d{1,2}(?:,\s*\d{4})?|[A-Z][a-z]+\s+\d{4}|\d{4})$"
+)
+
+
+def _keyword_query(title: str) -> str:
+    """The question as plain keywords: "Will Anthropic surpass Bitcoin's
+    market cap by the end of 2026?" -> "Anthropic surpass Bitcoin's market
+    cap". Found live 2026-10-14: the search endpoints return nothing at all
+    for the full question, and its second query was garbled ("For
+    Anthropic CoinGecko and Anthropic Will ..."), so the market got zero
+    candidates while plain keywords return current news."""
+    keywords = title.strip().rstrip("?").strip()
+    keywords = re.sub(r"^(?:will|did|does|is|are|has|have|can)\s+", "", keywords, flags=re.IGNORECASE)
+    return _QUESTION_DEADLINE_RE.sub("", keywords).strip()
+
+
 def build_queries(market: Market) -> list[str]:
     queries = [market.title]
+    keywords = _keyword_query(market.title)
+    if keywords and keywords.lower() != market.title.lower():
+        queries.append(keywords)
     # Real gap found live (2026-08-26): a market's description can have
     # NO 2+-word capitalized phrase at all (e.g. "Primary resolution
     # source: official Egyptian election results.") while its own TITLE

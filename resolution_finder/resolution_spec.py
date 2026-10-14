@@ -191,6 +191,36 @@ _NON_WINNERS_RESOLVE_NO_RE = re.compile(
 )
 
 
+# The market's own rules let it resolve as soon as the event happens -- the
+# close date is the LAST moment, not the moment of resolution. Real wording,
+# all live rain.trade markets (2026-10-13/14):
+#   "...if, at any time from the market's creation through December 31,
+#    2026, 11:59 PM ET, Anthropic's public valuation exceeds ..."
+#   "...if, between the moment this market is created and 11:59 PM ET on the
+#    specified date, the United States government ... makes a public ..."
+#   "...if, by the specified date at 11:59 PM ET, the United States and Iran
+#    have signed ..."
+#   "...available for purchase ... on or before December 31, 2026, 11:59 PM ET."
+#   "This market will immediately resolve to "Yes" if any Binance 1-minute
+#    candle for Bitcoin (BTC/USDT) between July 21, 2026, and December 31..."
+# Owner decision 2026-10-14: such a market is never described as "can't be
+# determined until <close date>" -- the end time is a time frame, not a
+# date the answer waits for.
+_EARLY_RESOLUTION_RE = re.compile(
+    r"\bat any time\b"
+    r"|\bbetween the moment (?:this|the) market (?:is|was) created and\b"
+    r"|\bimmediately resolve"
+    r"|\bbetween (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?(?:\s+\d{4})?,?\s+and\b"
+    r"|\b(?:by|on or before|no later than|prior to)\s+(?:the\s+)?"
+    r"(?:specified date|end of\b|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\d{1,2}:\d{2})",
+    re.IGNORECASE,
+)
+
+
+def states_early_resolution(description: str) -> bool:
+    return bool(_EARLY_RESOLUTION_RE.search(description or ""))
+
+
 def states_non_winners_resolve_no(description: str) -> bool:
     return bool(_NON_WINNERS_RESOLVE_NO_RE.search(description or ""))
 
@@ -226,6 +256,10 @@ class ResolutionSpec:
     scheduled_event_date: Optional[date]
     scheduled_event_raw: Optional[str]
     names_primary_source: bool
+    # Resolvable as soon as the event happens, before the close date --
+    # states_early_resolution. Never true for a market with a scheduled
+    # event date: its answer does wait for that date.
+    can_resolve_early: bool = False
 
 
 def extract_backstop_deadline(description: str) -> tuple[Optional[date], Optional[str]]:
@@ -294,6 +328,7 @@ def parse_resolution_spec(market: Market) -> ResolutionSpec:
         scheduled_event_date=scheduled_date,
         scheduled_event_raw=scheduled_raw,
         names_primary_source=names_primary_source(description),
+        can_resolve_early=scheduled_date is None and states_early_resolution(description),
     )
 
 

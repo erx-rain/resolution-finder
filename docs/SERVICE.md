@@ -128,6 +128,7 @@ when the token is set.
 | `GET /scans` / `GET /scans/<job_id>` | Job list / status (`queued → running → done|failed`). |
 | `GET /findings` | The findings of each market's most recent run that produced any. |
 | `GET /markets/<id>/findings` | Full findings history + run log for one market. |
+| `GET /markets/<id>/rules` | The market's resolution rules as Rain has them (`poolDescription`), or `null` if Rain cannot be read. One Rain read per call. |
 | `POST /findings/<id>/review` `{"decision":"confirm"\|"reject","by":"<admin>"}` | Record the human verdict review, with who and when. |
 | `GET /schedule` / `PUT /schedule` `{"tag":"everyday at 9:00"}` | Read / set the scan schedule tag. Bad tags get 400 + supported forms. |
 
@@ -160,6 +161,25 @@ Two numbers on a finding, never to be confused (2026-10-13):
 
 Findings stored before this change are served unchanged (the old number
 still under `confidence`, `evidence_match` null).
+
+**Early resolution** (2026-10-14). A finding carries `can_resolve_early`:
+the market's own rules let it resolve as soon as the event happens ("at
+any time", "between the moment this market is created and...", "by the
+specified date", "on or before <date>", "immediately resolve"). For such
+a market `available_from` is a deadline, not the date the answer waits
+for, and scheduled runs scan it before its close date. A market decided
+at a fixed moment, by a season, or on a scheduled event date is not
+early-resolvable.
+
+**Context headlines** (2026-10-14). Search results from publishers outside
+the verified list are kept as `source_type: "context"`: their headline is
+their only text (never fetched), the verdict engine never sees them, and
+one is shown only on a finding that would otherwise have nothing, as
+`UNCLEAR` with a note saying it is context.
+
+A date-named sub-pool's deadline is its own name ("October 31"), not the
+sub-pool's `endDate` — Rain can give several date sub-pools the pool's end
+date.
 
 A finding whose resolution is not yet available carries `available_from`:
 the date it becomes determinable (the sub-pool's own deadline for a

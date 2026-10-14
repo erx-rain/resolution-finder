@@ -149,3 +149,13 @@ def test_extract_entities_trims_leading_question_word_from_title():
     # real entity name.
     entities = extract_entities(CLARITY_MARKET.title)
     assert "Will the CLARITY" not in entities
+
+
+def test_build_queries_adds_the_question_as_plain_keywords():
+    from resolution_finder.query_builder import _keyword_query
+    # 2026-10-14: the full question returned nothing at all.
+    assert _keyword_query("Will Anthropic surpass Bitcoin's market cap by the end of 2026?") == (
+        "Anthropic surpass Bitcoin's market cap")
+    assert _keyword_query("Will the US end the Iran naval blockade by October 31?") == (
+        "the US end the Iran naval blockade")
+    assert _keyword_query("2026-27 NBA Champion") == "2026-27 NBA Champion"

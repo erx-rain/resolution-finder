@@ -6,7 +6,7 @@ from typing import Callable, Optional
 from resolution_finder.market_provider import MarketProvider
 from resolution_finder.models import Market, RankedArticle, Verdict
 from resolution_finder.query_builder import build_queries
-from resolution_finder.evidence_retriever import retrieve_evidence
+from resolution_finder.evidence_retriever import CONTEXT_SOURCE_TYPE, retrieve_evidence
 from resolution_finder.article_extractor import extract_article_text, is_known_unresolvable_url
 from resolution_finder.relevance_ranker import rank_by_relevance, best_below_threshold
 from resolution_finder.verdict_engine import decide
@@ -57,6 +57,29 @@ def _promote_best_below_threshold(
         )
         for v in verdicts
     ]
+
+
+def _attach_context(verdicts: list[Verdict], ranked: list[RankedArticle]) -> list[Verdict]:
+    """A finding that found nothing it may rest a verdict on still shows the
+    most relevant context headline, marked as context (see
+    evidence_retriever.CONTEXT_SOURCE_TYPE). Only for a single, option-less
+    NO_EVIDENCE finding -- the outcome becomes UNCLEAR ("something was
+    found, it decides nothing"), never YES or NO."""
+    context = [item for item in ranked if item.article.source_type == CONTEXT_SOURCE_TYPE]
+    if len(verdicts) != 1 or verdicts[0].outcome != "NO_EVIDENCE" or not context:
+        return verdicts
+    best = context[0]
+    dated = f" ({best.article.published_date.isoformat()})" if best.article.published_date else ""
+    return [Verdict(
+        outcome="UNCLEAR", confidence=best.similarity,
+        evidence_snippet=(
+            f"{best.text.strip()[:240]} — {best.article.source_domain}{dated}"
+            " [Context only: a headline from a publisher outside the verified-source list."
+            " Shown for review; no verdict rests on it.]"
+        ),
+        source_url=best.article.url, source_type=CONTEXT_SOURCE_TYPE,
+        option=verdicts[0].option,
+    )]
 
 
 def _default_peer_checker(market: Market) -> Optional[Verdict]:
@@ -148,7 +171,8 @@ def _scan_market(
 
     articles_with_text = []
     for ref in candidate_refs:
-        if ref.source_type == "official_social" or (ref.summary and is_known_unresolvable_url(ref.url)):
+        if (ref.source_type in ("official_social", CONTEXT_SOURCE_TYPE)
+                or (ref.summary and is_known_unresolvable_url(ref.url))):
             # Never fetch the actual X page — only use the search-result
             # snippet already captured by the retriever. The reviewer
             # checks the real post by hand via the dashboard link.
@@ -175,6 +199,7 @@ def _scan_market(
     verdicts = verdict_engine(market, ranked)
     if not isinstance(verdicts, list):
         verdicts = [verdicts]
+    verdicts = _attach_context(verdicts, ranked)
     verdicts = _promote_best_below_threshold(verdicts, market, articles_with_text)
     for verdict in verdicts:
         save_finding(db_path, market.id, run_timestamp, verdict, availability)

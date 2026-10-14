@@ -144,7 +144,8 @@ def test_plan_date_named_sub_pools_are_each_their_own_yes_no_market():
     assert target.option == "December 31"
     assert target.market.id == "6a661e50f8e64ced2cd8e486"
     assert target.market.title == "Will the U.S. and Iran finalize a nuclear agreement by December 31?"
-    assert target.market.close_date == date(2027, 1, 1)
+    # The sub-pool's own date, from its name (its endDate is 2027-01-01 UTC).
+    assert target.market.close_date == date(2026, 12, 31)
     assert target.market.options == []
     assert target.market.description == RULES
 
@@ -165,7 +166,26 @@ def test_plan_each_open_date_sub_pool_carries_its_own_deadline():
     ]
     targets = plan_scan(make_market(), fetch=_pool(sub_pools)).targets
     assert [(t.option, t.market.close_date) for t in targets] == [
-        ("November 30", date(2026, 12, 1)), ("December 31", date(2027, 1, 1)),
+        ("November 30", date(2026, 11, 30)), ("December 31", date(2026, 12, 31)),
+    ]
+
+
+def test_plan_date_sub_pool_deadline_is_its_name_not_rains_end_date():
+    # Verbatim from Rain 2026-10-14, "US ends Iran naval blockade by...?"
+    # (6aaa6d719b74a682e3bbdc2f): both open sub-pools carry the POOL's end
+    # date, 2027-01-01, and "October 31" was shown as "can't be determined
+    # until Jan 1, 2027".
+    sub_pools = [
+        {"question": "December 31", "mergedQuestion": "Will the US end the Iran naval blockade by December 31?",
+         "poolFinalized": False, "endDate": "2027-01-01T04:59:00.000Z", "createdAt": "2026-09-16T10:20:33.380Z"},
+        {"question": "October 31", "mergedQuestion": "Will the US end the Iran naval blockade by October 31?",
+         "poolFinalized": False, "endDate": "2027-01-01T04:59:00.000Z", "createdAt": "2026-09-16T10:20:33.380Z"},
+        {"question": "September 30", "mergedQuestion": "Will the US end the Iran naval blockade by September 30?",
+         "poolFinalized": True, "endDate": "2026-10-02T16:07:28.181Z"},
+    ]
+    targets = plan_scan(make_market(), fetch=_pool(sub_pools)).targets
+    assert [(t.option, t.market.close_date) for t in targets] == [
+        ("December 31", date(2026, 12, 31)), ("October 31", date(2026, 10, 31)),
     ]
 
 

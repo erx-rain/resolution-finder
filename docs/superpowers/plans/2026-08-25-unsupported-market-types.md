@@ -304,3 +304,34 @@ and extraction "using a robot, spider, script, or other automated
 means". Its unofficial `site.api.espn.com` JSON endpoints fall under the
 same terms. A structured sports-data source is still a valid idea, but
 needs a different provider whose terms allow this use (not researched).
+
+## Two moving quantities compared ("X surpasses Y's market cap") — 2026-10-14
+
+Live market: "Will Anthropic surpass Bitcoin's market cap by the end of
+2026?" (rain.trade `6a60c9b7f8e64ced2c3e833f`). Yes if, at any time before
+the deadline, Anthropic's publicly confirmed valuation exceeds Bitcoin's
+market capitalization **per CoinGecko** (CoinMarketCap as fallback);
+Anthropic's side from its own communications or an overwhelming
+consensus of credible reporting.
+
+Not supported: every engine path asks whether ONE named thing happened
+or ONE number crossed a FIXED threshold (`_decide_numeric_threshold`).
+Here both sides move, so neither the binary nor the numeric path can
+decide it, and forcing it into either would be guessing.
+
+What a resolver would need:
+- **Bitcoin's market cap at a given moment, from the named source.**
+  CoinGecko is on the blocked list in
+  `2026-09-17-price-markets-handoff.md` (free plan has no commercial
+  license). Same licensing decision applies; a number quoted in a news
+  article is not the market's stated source.
+- **Anthropic's valuation, dated**, from funding-round or IPO-pricing
+  reports (as of 2026-10-14 the news is "IPO could value it at $2
+  trillion" -- a projection, not a confirmed valuation, which the rules
+  exclude).
+- A comparison of the two at the SAME time, and a rule for what counts
+  as "confirmed by Anthropic" vs. reported.
+
+Done meanwhile (2026-10-14): the market is marked as able to resolve
+early, and its finding shows the most relevant headline as context
+(outside the verified list, so it decides nothing).

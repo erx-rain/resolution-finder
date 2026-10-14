@@ -26,7 +26,7 @@ scan, not substitute anything.
 import logging
 import re
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 from typing import Callable, Optional
 
 import requests
@@ -152,6 +152,39 @@ _DATE_NAME_RE = re.compile(
 
 def _is_date_name(name: str) -> bool:
     return bool(_DATE_NAME_RE.match(name.strip()))
+
+
+def _deadline_from_name(name: str, end_date: Optional[date]) -> Optional[date]:
+    """The date a date-named sub-pool asks about ("October 31"), with its
+    year: the one the name states, or else the latest such day on or
+    before the sub-pool's own end date.
+
+    The NAME is the deadline, not `endDate`. Found live 2026-10-14 on "US
+    ends Iran naval blockade by...?": Rain gives its "October 31" and
+    "December 31" sub-pools the same endDate, 2027-01-01 (the pool's), so
+    "October 31" was reported "can't be determined until Jan 1, 2027"."""
+    cleaned = re.sub(r"(?<=\d)(st|nd|rd|th)\b", "", name.strip().replace(".", ""))
+    cleaned = re.sub(r"^sept\b", "Sep", cleaned, flags=re.IGNORECASE)
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y"):
+        try:
+            return datetime.strptime(cleaned, fmt).date()
+        except ValueError:
+            continue
+    if end_date is None:
+        return None
+    for fmt in ("%B %d", "%b %d"):
+        try:
+            month_day = datetime.strptime(f"{cleaned} 2000", f"{fmt} %Y").date()
+        except ValueError:
+            continue
+        for year in (end_date.year, end_date.year - 1):
+            try:
+                candidate = month_day.replace(year=year)
+            except ValueError:          # Feb 29 in a non-leap year
+                continue
+            if candidate <= end_date:
+                return candidate
+    return None
 
 
 # ── Status of every market at once, for the market list ──────────────
@@ -316,7 +349,8 @@ def plan_scan(market: Market, fetch: Optional[PoolFetcher] = None) -> ScanPlan:
     if all(_is_date_name(sp.name) for sp in sub_pools) and all(sp.question.strip() for sp in open_sub_pools):
         return ScanPlan(targets=tuple(
             ScanTarget(
-                replace(whole, title=sp.question, close_date=sp.end_date or market.close_date),
+                replace(whole, title=sp.question,
+                        close_date=_deadline_from_name(sp.name, sp.end_date) or sp.end_date or market.close_date),
                 option=sp.name, opened=sp.opened,
             )
             for sp in open_sub_pools

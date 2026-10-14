@@ -55,6 +55,20 @@ SOCIAL_PLATFORM_HOSTS = {
 
 CREDIBLE_TIERS = ("credible_backup", "credible_backup_secondary")
 
+# Search results from publishers OUTSIDE the verified list, kept as
+# CONTEXT for the reviewer -- never as evidence (2026-10-14). Found live on
+# "Will Anthropic surpass Bitcoin's market cap by the end of 2026?": every
+# result for "Anthropic valuation" and "Bitcoin market cap" came from
+# outside the list (msn.com, cryptoslate.com, rttnews.com, ...) and was
+# dropped, so a market whose news was full of "Anthropic's IPO could value
+# it at $2 trillion" showed no evidence at all. A context ref:
+#   - is never fetched -- its search headline is its whole text;
+#   - is never seen by the verdict engine (verdict_engine._verifiable);
+#   - is shown only on a finding that has nothing else, and says so.
+# The verified list itself, and what a verdict may rest on, are unchanged.
+CONTEXT_SOURCE_TYPE = "context"
+CONTEXT_MAX_REFS = 8
+
 
 def _source_field(source, name: str):
     """Read a field from a feedparser `entry.source`.
@@ -383,6 +397,7 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
         evidence.extend(_social_refs(f"{queries[0]} {instagram_handle}", site="instagram.com"))
         time.sleep(REQUEST_DELAY_SECONDS)
 
+    context: list[ArticleRef] = []
     for query in queries:
         for ref in search_bing_news_rss(query):
             # Only tag "primary" when the result really came from the named
@@ -399,7 +414,14 @@ def retrieve_evidence(market: Market, queries: list[str]) -> list[ArticleRef]:
                 ))
             elif ref.source_type in CREDIBLE_TIERS:
                 evidence.append(ref)
+            elif len(context) < CONTEXT_MAX_REFS:
+                context.append(ArticleRef(
+                    url=ref.url, title=ref.title, source_type=CONTEXT_SOURCE_TYPE,
+                    published_date=ref.published_date, summary=ref.summary or ref.title,
+                    source_domain=ref.source_domain,
+                ))
         time.sleep(REQUEST_DELAY_SECONDS)
+    evidence.extend(context)
 
     # Archive pass -- only for a market whose close date has already passed.
     # For a still-open market today's news IS the correct window, and
