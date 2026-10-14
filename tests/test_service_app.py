@@ -244,7 +244,8 @@ def test_scan_runs_each_open_date_sub_pool_as_its_own_market_and_files_it_by_nam
     binary_verdict = Verdict(outcome="NO_EVIDENCE", confidence=0.0, evidence_snippet=None,
                              source_url=None, source_type=None)
 
-    def fake_scan_market(market, db_path, run_timestamp, verdict_engine, peer_checker, structured_resolver):
+    def fake_scan_market(market, db_path, run_timestamp, verdict_engine, peer_checker, structured_resolver,
+                         trace=None):
         from resolution_finder.resolution_spec import check_availability
         scanned.append(market)
         # `verdict_engine` is the service's wrapper around decide(): it is
@@ -298,6 +299,45 @@ def test_market_rules_come_from_rain_or_are_null(tmp_path):
     failing = create_app(str(tmp_path / "r2.db"), provider=provider, job_queue=JobQueue(lambda m, t: None),
                          rain_fetch=down).test_client()
     assert failing.get("/markets/m-past/rules").get_json()["rules"] is None
+
+
+def test_run_keeps_its_trace_analysis_and_market_odds(tmp_path):
+    from tests.test_market_odds import BANKRUPTCY_EVENT
+    markets = [{"id": "mstr", "title": "Will MicroStrategy declare bankruptcy by the end of 2026?",
+                "description": ("Source URL: https://polymarket.com/event/which-companies-announce-bankruptcy-before-2027\n"
+                                "Source venue: polymarket"),
+                "options": [], "close_date": "2027-01-01"}]
+    provider = GistMarketProvider(gist_id="test", file_name="f.json", token=None,
+                                  fetch=lambda *a: json.dumps(markets))
+    pool = lambda market_id: {"poolDescription": "Resolves Yes if MicroStrategy announces bankruptcy.",
+                              "subPools": [{"question": "Yes", "poolFinalized": False}]}
+
+    def fake_scan_market(market, db_path, run_timestamp, verdict_engine, peer_checker, structured_resolver,
+                         trace=None):
+        trace.update({"path": "news", "queries": ["q1", "q2"], "retry_queries": ["MicroStrategy bankruptcy"],
+                      "articles": [{"domain": "www.msn.com", "title": "t", "url": "u", "source_type": "context",
+                                    "published": None, "status": "headline only", "relevance": 0.5}]})
+        save_finding(db_path, market.id, run_timestamp, Verdict(
+            outcome="UNCLEAR", confidence=0.5, evidence_snippet="t [Context only ...]",
+            source_url="u", source_type="context"))
+
+    db_path = str(tmp_path / "o.db")
+    client = create_app(db_path, provider=provider, rain_fetch=pool,
+                        odds_fetch=lambda slug: BANKRUPTCY_EVENT).test_client()
+    with patch("resolution_finder.pipeline._scan_market", side_effect=fake_scan_market):
+        assert _run_scan_and_wait(client, "mstr")["status"] == "done"
+
+    history = client.get("/markets/mstr/findings").get_json()
+    (finding,) = history["findings"]
+    assert finding["probability"] == 0.03
+    assert "Will MicroStrategy announce bankruptcy before 2027?" in finding["probability_source"]
+    (target,) = history["runs"][0]["trace"]["targets"]
+    assert target["queries"] == ["q1", "q2"]
+    analysis = " ".join(target["analysis"])
+    assert "then 1 more because the first found little" in analysis
+    assert "No article read reports that it has happened" in analysis
+    assert "Market-implied probability of Yes: 3%" in analysis
+    assert "not the finder's own estimate" in analysis
 
 
 def test_review_flow(app, client):

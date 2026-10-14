@@ -171,6 +171,24 @@ for, and scheduled runs scan it before its close date. A market decided
 at a fixed moment, by a season, or on a scheduled event date is not
 early-resolvable.
 
+**What a run did** (2026-10-14). Each run in `GET /markets/<id>/findings`
+carries `trace.targets[]`, one per question scanned (a date sub-pool is
+its own question): the `queries`, the `retry_queries` run because the
+first found fewer than 3 articles (shorter queries; the company's current
+name for a few hand-checked renames, `query_builder.COMPANY_RENAMES`),
+every article found with its site, date, tier, whether it was read, and
+its relevance, and `analysis` — plain-words lines saying what was found,
+whether anything reports the event (coverage that merely discusses it
+does not count), and the market-implied probability. Runs before this
+carry no trace.
+
+**Market-implied probability** (2026-10-14). A finding carries
+`probability` (0–1, of Yes) and `probability_source` (venue, its own
+question, time) when the market names a Polymarket event as its source
+and exactly one Polymarket question matches it (`market_odds.py`). It is
+a quoted, traded price — not the finder's estimate — and is `null` when
+there is no such source or no single match (Kalshi is not read yet).
+
 **Context headlines** (2026-10-14). Search results from publishers outside
 the verified list are kept as `source_type: "context"`: their headline is
 their only text (never fetched), the verdict engine never sees them, and

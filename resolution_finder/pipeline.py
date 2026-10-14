@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 from resolution_finder.market_provider import MarketProvider
 from resolution_finder.models import Market, RankedArticle, Verdict
-from resolution_finder.query_builder import build_queries
+from resolution_finder.query_builder import build_queries, fallback_queries
 from resolution_finder.evidence_retriever import CONTEXT_SOURCE_TYPE, retrieve_evidence
 from resolution_finder.article_extractor import extract_article_text, is_known_unresolvable_url
 from resolution_finder.relevance_ranker import rank_by_relevance, best_below_threshold
@@ -127,6 +127,11 @@ def run_pipeline(
             logger.exception("Skipping market %s after error: %s", market.id, exc)
 
 
+# Fewer candidates than this from the first queries and fallback_queries
+# runs too. Found 2026-10-14 at 0: two queries, no result, "nothing found".
+THIN_RESULTS = 3
+
+
 def _scan_market(
     market: Market,
     db_path: str,
@@ -134,7 +139,14 @@ def _scan_market(
     verdict_engine: VerdictEngine,
     peer_checker: PeerChecker,
     structured_resolver: StructuredResolver,
+    trace: Optional[dict] = None,
 ) -> None:
+    """`trace`, when given, is filled with what this scan searched, what it
+    found and read, and what it decided -- the record a reviewer needs to
+    judge "nothing found" (owner request 2026-10-14: a run that searched
+    nothing looked the same as one that read twenty articles)."""
+    if trace is None:
+        trace = {}
     # Computed once per market, independent of everything below -- pure
     # date arithmetic against the market's close_date and its own
     # description (see resolution_spec.py), no retrieval or model calls.
@@ -157,17 +169,32 @@ def _scan_market(
     # structured_resolvers.py.
     structured_verdicts = structured_resolver(market)
     if structured_verdicts is not None:
+        trace["path"] = "official source"
         for verdict in structured_verdicts:
             save_finding(db_path, market.id, run_timestamp, verdict, availability)
         return
 
     peer_verdict = peer_checker(market)
     if peer_verdict is not None:
+        trace["path"] = "peer market"
         save_finding(db_path, market.id, run_timestamp, peer_verdict, availability)
         return
 
     queries = build_queries(market)
     candidate_refs = retrieve_evidence(market, queries)
+    retried = []
+    if len(candidate_refs) < THIN_RESULTS:
+        retried = fallback_queries(market, already=queries)
+        if retried:
+            seen = {ref.url for ref in candidate_refs}
+            for ref in retrieve_evidence(market, retried):
+                if ref.url not in seen:
+                    seen.add(ref.url)
+                    candidate_refs.append(ref)
+    trace["path"] = "news"
+    trace["queries"] = queries
+    trace["retry_queries"] = retried
+    read_status: dict[str, str] = {}
 
     articles_with_text = []
     for ref in candidate_refs:
@@ -185,17 +212,30 @@ def _scan_market(
             text = ref.summary or ref.title
             if text:
                 articles_with_text.append((ref, text))
+            read_status[ref.url] = "headline only"
             continue
 
         text = extract_article_text(ref.url)
         if text:
             articles_with_text.append((ref, text))
+        read_status[ref.url] = "read" if text else "could not be read"
         # No request was made for a known-unresolvable host (see
         # article_extractor.py) -- nothing to rate-limit, so skip the sleep.
         if not is_known_unresolvable_url(ref.url):
             time.sleep(REQUEST_DELAY_SECONDS)
 
     ranked = rank_by_relevance(market, articles_with_text)
+    relevance = {item.article.url: round(item.similarity, 3) for item in ranked}
+    trace["articles"] = [
+        {
+            "domain": ref.source_domain, "title": ref.title, "url": ref.url,
+            "source_type": ref.source_type,
+            "published": ref.published_date.isoformat() if ref.published_date else None,
+            "status": read_status.get(ref.url, "not read"),
+            "relevance": relevance.get(ref.url),
+        }
+        for ref in candidate_refs
+    ]
     verdicts = verdict_engine(market, ranked)
     if not isinstance(verdicts, list):
         verdicts = [verdicts]

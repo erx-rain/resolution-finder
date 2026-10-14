@@ -399,7 +399,9 @@ def test_run_pipeline_still_retrieves_evidence_when_not_yet_available(
     db_path = temp_db_path()
     run_pipeline(FakeMarketProvider([market]), db_path, peer_checker=NO_PEER_MATCH)
 
-    mock_retrieve.assert_called_once()
+    # First the market's own queries; the second call is the retry with
+    # shorter queries, because the first found nothing (2026-10-14).
+    assert mock_retrieve.call_count == 2
     os.remove(db_path)
 
 
@@ -523,4 +525,36 @@ def test_context_headline_is_shown_on_a_finding_with_nothing_else_and_decides_no
     assert finding["source_type"] == "context"
     assert headline in finding["evidence_snippet"]
     assert "Context only" in finding["evidence_snippet"]
+    os.remove(db_path)
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_scan_records_what_it_searched_found_and_read_and_retries_when_thin(
+    mock_retrieve, mock_extract, mock_sleep
+):
+    """2026-10-14: a run that searched two queries and found nothing looked
+    the same as one that read twenty articles. The trace says which."""
+    from resolution_finder.pipeline import _scan_market
+    from resolution_finder.verdict_engine import decide
+    found = ArticleRef(url="https://www.reuters.com/x", title="Reuters on the CLARITY act",
+                       source_type="credible_backup", source_domain="www.reuters.com",
+                       published_date=date(2026, 10, 1))
+    mock_retrieve.side_effect = [[], [found]]          # first queries: nothing; retry: one article
+    mock_extract.return_value = None                   # and that page cannot be read
+    db_path = temp_db_path()
+    from resolution_finder.storage import init_db
+    init_db(db_path)
+    trace = {}
+    _scan_market(make_market(), db_path, "2026-10-14T00:00:00", decide, NO_PEER_MATCH, lambda m: None, trace=trace)
+
+    assert trace["path"] == "news"
+    assert trace["queries"][0] == "Will the CLARITY act be signed into law in 2026?"
+    assert trace["retry_queries"], "the first queries found nothing, so shorter ones ran"
+    assert trace["articles"] == [{
+        "domain": "www.reuters.com", "title": "Reuters on the CLARITY act", "url": "https://www.reuters.com/x",
+        "source_type": "credible_backup", "published": "2026-10-01", "status": "could not be read",
+        "relevance": None,
+    }]
     os.remove(db_path)
