@@ -212,7 +212,7 @@ _EARLY_RESOLUTION_RE = re.compile(
     r"|\bimmediately resolve"
     r"|\bbetween (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?(?:\s+\d{4})?,?\s+and\b"
     r"|\b(?:by|on or before|no later than|prior to)\s+(?:the\s+)?"
-    r"(?:specified date|end of\b|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\d{1,2}:\d{2})",
+    r"(?:specified date|deadline\b|end of\b|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\d{1,2}:\d{2})",
     re.IGNORECASE,
 )
 

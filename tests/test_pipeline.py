@@ -558,3 +558,66 @@ def test_scan_records_what_it_searched_found_and_read_and_retries_when_thin(
         "relevance": None,
     }]
     os.remove(db_path)
+
+
+
+@patch("resolution_finder.pipeline.time.sleep")
+@patch("resolution_finder.pipeline.extract_article_text")
+@patch("resolution_finder.pipeline.retrieve_evidence")
+def test_articles_from_before_the_market_opened_are_not_read_or_used(mock_retrieve, mock_extract, mock_sleep):
+    """2026-10-14: the evidence shown for "Will MicroStrategy declare
+    bankruptcy by the end of 2026?" (opened 2026-07-27) was a June 25
+    article. An article from before the market opened cannot report its
+    outcome; it is listed in the trace, marked, and nothing else."""
+    from resolution_finder.pipeline import _scan_market
+    from resolution_finder.storage import init_db
+    from resolution_finder.verdict_engine import decide
+    old = ArticleRef(url="https://uk.finance.yahoo.com/june", title="Why Strategy (MSTR) Shares Are Getting Obliterated Today",
+                     source_type="credible_backup_secondary", source_domain="uk.finance.yahoo.com",
+                     published_date=date(2026, 6, 24))
+    mock_retrieve.return_value = [old]
+    db_path = temp_db_path()
+    init_db(db_path)
+    trace = {}
+    _scan_market(make_market(), db_path, "2026-10-14T00:00:00", decide, NO_PEER_MATCH, lambda m: None,
+                 trace=trace, opened=date(2026, 7, 27))
+    mock_extract.assert_not_called()
+    assert trace["articles"][0]["status"] == "older than the market -- not used"
+    (finding,) = get_latest_findings(db_path)
+    assert finding["source_url"] != old.url
+    os.remove(db_path)
+
+
+
+def test_a_yes_no_market_settled_by_an_unfinished_event_gets_no_outcome_before_its_date():
+    """2026-10-14: "Will a Canadian Team Win the 2027 Stanley Cup?" was
+    proposed NO in October from preseason articles."""
+    from resolution_finder.pipeline import _hold_until_decidable
+    from resolution_finder.resolution_spec import check_availability
+    market = Market(id="canada-2027", title="Will a Canadian Team Win the 2027 Stanley Cup?",
+                    description='This market will resolve to "Yes" if a Canadian team is officially declared the '
+                                'Stanley Cup champion for the 2026-27 NHL season. Otherwise, it will resolve to "No".',
+                    options=[], close_date=date(2027, 7, 1))
+    availability = check_availability(market, today=date(2026, 10, 14))
+    assert availability.available is False and availability.spec.can_resolve_early is False
+
+    wrong_no = Verdict(outcome="NO", confidence=0.6, evidence_snippet="After winning the Cup in 2006, ...",
+                       source_url="https://sports.yahoo.com/x", source_type="credible_backup_secondary")
+    single = Verdict(outcome="UNCLEAR", confidence=0.5, evidence_snippet="But no Helly, no playoffs. [Only 1 "
+                     "independent source confirms this -- needs 2 to assert a verdict, flagged for review instead.]",
+                     source_url="https://www.espn.com/x", source_type="credible_backup_secondary")
+    for verdict in (wrong_no, single):
+        (held,) = _hold_until_decidable([verdict], availability)
+        assert held.outcome == "UNCLEAR"
+        assert held.evidence_snippet.startswith("Not decidable before 2027-07-01")
+        assert "independent source" not in held.evidence_snippet
+        assert "2006" not in held.evidence_snippet and "Helly" not in held.evidence_snippet
+
+    # A market whose rules let it resolve any time is untouched.
+    early = Market(id="e", title="Will X happen?", description="Resolves Yes if, at any time before the close, X.",
+                   options=[], close_date=date(2027, 1, 1))
+    assert _hold_until_decidable([wrong_no], check_availability(early, today=date(2026, 10, 14))) == [wrong_no]
+    # Per-option eliminations in a running tournament are untouched.
+    eliminated = Verdict(outcome="NO", confidence=0.6, evidence_snippet="s", source_url="u",
+                         source_type="credible_backup", option="Team A")
+    assert _hold_until_decidable([eliminated], availability) == [eliminated]

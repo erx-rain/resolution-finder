@@ -2630,6 +2630,7 @@ def test_binary_market_resolves_no_on_historical_drought_phrasing():
             "country's championship drought into a fourth consecutive "
             "decade.",
             url="https://www.nbcnews.com/x", source_type="credible_backup",
+            published_date=CANADIAN_STANLEY_CUP_MARKET.close_date + timedelta(days=2),
         ),
         make_ranked(
             "A Canadian team has not won the Stanley Cup since 1993. "
@@ -2637,10 +2638,54 @@ def test_binary_market_resolves_no_on_historical_drought_phrasing():
             "sending the trophy back to South Florida for the second "
             "time in three years.",
             url="https://www.espn.com/x", source_type="credible_backup_secondary",
+            published_date=CANADIAN_STANLEY_CUP_MARKET.close_date + timedelta(days=3),
         ),
     ]
+    # Dated after the market closed (2026-10-14): "has not won since 1993"
+    # only covers THIS season once it is over -- see
+    # _binary_sentence_out_of_scope. These articles report the Final.
     verdict = decide(CANADIAN_STANLEY_CUP_MARKET, evidence)
     assert verdict.outcome == "NO"
+
+
+def test_binary_market_drought_phrasing_written_before_the_close_is_history_not_a_result():
+    # The live wrong verdict this guards (2026-10-14): "Will a Canadian Team
+    # Win the 2027 Stanley Cup?" was proposed NO in October 2026, before the
+    # season was played. The same drought sentence, written before the
+    # market's own close, says nothing about this season.
+    mid_season = CANADIAN_STANLEY_CUP_MARKET.close_date - timedelta(days=200)
+    evidence = [
+        make_ranked("A Canadian team has not won the Stanley Cup since 1993. The new season opens this week.",
+                    url="https://www.nbcnews.com/y", source_type="credible_backup", published_date=mid_season),
+        make_ranked("No Canadian hockey team has won the Stanley Cup Final since 1993, and the drought is a talking point again.",
+                    url="https://www.espn.com/y", source_type="credible_backup_secondary",
+                    published_date=mid_season + timedelta(days=1)),
+    ]
+    assert decide(CANADIAN_STANLEY_CUP_MARKET, evidence).outcome != "NO"
+
+
+def test_binary_market_ignores_other_seasons_and_forecasts_in_either_direction():
+    # Verbatim from the two real articles that produced the 2026-10-14 wrong
+    # NO (sports.yahoo.com 2026-09-29, espn.com 2026-09-30).
+    market = Market(
+        id="canada-2027", title="Will a Canadian Team Win the 2027 Stanley Cup?",
+        description=CANADIAN_STANLEY_CUP_MARKET.description, options=[],
+        close_date=date(2027, 7, 1),
+    )
+    evidence = [
+        make_ranked("After winning the Cup in 2006, they also missed the playoffs the next two years.",
+                    url="https://sports.yahoo.com/a", source_type="credible_backup_secondary",
+                    published_date=date(2026, 9, 29)),
+        make_ranked("Friedman has Florida returning to the Stanley Cup Final for a fourth time in five seasons, "
+                    "but this time, they will be falling to the Edmonton Oilers.",
+                    url="https://sports.yahoo.com/b", source_type="credible_backup_secondary",
+                    published_date=date(2026, 9, 29)),
+        make_ranked("Injuries to Cale Makar and Nathan MacKinnon gave the Colorado Avalanche plausible deniability "
+                    "for losing in the 2026 Western Conference finals.",
+                    url="https://www.espn.com/a", source_type="credible_backup_secondary",
+                    published_date=date(2026, 9, 30)),
+    ]
+    assert decide(market, evidence).outcome not in ("YES", "NO")
 
 
 def test_binary_market_no_path_stays_unclear_on_a_single_uncorroborated_source():
@@ -2945,3 +2990,34 @@ def test_question_as_statement_drops_the_question_form_and_its_deadline():
         "Will the U.S. and Iran finalize a nuclear agreement by September 30?"
     ) == "the U.S. and Iran finalize a nuclear agreement"
     assert _question_as_statement("Will Man City win the Premier League?") == "Man City win the Premier League"
+
+
+
+def test_an_unresolved_binary_finding_shows_the_newest_relevant_article():
+    # Owner request 2026-10-14: what a reviewer sees first should be current.
+    older_but_closer = make_ranked("Strategy shares fell 9.7% as bitcoin slid.", url="https://a.example/june",
+                                   similarity=0.9, published_date=date(2026, 8, 1))
+    newer = make_ranked("Strategy bought 334 more bitcoin last week.", url="https://b.example/oct",
+                        similarity=0.5, published_date=date(2026, 10, 5))
+    market = Market(id="m", title="Will MicroStrategy declare bankruptcy by the end of 2026?",
+                    description="Resolves Yes if MicroStrategy announces bankruptcy.", options=[],
+                    close_date=date(2027, 1, 1))
+    verdict = decide(market, [older_but_closer, newer])
+    assert verdict.outcome == "UNCLEAR"
+    assert verdict.source_url == "https://b.example/oct"
+
+
+
+def test_binary_market_ignores_a_sentence_fragment():
+    # "And their No. 1 goalie ..." split at "No." -- live, 2026-10-14.
+    market = Market(id="canada-2027", title="Will a Canadian Team Win the 2027 Stanley Cup?",
+                    description="", options=[], close_date=date(2027, 7, 1))
+    evidence = [
+        make_ranked("And their No.", url="https://www.espn.com/a", source_type="credible_backup_secondary",
+                    published_date=date(2026, 9, 30)),
+        make_ranked("And their No.", url="https://sports.yahoo.com/a", source_type="credible_backup_secondary",
+                    published_date=date(2026, 9, 30)),
+    ]
+    verdict = decide(market, evidence)
+    assert verdict.outcome not in ("YES", "NO")
+    assert "independent source" not in (verdict.evidence_snippet or "")

@@ -273,3 +273,11 @@ def test_default_listing_fetch_raises_on_failure():
     with patch("resolution_finder.rain_pool_client.requests.get", return_value=_response(b"{}", 503)):
         with pytest.raises(RainPoolError):
             _default_listing_fetch()
+
+
+
+def test_plan_carries_the_day_rain_opened_the_market():
+    plan = plan_scan(make_market(), fetch=lambda market_id: {
+        "poolDescription": RULES, "createdAt": "2026-07-27T10:00:35.472Z",
+        "subPools": [{"question": "Yes", "poolFinalized": False}]})
+    assert plan.targets[0].opened == date(2026, 7, 27)

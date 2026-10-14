@@ -182,6 +182,19 @@ whether anything reports the event (coverage that merely discusses it
 does not count), and the market-implied probability. Runs before this
 carry no trace.
 
+**Freshness and timing** (2026-10-14).
+- An article published before the market opened on rain.trade (Rain's
+  `createdAt`) cannot report its outcome: it is listed in the trace as
+  "older than the market — not used" and is neither read nor used.
+- An unresolved finding shows the newest relevant article, not the
+  closest match from months ago.
+- A Yes/No market settled by an event that has not concluded — no early
+  resolution in its rules, resolution date still ahead (a season, a
+  championship) — gets no proposed outcome before that date. Its finding
+  says "Not decidable before <date>". Cost: a genuine early elimination
+  waits for the date. Multi-option markets are not held (they report
+  per-option eliminations during a tournament).
+
 **Market-implied probability** (2026-10-14). A finding carries
 `probability` (0–1, of Yes) and `probability_source` (venue, its own
 question, time) when the market names a Polymarket event as its source

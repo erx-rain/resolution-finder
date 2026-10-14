@@ -288,7 +288,7 @@ class ScanTarget:
 
     market: Market
     option: Optional[str] = None
-    opened: Optional[date] = None   # with `option`: the day Rain created that sub-pool
+    opened: Optional[date] = None   # the day Rain created the market (or that sub-pool)
 
 
 @dataclass(frozen=True)
@@ -343,17 +343,19 @@ def plan_scan(market: Market, fetch: Optional[PoolFetcher] = None) -> ScanPlan:
         return ScanPlan(skip_reason=SKIP_ALL_RESOLVED)
 
     whole = replace(market, description=description, options=[])
+    pool_opened = _parse_end_date(data.get("createdAt"))
     if len(sub_pools) < 2:
-        return ScanPlan(targets=(ScanTarget(whole),))
+        return ScanPlan(targets=(ScanTarget(whole, opened=pool_opened),))
 
     if all(_is_date_name(sp.name) for sp in sub_pools) and all(sp.question.strip() for sp in open_sub_pools):
         return ScanPlan(targets=tuple(
             ScanTarget(
                 replace(whole, title=sp.question,
                         close_date=_deadline_from_name(sp.name, sp.end_date) or sp.end_date or market.close_date),
-                option=sp.name, opened=sp.opened,
+                option=sp.name, opened=sp.opened or pool_opened,
             )
             for sp in open_sub_pools
         ))
 
-    return ScanPlan(targets=(ScanTarget(replace(whole, options=[sp.name for sp in open_sub_pools])),))
+    return ScanPlan(targets=(ScanTarget(replace(whole, options=[sp.name for sp in open_sub_pools]),
+                                        opened=pool_opened),))
