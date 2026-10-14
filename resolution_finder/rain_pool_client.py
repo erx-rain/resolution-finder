@@ -154,6 +154,93 @@ def _is_date_name(name: str) -> bool:
     return bool(_DATE_NAME_RE.match(name.strip()))
 
 
+# ── Status of every market at once, for the market list ──────────────
+#
+# GET /markets must not show a market Rain has already resolved (owner
+# decision 2026-10-13), and must say which sub-pools of the rest are
+# settled. Reading each market's own pool record for that is too slow:
+# measured 2026-10-13 on the 57 gist markets, 42 s one at a time and
+# 16-18 s with 8-32 threads (Rain serialises a client's requests; one
+# request then takes up to 15 s) -- past rain-admin's 20 s proxy timeout.
+# Rain's public listing carries every pool with its sub-pools' own
+# poolFinalized / winnerOption in ONE call: 400 pools, 1.4 MB, 0.4 s, all
+# 57 present. It does NOT carry poolDescription, mergedQuestion or the
+# sub-pools' dates, so a scan still reads the market's own record
+# (plan_scan).
+LISTING_PAGE_SIZE = 1000
+LISTING_TIMEOUT_SECONDS = 30
+
+ListingFetcher = Callable[[], list[dict]]
+
+
+def _default_listing_fetch() -> list[dict]:
+    """Every pool in Rain's public listing. `offset` is a PAGE number,
+    1-based (verified live, and how rain-admin's own client calls it)."""
+    pools: list[dict] = []
+    page, pages = 1, 1
+    while page <= pages:
+        try:
+            response = requests.get(
+                f"{RAIN_API_BASE}/pools/public-pools",
+                params={"limit": LISTING_PAGE_SIZE, "offset": page},
+                timeout=LISTING_TIMEOUT_SECONDS,
+                headers={"User-Agent": RAIN_USER_AGENT, "Accept": "application/json"},
+            )
+            response.raise_for_status()
+            data = response.json().get("data")
+        except (requests.RequestException, ValueError) as exc:
+            raise RainPoolError(f"could not fetch Rain pool listing page {page}: {exc}") from exc
+        if not isinstance(data, dict) or not isinstance(data.get("pools"), list):
+            raise RainPoolError(f"Rain pool listing page {page} had no 'pools' list")
+        pools.extend(p for p in data["pools"] if isinstance(p, dict))
+        pages = data.get("pages") if isinstance(data.get("pages"), int) else 1
+        page += 1
+    return pools
+
+
+@dataclass(frozen=True)
+class SubPoolStatus:
+    name: str          # sub-pool `question`, verbatim
+    resolved: bool     # Rain has settled it -- _is_resolved
+
+
+@dataclass(frozen=True)
+class PoolStatus:
+    """Where Rain says a market stands. `known` is False when the market
+    was not in the listing (or the listing could not be read): nothing
+    below is then known, and the market is NOT treated as resolved."""
+    known: bool
+    sub_pools: tuple[SubPoolStatus, ...] = ()
+
+    @property
+    def resolved(self) -> bool:
+        return self.known and bool(self.sub_pools) and all(sp.resolved for sp in self.sub_pools)
+
+
+UNKNOWN_STATUS = PoolStatus(known=False)
+
+
+def pool_statuses(market_ids: list[str], fetch: Optional[ListingFetcher] = None) -> dict[str, PoolStatus]:
+    """One PoolStatus per id, from one read of Rain's listing. A read
+    failure raises RainPoolError: the caller decides what to show, and
+    must not show "resolved" for anything."""
+    by_id = {p.get("_id"): p for p in (fetch or _default_listing_fetch)() if p.get("_id")}
+    statuses: dict[str, PoolStatus] = {}
+    for market_id in market_ids:
+        pool = by_id.get(market_id)
+        if pool is None:
+            statuses[market_id] = UNKNOWN_STATUS
+            continue
+        raw = pool.get("subPools")
+        sub_pools = tuple(
+            SubPoolStatus(name=sp["question"], resolved=_is_resolved(sp))
+            for sp in (raw if isinstance(raw, list) else [])
+            if isinstance(sp, dict) and isinstance(sp.get("question"), str)
+        )
+        statuses[market_id] = PoolStatus(known=True, sub_pools=sub_pools)
+    return statuses
+
+
 SKIP_NO_RULES = "No finding: Rain has no resolution rules for this market yet, so it was not scanned."
 SKIP_ALL_RESOLVED = "No finding: every sub-pool of this market is already resolved on Rain, so nothing was scanned."
 

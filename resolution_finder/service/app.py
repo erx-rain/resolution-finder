@@ -23,7 +23,7 @@ from flask import Flask, jsonify, request
 
 from resolution_finder.models import Market
 from resolution_finder.gist_market_provider import GistMarketProvider, GistProviderError, _parse_close_date, _parse_options
-from resolution_finder.rain_pool_client import plan_scan
+from resolution_finder.rain_pool_client import PoolStatus, RainPoolError, UNKNOWN_STATUS, plan_scan, pool_statuses
 from resolution_finder.resolution_spec import check_availability
 from resolution_finder.storage import get_history, get_latest_findings, init_db
 from resolution_finder.service import service_storage
@@ -106,10 +106,11 @@ def create_app(
     scan_market_fn=None,
     start_scheduler: bool = False,
     rain_fetch=None,
+    rain_listing_fetch=None,
 ) -> Flask:
-    """App factory. `provider`/`job_queue`/`scan_market_fn`/`rain_fetch`
-    are injectable for tests (no models, no network); run_service.py
-    wires the real ones."""
+    """App factory. `provider`/`job_queue`/`scan_market_fn`/`rain_fetch`/
+    `rain_listing_fetch` are injectable for tests (no models, no
+    network); run_service.py wires the real ones."""
     app = Flask(__name__)
     init_db(db_path)
     service_storage.init_service_schema(db_path)
@@ -134,6 +135,28 @@ def create_app(
         if provider is None:
             provider = GistMarketProvider()
         return provider
+
+    def listed_markets() -> tuple[list[tuple[Market, PoolStatus]], Optional[str]]:
+        """The gist markets Rain has NOT resolved, each with Rain's own
+        per-sub-pool status (owner decision 2026-10-13: a market whose
+        every sub-pool is settled on Rain is not shown; the rest say
+        which sub-pools are). One listing read for all of them -- see
+        rain_pool_client.pool_statuses. If that read fails, every market
+        is listed with status unknown and the error is returned alongside:
+        a reviewer sees the list and the reason, never a market silently
+        dropped as "resolved" on no information."""
+        market_list = get_provider().get_unresolved_markets()
+        try:
+            statuses = pool_statuses([m.id for m in market_list], fetch=rain_listing_fetch)
+            error = None
+        except RainPoolError as exc:
+            logger.warning("Rain listing unavailable; showing every gist market: %s", exc)
+            statuses, error = {}, str(exc)
+        return (
+            [(m, statuses.get(m.id, UNKNOWN_STATUS)) for m in market_list
+             if not statuses.get(m.id, UNKNOWN_STATUS).resolved],
+            error,
+        )
 
     # ── The real scan function (overridable in tests) ──────────────────
     def _real_scan(market_id: str, trigger: str) -> None:
@@ -201,19 +224,24 @@ def create_app(
     @require_auth
     def markets():
         try:
-            market_list = get_provider().get_unresolved_markets()
+            listed, rain_error = listed_markets()
         except GistProviderError as exc:
             return jsonify({"error": str(exc)}), 502
-        return jsonify({"markets": [
-            {
-                "id": m.id,
-                "title": m.title,
-                "description": m.description,
-                "options": m.options,
-                "close_date": m.close_date.isoformat() if m.close_date else None,
-            }
-            for m in market_list
-        ]})
+        return jsonify({
+            "markets": [
+                {
+                    "id": m.id,
+                    "title": m.title,
+                    "description": m.description,
+                    "options": m.options,
+                    "close_date": m.close_date.isoformat() if m.close_date else None,
+                    "rain_status_known": status.known,
+                    "sub_pools": [{"name": sp.name, "resolved": sp.resolved} for sp in status.sub_pools],
+                }
+                for m, status in listed
+            ],
+            "rain_listing_error": rain_error,
+        })
 
     @app.post("/eligibility")
     @require_auth
@@ -335,7 +363,10 @@ def create_app(
                     set_setting(db_path, service_storage.SCHEDULE_LAST_RUN_KEY, now.isoformat())
                     logger.info("Schedule %r due — enqueueing scans for available markets", tag)
                     try:
-                        for market in get_provider().get_unresolved_markets():
+                        # Same list the UI shows: a market Rain has
+                        # resolved is not scanned on schedule either (it
+                        # would only produce a failed run).
+                        for market, _status in listed_markets()[0]:
                             # Scheduled runs scan only markets whose
                             # resolution is AVAILABLE (date signals) —
                             # scanning a market months before its close
