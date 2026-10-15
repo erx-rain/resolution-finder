@@ -277,3 +277,12 @@ def test_a_scheduled_event_date_means_the_answer_waits_for_it():
     spec = parse_resolution_spec(market)
     assert spec.scheduled_event_date == date(2026, 11, 20)
     assert spec.can_resolve_early is False      # "by the specified date" notwithstanding
+
+
+
+def test_states_early_resolution_reads_by_the_deadline():
+    from resolution_finder.resolution_spec import states_early_resolution
+    # A held Yes/No market cannot be proposed before its resolution date
+    # (pipeline._hold_until_decidable), so missing this wording would hold
+    # a market that can resolve any day.
+    assert states_early_resolution('If these conditions are not met by the deadline, the market resolves to "No".')

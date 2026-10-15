@@ -1,7 +1,8 @@
 # resolution_finder/pipeline.py
 import logging
+import re
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Callable, Optional
 from resolution_finder.market_provider import MarketProvider
 from resolution_finder.models import Market, RankedArticle, Verdict
@@ -82,6 +83,45 @@ def _attach_context(verdicts: list[Verdict], ranked: list[RankedArticle]) -> lis
     )]
 
 
+_UNCORROBORATED_NOTE_RE = re.compile(r"\[Only \d+ independent sources? confirms?")
+
+
+def _hold_until_decidable(verdicts: list[Verdict], availability) -> list[Verdict]:
+    """A Yes/No market settled by an event that has not concluded -- its
+    rules give no early resolution and its resolution date is still ahead
+    -- gets no proposed outcome from the news, and says why.
+
+    Real wrong verdict (2026-10-14): "Will a Canadian Team Win the 2027
+    Stanley Cup?" was proposed NO in October 2026 from preseason articles;
+    rain.trade's own five-model resolver answered "no answer -- the season
+    has not been played". The year and forecast guards in verdict_engine
+    remove the sentences that caused it; this removes the question: until
+    the season or event has concluded, no sentence in the news can be its
+    result. Cost, accepted: a genuine early elimination (a team knocked out
+    in April, market closing in July) waits for the resolution date. Only
+    option-less (Yes/No) findings: multi-option markets report per-option
+    eliminations during a tournament, which this would suppress."""
+    if availability.available or availability.spec.can_resolve_early or availability.available_from is None:
+        return verdicts
+    # The note replaces the sentence: whatever the engine picked out of a
+    # preview article ("But no Helly, no playoffs, ...") is not evidence of
+    # anything for a result that does not exist yet.
+    note = (f"Not decidable before {availability.available_from.isoformat()}: this market is settled by an "
+            "event that has not concluded, so nothing is proposed before then.")
+    held = []
+    for verdict in verdicts:
+        snippet = verdict.evidence_snippet or ""
+        if verdict.option is None and (verdict.outcome in ("YES", "NO") or _UNCORROBORATED_NOTE_RE.search(snippet)):
+            held.append(Verdict(
+                outcome="UNCLEAR", confidence=verdict.confidence,
+                evidence_snippet=note,
+                source_url=verdict.source_url, source_type=verdict.source_type, option=None,
+            ))
+        else:
+            held.append(verdict)
+    return held
+
+
 def _default_peer_checker(market: Market) -> Optional[Verdict]:
     """The default `peer_checker`, which respects PEER_MARKET_ENABLED.
 
@@ -140,11 +180,18 @@ def _scan_market(
     peer_checker: PeerChecker,
     structured_resolver: StructuredResolver,
     trace: Optional[dict] = None,
+    opened: Optional[date] = None,
 ) -> None:
     """`trace`, when given, is filled with what this scan searched, what it
     found and read, and what it decided -- the record a reviewer needs to
     judge "nothing found" (owner request 2026-10-14: a run that searched
-    nothing looked the same as one that read twenty articles)."""
+    nothing looked the same as one that read twenty articles).
+
+    `opened` is the day the market opened on rain.trade, when known. An
+    article published before it cannot report this market's outcome --
+    the market asks about what happens after it opened -- and is neither
+    read nor used (2026-10-14: a June article was the evidence shown on a
+    market opened in late July). It is still listed in the trace, marked."""
     if trace is None:
         trace = {}
     # Computed once per market, independent of everything below -- pure
@@ -194,7 +241,14 @@ def _scan_market(
     trace["path"] = "news"
     trace["queries"] = queries
     trace["retry_queries"] = retried
+    trace["opened"] = opened.isoformat() if opened else None
     read_status: dict[str, str] = {}
+    found_refs = candidate_refs
+    if opened is not None:
+        for ref in candidate_refs:
+            if ref.published_date is not None and ref.published_date < opened:
+                read_status[ref.url] = "older than the market -- not used"
+        candidate_refs = [ref for ref in candidate_refs if ref.url not in read_status]
 
     articles_with_text = []
     for ref in candidate_refs:
@@ -234,11 +288,12 @@ def _scan_market(
             "status": read_status.get(ref.url, "not read"),
             "relevance": relevance.get(ref.url),
         }
-        for ref in candidate_refs
+        for ref in found_refs
     ]
     verdicts = verdict_engine(market, ranked)
     if not isinstance(verdicts, list):
         verdicts = [verdicts]
+    verdicts = _hold_until_decidable(verdicts, availability)
     verdicts = _attach_context(verdicts, ranked)
     verdicts = _promote_best_below_threshold(verdicts, market, articles_with_text)
     for verdict in verdicts:

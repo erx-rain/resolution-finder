@@ -1795,6 +1795,70 @@ def _uncorroborated_note(confirmations: list[tuple[str, RankedArticle]]) -> str:
     )
 
 
+# Binary path, out-of-scope sentences (2026-10-14). Real wrong verdict this
+# exists for: "Will a Canadian Team Win the 2027 Stanley Cup?" was
+# proposed NO in October 2026, before the season was played, on two
+# independent sources:
+#   "After winning the Cup in 2006, they also missed the playoffs the next
+#    two years."                               (sports.yahoo.com, about Carolina)
+#   "...gave the Colorado Avalanche plausible deniability for losing in the
+#    2026 Western Conference finals..."        (espn.com)
+#   "Friedman has Florida returning to the Stanley Cup Final ... but this
+#    time, they will be falling to the Edmonton Oilers."   (a PREDICTION)
+# NLI read each as "a Canadian team has been eliminated". _decide_multi_
+# outcome has long rejected the first two kinds (a different year; a
+# relative past season); _decide_binary had none of those guards, in
+# either direction. Now both its YES and NO collection skip a sentence that:
+#   - names only years other than the market's own, in the sentence or the
+#     article's lead (same check as the multi-outcome path), "since <year>"
+#     aside -- see below;
+#   - refers to last year / recent seasons / a relative past season (same
+#     helpers as the multi-outcome path);
+#   - forecasts instead of reporting (_BINARY_FORECAST_RE).
+# "since <year>" is a span up to now, not another year: "A Canadian team
+# has not won the Stanley Cup since 1993" is the sentence this path's NO
+# side was calibrated on (2026-09-07), so it is not rejected as "1993". But
+# it reports the past, not this market's event: for NO it counts only when
+# the article was published after the market's own close date, when "has
+# not won" includes this instance. Written mid-season it is history.
+_SINCE_YEAR_RE = re.compile(r"\bsince\s+(?:the\s+)?(?:19|20)\d{2}\b", re.IGNORECASE)
+# Kept to phrases that only ever forecast: a bare "projects" also matched
+# "the largest of the mega-projects" in a real report (Egypt, sworn in) and
+# lost a correct YES; bare "odds" would hit "against all odds".
+_BINARY_FORECAST_RE = re.compile(
+    r"\bwill\s+(?:be|win|lose|fall|beat|face|return|make|take|claim|go|finish|hoist|lift)\b"
+    r"|\bpredict(?:s|ed|ion|ions)?\b|\b(?:is|are|was|were)\s+projected\s+to\b|\bforecasts?\b"
+    r"|\bpicks?\s+to\b|\bfavou?rites?\s+to\b|\bodds\s+(?:of|to|on)\b|\bexpected\s+to\b",
+    re.IGNORECASE,
+)
+
+
+def _binary_sentence_out_of_scope(
+    sentence: str, item: RankedArticle, market: Market, expected_year: Optional[int], direction: str,
+) -> bool:
+    """True if `sentence` cannot be about this market's own instance of the
+    event, or does not report one -- see the comment above. Also a fragment
+    under 4 words: "And their No." (the sentence splitter cutting "No. 1
+    goalie" at the abbreviation) was read by NLI as "a Canadian team has
+    been eliminated" on the same market, 2026-10-14."""
+    if len(sentence.split()) < 4:
+        return True
+    without_spans = _SINCE_YEAR_RE.sub("", sentence)
+    if (_sentence_mentions_conflicting_year(without_spans, expected_year)
+            or _sentence_mentions_conflicting_year(_SINCE_YEAR_RE.sub("", _first_sentence(item.text)), expected_year)
+            or _sentence_mentions_conflicting_relative_season(sentence, expected_year, item.article.published_date)
+            or _sentence_mentions_last_year_reference(sentence)
+            or _sentence_mentions_relative_recency(sentence)):
+        return True
+    if _BINARY_FORECAST_RE.search(sentence):
+        return True
+    if direction == "NO" and _SINCE_YEAR_RE.search(sentence):
+        published = item.article.published_date
+        if published is None or market.close_date is None or published <= market.close_date:
+            return True
+    return False
+
+
 def _decide_binary(
     market: Market, ranked_evidence: list[RankedArticle], assert_elapsed_default: bool = False,
     opened: Optional[date] = None,
@@ -1802,6 +1866,7 @@ def _decide_binary(
     subject_terms = _subject_terms(market)
     distinctive_terms = _distinctive_subject_terms(market)
     binary_subject = _market_binary_subject(market)
+    expected_year = _market_expected_year(market)
 
     # Collects every confirming (sentence, item) pair instead of
     # returning on the first match -- see the corroboration comment
@@ -1829,6 +1894,8 @@ def _decide_binary(
                 continue
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
+            if _binary_sentence_out_of_scope(sentence, item, market, expected_year, "YES"):
+                continue
             if (any(_contains_keyword(sentence.lower(), keyword) for keyword in BINARY_YES_KEYWORDS)
                     and _verify_binary_yes_candidate(sentence)):
                 confirmations.append((sentence, item))
@@ -1847,6 +1914,8 @@ def _decide_binary(
             if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                 continue
             if _sentence_is_vague_reference(sentence):
+                continue
+            if _binary_sentence_out_of_scope(sentence, item, market, expected_year, "YES"):
                 continue
             semantic_score = _semantic_yes_signal(sentence, market)
             if semantic_score is not None:
@@ -1877,6 +1946,8 @@ def _decide_binary(
                 if _sentence_mentions_other_entity(sentence, subject_terms, distinctive_terms):
                     continue
                 if _sentence_is_vague_reference(sentence):
+                    continue
+                if _binary_sentence_out_of_scope(sentence, item, market, expected_year, "NO"):
                     continue
                 if _verify_elimination_candidate(sentence, binary_subject, market):
                     no_confirmations.append((sentence, item))
@@ -1956,7 +2027,10 @@ def _decide_binary(
     deadline_note = _deadline_default_note(market)
 
     if ranked_evidence:
-        top = ranked_evidence[0]
+        # Nothing decides it, so this article is only what the reviewer
+        # sees first: the NEWEST relevant one, not the closest match from
+        # months ago (owner request 2026-10-14). Undated articles last.
+        top = max(ranked_evidence, key=lambda item: (item.article.published_date or date.min, item.similarity))
         return Verdict(
             outcome="UNCLEAR",
             confidence=top.similarity,

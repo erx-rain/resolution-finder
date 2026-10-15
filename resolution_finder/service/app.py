@@ -90,6 +90,9 @@ def _analysis(trace: dict, findings: list[dict], odds, odds_unavailable: Optiona
         proposed = ", ".join(sorted(f"{f['option'] or 'the market'}: {f['outcome']}"
                                     for f in findings if f["outcome"] in ("YES", "NO")))
         lines.append(f"Proposed {proposed} -- see the finding for its evidence.")
+    elif any("Not decidable before" in (f["evidence_snippet"] or "") for f in findings):
+        lines.append("Nothing is proposed yet: this market is settled by an event that has not concluded "
+                     "(see the finding for the date). Articles about it now are previews, not results.")
     elif any("independent source" in (f["evidence_snippet"] or "") for f in findings):
         lines.append("One source appears to report it; nothing is proposed until a second, independent "
                      "source confirms it.")
@@ -248,6 +251,7 @@ def create_app(
                     _filed_under(_default_peer_checker, target.option),
                     _filed_under(resolve_structured, target.option),
                     trace=trace,
+                    opened=target.opened,
                 )
             count = service_storage.count_findings_for_run(db_path, market_id, run_timestamp)
             if count == 0:

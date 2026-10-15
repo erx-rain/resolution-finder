@@ -245,7 +245,7 @@ def test_scan_runs_each_open_date_sub_pool_as_its_own_market_and_files_it_by_nam
                              source_url=None, source_type=None)
 
     def fake_scan_market(market, db_path, run_timestamp, verdict_engine, peer_checker, structured_resolver,
-                         trace=None):
+                         trace=None, opened=None):
         from resolution_finder.resolution_spec import check_availability
         scanned.append(market)
         # `verdict_engine` is the service's wrapper around decide(): it is
@@ -313,7 +313,7 @@ def test_run_keeps_its_trace_analysis_and_market_odds(tmp_path):
                               "subPools": [{"question": "Yes", "poolFinalized": False}]}
 
     def fake_scan_market(market, db_path, run_timestamp, verdict_engine, peer_checker, structured_resolver,
-                         trace=None):
+                         trace=None, opened=None):
         trace.update({"path": "news", "queries": ["q1", "q2"], "retry_queries": ["MicroStrategy bankruptcy"],
                       "articles": [{"domain": "www.msn.com", "title": "t", "url": "u", "source_type": "context",
                                     "published": None, "status": "headline only", "relevance": 0.5}]})
