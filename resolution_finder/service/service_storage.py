@@ -10,6 +10,7 @@ file — one system of record):
   of runs, not just findings.
 Schedule state lives in the existing settings table (keys below).
 """
+import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
@@ -26,9 +27,15 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at TEXT,
     status TEXT NOT NULL DEFAULT 'running',
     error TEXT,
-    findings_count INTEGER
+    findings_count INTEGER,
+    trace TEXT
 );
 """
+
+# 2026-10-14: what the run searched, found, read and concluded (JSON).
+_RUNS_MIGRATIONS = [
+    ("trace", "ALTER TABLE runs ADD COLUMN trace TEXT"),
+]
 
 _FINDINGS_MIGRATIONS = [
     ("reviewed_by", "ALTER TABLE findings ADD COLUMN reviewed_by TEXT"),
@@ -40,6 +47,10 @@ def init_service_schema(db_path: str) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(_RUNS_SCHEMA)
+        run_columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+        for column, ddl in _RUNS_MIGRATIONS:
+            if column not in run_columns:
+                conn.execute(ddl)
         existing = {row[1] for row in conn.execute("PRAGMA table_info(findings)")}
         for column, ddl in _FINDINGS_MIGRATIONS:
             if column not in existing:
@@ -62,12 +73,14 @@ def start_run(db_path: str, market_id: str, trigger: str) -> int:
         conn.close()
 
 
-def finish_run(db_path: str, run_id: int, status: str, error: Optional[str], findings_count: Optional[int]) -> None:
+def finish_run(db_path: str, run_id: int, status: str, error: Optional[str], findings_count: Optional[int],
+               trace: Optional[dict] = None) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.execute(
-            "UPDATE runs SET finished_at = ?, status = ?, error = ?, findings_count = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), status, error, findings_count, run_id),
+            "UPDATE runs SET finished_at = ?, status = ?, error = ?, findings_count = ?, trace = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), status, error, findings_count,
+             None if trace is None else json.dumps(trace), run_id),
         )
         conn.commit()
     finally:
@@ -85,7 +98,10 @@ def get_runs(db_path: str, market_id: Optional[str] = None, limit: int = 100) ->
             ).fetchall()
         else:
             rows = conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-        return [dict(r) for r in rows]
+        runs = [dict(r) for r in rows]
+        for run in runs:
+            run["trace"] = json.loads(run["trace"]) if run.get("trace") else None
+        return runs
     finally:
         conn.close()
 

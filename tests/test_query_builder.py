@@ -159,3 +159,16 @@ def test_build_queries_adds_the_question_as_plain_keywords():
     assert _keyword_query("Will the US end the Iran naval blockade by October 31?") == (
         "the US end the Iran naval blockade")
     assert _keyword_query("2026-27 NBA Champion") == "2026-27 NBA Champion"
+
+
+def test_fallback_queries_shorten_the_question_and_add_the_companys_current_name():
+    from resolution_finder.query_builder import build_queries, fallback_queries
+    # 2026-10-14: both of this market's queries returned nothing at all.
+    market = Market(id="m", title="Will MicroStrategy declare bankruptcy by the end of 2026?",
+                    description="", options=[], close_date=None)
+    assert fallback_queries(market, build_queries(market)) == [
+        "MicroStrategy bankruptcy", "MicroStrategy", "Strategy MSTR bankruptcy",
+    ]
+    # Nothing to shorten on a title that is not a question with a subject.
+    assert fallback_queries(Market(id="n", title="2026-27 NBA Champion", description="",
+                                   options=[], close_date=None), []) == []

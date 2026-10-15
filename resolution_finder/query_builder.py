@@ -105,6 +105,53 @@ def _keyword_query(title: str) -> str:
     return _QUESTION_DEADLINE_RE.sub("", keywords).strip()
 
 
+# Companies whose old name markets still use, with the name and ticker
+# the press uses now. Curated by hand, each entry checked against live
+# search results: a wrong alias only adds a useless query, but keep it to
+# names the company itself changed.
+#   MicroStrategy -> Strategy (MSTR), renamed 2025. Found 2026-10-14: "Will
+#   MicroStrategy declare bankruptcy by the end of 2026?" got 0 results for
+#   both its queries; "Strategy MSTR bankruptcy" returned 5 (2 from
+#   verified publishers).
+COMPANY_RENAMES: dict[str, list[str]] = {
+    "microstrategy": ["Strategy MSTR"],
+}
+
+_STOPWORDS = {"the", "a", "an", "of", "in", "on", "by", "for", "to", "and", "or", "its", "their"}
+_SUBJECT_RE = re.compile(r"^(?i:will|did|does|is|are|has|have|can)\s+(?i:the\s+)?((?:[A-Z][\w.&'’-]*\s*)+)")
+
+
+def fallback_queries(market: Market, already: list[str]) -> list[str]:
+    """Shorter queries for when build_queries' own found (almost) nothing:
+    the question's subject with the words that name the event ("MicroStrategy
+    bankruptcy"), the subject alone, and the same with any name the company
+    now uses instead (COMPANY_RENAMES). Never repeats a query in `already`.
+    Found 2026-10-14: a market whose two queries returned nothing at all was
+    reported "nothing found" without anything having been read."""
+    match = _SUBJECT_RE.match(market.title.strip())
+    if not match:
+        return []
+    subject = match.group(1).strip()
+    rest = market.title.strip()[match.end():]
+    rest = _QUESTION_DEADLINE_RE.sub("", rest.rstrip("?").strip())
+    words = rest.split()
+    event = " ".join(w for w in words[1:] if w.lower() not in _STOPWORDS)   # drop the verb
+    candidates = []
+    if event:
+        candidates.append(f"{subject} {event}")
+    if len(subject) > 2:
+        candidates.append(subject)
+    for alias in COMPANY_RENAMES.get(subject.lower(), []):
+        candidates.append(f"{alias} {event}".strip())
+    seen = {q.lower() for q in already}
+    out = []
+    for query in candidates:
+        if query.lower() not in seen:
+            seen.add(query.lower())
+            out.append(query)
+    return out
+
+
 def build_queries(market: Market) -> list[str]:
     queries = [market.title]
     keywords = _keyword_query(market.title)

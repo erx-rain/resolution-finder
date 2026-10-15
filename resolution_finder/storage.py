@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS findings (
     availability_reason TEXT,
     available_from TEXT,
     score_version INTEGER,
-    can_resolve_early INTEGER
+    can_resolve_early INTEGER,
+    probability REAL,
+    probability_source TEXT
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -50,6 +52,11 @@ _MIGRATIONS = [
     # (resolution_spec.states_early_resolution). Per finding, like
     # available_from: it changes what "not yet available" means to a reader.
     ("can_resolve_early", "ALTER TABLE findings ADD COLUMN can_resolve_early INTEGER"),
+    # 2026-10-14: a market-implied probability that the answer is Yes --
+    # a quoted price from the market's own source venue (market_odds.py),
+    # never the finder's estimate; and which venue/question/time it is.
+    ("probability", "ALTER TABLE findings ADD COLUMN probability REAL"),
+    ("probability_source", "ALTER TABLE findings ADD COLUMN probability_source TEXT"),
 ]
 
 # What the `confidence` COLUMN holds has never changed: the engine's
@@ -156,6 +163,8 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "availability_reason": row["availability_reason"],
         "available_from": row["available_from"],
         "can_resolve_early": None if row["can_resolve_early"] is None else bool(row["can_resolve_early"]),
+        "probability": row["probability"],
+        "probability_source": row["probability_source"],
     }
 
 
@@ -186,6 +195,22 @@ def get_latest_findings(db_path: str) -> list[dict]:
             """
         ).fetchall()
         return [_row_to_dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def set_probability(db_path: str, market_id: str, run_timestamp: str, option: Optional[str],
+                    probability: float, source: str) -> None:
+    """Attach a market-implied probability to one run's finding(s) for one
+    option (None = the market's own Yes/No finding)."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE findings SET probability = ?, probability_source = ? "
+            "WHERE market_id = ? AND run_timestamp = ? AND option IS ?",
+            (probability, source, market_id, run_timestamp, option),
+        )
+        conn.commit()
     finally:
         conn.close()
 

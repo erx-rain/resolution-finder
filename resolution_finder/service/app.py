@@ -25,8 +25,9 @@ from resolution_finder.models import Market
 from resolution_finder.gist_market_provider import GistMarketProvider, GistProviderError, _parse_close_date, _parse_options
 from resolution_finder.rain_pool_client import PoolStatus, RainPoolError, UNKNOWN_STATUS, plan_scan, pool_statuses
 from resolution_finder.rain_pool_client import _default_fetch as _rain_pool_fetch
+from resolution_finder.market_odds import OddsSource
 from resolution_finder.resolution_spec import check_availability
-from resolution_finder.storage import get_history, get_latest_findings, init_db
+from resolution_finder.storage import get_history, get_latest_findings, init_db, set_probability
 from resolution_finder.service import service_storage
 from resolution_finder.service.jobs import JobQueue, NoFindingError
 from resolution_finder.service.schedule import (
@@ -59,6 +60,49 @@ def _finding_payload(finding: dict) -> dict:
     2026-10-13: per-option findings reached the screen with no label at
     all. Both names are sent; neither is renamed."""
     return {**finding, "option_name": finding.get("option")}
+
+
+def _analysis(trace: dict, findings: list[dict], odds, odds_unavailable: Optional[str]) -> list[str]:
+    """What one scanned question's run found, in plain words, for the
+    reviewer. Counts come from the trace; the conclusion from the findings
+    the engine saved; the probability is a quoted price, labelled as such."""
+    lines: list[str] = []
+    if trace.get("path") and trace["path"] != "news":
+        lines.append(f"Answered from the {trace['path']}; no news search.")
+    else:
+        queries, retried = trace.get("queries") or [], trace.get("retry_queries") or []
+        articles = trace.get("articles") or []
+        verified = sum(1 for a in articles if a["source_type"] not in ("context", "general"))
+        context = sum(1 for a in articles if a["source_type"] == "context")
+        read = sum(1 for a in articles if a["status"] in ("read", "headline only"))
+        relevant = sum(1 for a in articles if a.get("relevance") is not None)
+        searched = f"Searched {len(queries)} quer{'y' if len(queries) == 1 else 'ies'}"
+        if retried:
+            searched += f", then {len(retried)} more because the first found little"
+        lines.append(searched + ".")
+        lines.append(
+            f"Found {len(articles)} article{'s' if len(articles) != 1 else ''}: {verified} from verified "
+            f"publishers, {context} headline{'s' if context != 1 else ''} from other publishers (context only). "
+            f"Read {read}; {relevant} relevant to this question."
+        )
+    outcomes = {f["outcome"] for f in findings}
+    if outcomes & {"YES", "NO"}:
+        proposed = ", ".join(sorted(f"{f['option'] or 'the market'}: {f['outcome']}"
+                                    for f in findings if f["outcome"] in ("YES", "NO")))
+        lines.append(f"Proposed {proposed} -- see the finding for its evidence.")
+    elif any("independent source" in (f["evidence_snippet"] or "") for f in findings):
+        lines.append("One source appears to report it; nothing is proposed until a second, independent "
+                     "source confirms it.")
+    else:
+        lines.append("No article read reports that it has happened. Coverage that discusses it -- opinion, "
+                     "risk, speculation -- is not a report and does not move the answer.")
+    if odds is not None:
+        lines.append(f"Market-implied probability of Yes: {odds.value:.0%} ({odds.describe()}). "
+                     "A traded price, not the finder's own estimate.")
+    else:
+        lines.append("No market-implied probability: "
+                     + (odds_unavailable or "no single matching question at the source venue") + ".")
+    return lines
 
 
 def _filed_under(produce, option: Optional[str]):
@@ -108,6 +152,7 @@ def create_app(
     start_scheduler: bool = False,
     rain_fetch=None,
     rain_listing_fetch=None,
+    odds_fetch=None,
 ) -> Flask:
     """App factory. `provider`/`job_queue`/`scan_market_fn`/`rain_fetch`/
     `rain_listing_fetch` are injectable for tests (no models, no
@@ -185,8 +230,11 @@ def create_app(
             raise NoFindingError(plan.skip_reason)
 
         run_timestamp = datetime.now(timezone.utc).isoformat()
+        traces: list[dict] = []
         try:
             for target in plan.targets:
+                trace: dict = {"option": target.option, "question": target.market.title}
+                traces.append(trace)
                 _scan_market(
                     target.market, db_path, run_timestamp,
                     # A sub-pool scanned on its own is a date-named one
@@ -199,17 +247,38 @@ def create_app(
                     ),
                     _filed_under(_default_peer_checker, target.option),
                     _filed_under(resolve_structured, target.option),
+                    trace=trace,
                 )
             count = service_storage.count_findings_for_run(db_path, market_id, run_timestamp)
             if count == 0:
                 raise NoFindingError("No finding: the scan ran but produced nothing.")
-            service_storage.finish_run(db_path, run_id, "done", None, count)
+            _add_odds_and_analysis(market, plan, run_timestamp, traces)
+            service_storage.finish_run(db_path, run_id, "done", None, count, {"targets": traces})
         except NoFindingError as exc:
-            service_storage.finish_run(db_path, run_id, "failed", str(exc), 0)
+            service_storage.finish_run(db_path, run_id, "failed", str(exc), 0, {"targets": traces})
             raise
         except Exception as exc:
-            service_storage.finish_run(db_path, run_id, "failed", str(exc), None)
+            service_storage.finish_run(db_path, run_id, "failed", str(exc), None, {"targets": traces})
             raise
+
+    def _add_odds_and_analysis(gist_market: Market, plan, run_timestamp: str, traces: list[dict]) -> None:
+        """Per scanned question: the market-implied probability from the
+        market's own source venue (market_odds.py), attached to each
+        finding, and a plain-words analysis of what the run found, kept in
+        the run's trace. Owner request 2026-10-14: news ABOUT an event is
+        not the event; a reader needs both what was found and how likely
+        the market thinks it is."""
+        odds_source = OddsSource(gist_market.description, fetch=odds_fetch)
+        run_findings = [f for f in get_history(db_path, gist_market.id) if f["run_timestamp"] == run_timestamp]
+        for target, trace in zip(plan.targets, traces):
+            findings = [f for f in run_findings if target.option is None or f["option"] == target.option]
+            for option in sorted({f["option"] for f in findings}, key=lambda o: (o is None, o or "")):
+                odds = odds_source.odds(target.market.title, option)
+                if odds is not None:
+                    set_probability(db_path, gist_market.id, run_timestamp, option, odds.value, odds.describe())
+            whole = odds_source.odds(target.market.title, target.option)
+            trace["analysis"] = _analysis(trace, findings, whole, odds_source.unavailable)
+
 
     scan_fn = scan_market_fn or _real_scan
     queue = job_queue or JobQueue(scan_fn)
